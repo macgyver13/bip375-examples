@@ -1,0 +1,8 @@
+# BIP375 Python Examples Requirements
+# Python 3.9 or higher required
+
+# No external dependencies - uses only Python standard library
+# All cryptographic primitives are implemented in:
+# - secp256k1_374.py (secp256k1 implementation)
+# - dleq_374.py (BIP374 DLEQ proofs)
+# - psbt_sp/ package (BIP375 PSBT implementation)

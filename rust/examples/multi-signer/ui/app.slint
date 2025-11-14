@@ -1,0 +1,545 @@
+// BIP-375 Multi-Signer GUI
+// 3-party signing workflow visualization
+
+import { Button, VerticalBox, HorizontalBox, ScrollView, Palette } from "std-widgets.slint";
+
+// Data structures
+export struct PsbtField {
+    field-name: string,
+    field-type: string,
+    key-preview: string,
+    value-preview: string,
+    is-highlighted: bool,
+    is-sp-field: bool,
+    map-index: int,
+}
+
+export struct TransactionSummary {
+    total-input: int,
+    total-output: int,
+    fee: int,
+    num-inputs: int,
+    num-outputs: int,
+}
+
+export struct EcdhCoverage {
+    inputs-with-ecdh: int,
+    total-inputs: int,
+    percentage: float,
+}
+
+export struct InputState {
+    index: int,
+    signer-name: string,
+    has-ecdh: bool,
+    has-dleq: bool,
+    has-sig: bool,
+}
+
+export struct ValidationSummary {
+    dleq-valid: bool,
+    all-signed: bool,
+    scripts-computed: bool,
+    tx-extracted: bool,
+}
+
+component MenuButton inherits Button {
+    preferred-height: 40px;
+    max-height: 40px;
+}
+
+component PSBTFields inherits HorizontalBox {
+    padding: 8px;
+    spacing: 8px;
+
+    in property <PsbtField> field;
+
+    Text {
+        text: field.field-type;
+        font-size: 12px;
+        color: #666666;
+        vertical-alignment: center;
+        max-width: 40px;
+    }
+
+    if field.map-index >= 0: Text {
+        text: "[" + field.map-index + "]";
+        font-size: 12px;
+        color: #888888;
+        font-weight: 700;
+        vertical-alignment: center;
+        horizontal-alignment: left;
+        max-width: 30px;
+    }
+
+    TextInput {
+        text: field.is-sp-field ? field.field-name + " ✨" : field.field-name;
+        font-size: 14px;
+        color: #2c2c2c;
+        read-only: true;
+        horizontal-alignment: left;
+        max-width: 300px;
+    }
+
+    VerticalBox {
+        alignment: LayoutAlignment.center;
+        spacing: 2px;
+        padding: 0px;
+        horizontal-stretch: 1;
+
+        if field.key-preview != "": TextInput {
+            read-only: true;
+            text: "key: " + field.key-preview;
+            font-size: 10px;
+            color: #666666;
+            horizontal-alignment: right;
+        }
+
+        TextInput {
+            read-only: true;
+            text: field.value-preview;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// Main application component
+export component AppWindow inherits Window {
+    title: "BIP-375 Multi-Signer Demo";
+    preferred-width: 1400px;
+    preferred-height: 900px;
+    min-width: 1200px;
+    min-height: 700px;
+
+    // Properties
+    in-out property <string> workflow-state: "Ready";
+    in-out property <bool> has-psbt: false;
+
+    // PSBT fields
+    in-out property <[PsbtField]> global-fields: [];
+    in-out property <[PsbtField]> input-fields: [];
+    in-out property <[PsbtField]> output-fields: [];
+
+    // Transaction summary
+    in-out property <TransactionSummary> tx-summary: {
+        total-input: 0,
+        total-output: 0,
+        fee: 0,
+        num-inputs: 0,
+        num-outputs: 0,
+    };
+
+    // ECDH coverage
+    in-out property <EcdhCoverage> ecdh-coverage: {
+        inputs-with-ecdh: 0,
+        total-inputs: 0,
+        percentage: 0.0,
+    };
+
+    // Input states
+    in-out property <[InputState]> input-states: [];
+
+    // Validation summary
+    in-out property <ValidationSummary> validation: {
+        dleq-valid: false,
+        all-signed: false,
+        scripts-computed: false,
+        tx-extracted: false,
+    };
+    in-out property <bool> has-validation: false;
+
+    // Callbacks
+    callback alice-creates();
+    callback bob-signs();
+    callback charlie-finalizes();
+    callback reset();
+
+    VerticalBox {
+        // Header
+        Rectangle {
+            background: #444444;
+            height: 60px;
+
+            HorizontalBox {
+                padding: 16px;
+
+                Text {
+                    text: "BIP-375 Multi-Signer Demo";
+                    font-size: 20px;
+                    font-weight: 700;
+                    horizontal-alignment: left;
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: workflow-state == "Ready" ? "⚪ Ready" :
+                          workflow-state == "AliceComplete" ? "🔵 Alice Complete (1/3)" :
+                          workflow-state == "BobComplete" ? "🟡 Bob Complete (2/3)" :
+                          workflow-state == "CharlieComplete" ? "🟢 Charlie Complete (3/3)" :
+                          "✅ Transaction Extracted";
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+            }
+        }
+
+        HorizontalBox {
+            vertical-stretch: 1;
+            padding: 0px;
+
+            // Left panel - Workflow steps
+            Rectangle {
+                width: 350px;
+                background: #444444;
+
+                VerticalBox {
+                    alignment: LayoutAlignment.end;
+                    padding: 16px;
+                    spacing: 16px;
+
+                    // ECDH Coverage indicator
+                    if has-psbt: VerticalBox {
+                        spacing: 8px;
+
+                        Text {
+                            text: "ECDH Coverage:";
+                            font-size: 16px;
+                            font-weight: 700;
+                        }
+
+                        HorizontalBox {
+                            spacing: 8px;
+
+                            Text {
+                                text: ecdh-coverage.inputs-with-ecdh + "/" + ecdh-coverage.total-inputs;
+                                font-size: 18px;
+                                color: ecdh-coverage.percentage >= 100.0 ? #33cc33 : #e6b300;
+                                font-weight: 700;
+                            }
+
+                            Text {
+                                text: "(" + round(ecdh-coverage.percentage) + "%)";
+                                font-size: 14px;
+                                color: #808080;
+                            }
+                        }
+
+                        // Progress bar
+                        Rectangle {
+                            height: 20px;
+                            background: #666666;
+                            border-radius: 10px;
+
+                            Rectangle {
+                                width: parent.width * ecdh-coverage.percentage / 100.0;
+                                x: 0px;
+                                background: ecdh-coverage.percentage >= 100.0 ? #33cc33 : #e6b300;
+                                border-radius: 10px;
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    Text {
+                        text: "Workflow Steps";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+
+                    // Current state indicator
+                    VerticalBox {
+                        spacing: 8px;
+                        alignment: LayoutAlignment.end;
+
+                        Text {
+                            text: "Current State:";
+                            font-size: 16px;
+                        }
+
+                        Text {
+                            text: workflow-state == "Ready" ? "● Ready" :
+                                  workflow-state == "AliceComplete" ? "● Alice Complete" :
+                                  workflow-state == "BobComplete" ? "● Bob Complete" :
+                                  workflow-state == "CharlieComplete" ? "● Charlie Complete" :
+                                  "● Transaction Extracted";
+                            color: workflow-state == "Ready" ? #808080 :
+                                   workflow-state == "AliceComplete" ? #3399e6 :
+                                   workflow-state == "BobComplete" ? #e6b300 :
+                                   workflow-state == "CharlieComplete" ? #9966e6 :
+                                   #33cc33;
+                            font-size: 14px;
+                        }
+                    }
+
+                    // Step buttons
+                    VerticalBox {
+                        spacing: 8px;
+                        padding: 0px;
+
+                        MenuButton {
+                            text: "1. Alice Creates PSBT\n(Creator + Signer)";
+                            enabled: workflow-state == "Ready" || workflow-state == "TransactionExtracted";
+                            clicked => { root.alice-creates(); }
+                        }
+
+                        MenuButton {
+                            text: "2. Bob Signs\n(Signer)";
+                            enabled: workflow-state == "AliceComplete";
+                            clicked => { root.bob-signs(); }
+                        }
+
+                        MenuButton {
+                            text: "3. Charlie Finalizes\n(Signer + Extractor)";
+                            enabled: workflow-state == "BobComplete";
+                            clicked => { root.charlie-finalizes(); }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    // Reset button
+                    MenuButton {
+                        text: "🔄 Reset";
+                        clicked => { root.reset(); }
+                    }
+                }
+            }
+
+            // Center panel - PSBT Viewer
+            Rectangle {
+                background: #444444;
+                horizontal-stretch: 1;
+
+                if !has-psbt: VerticalBox {
+                    alignment: center;
+
+                    Text {
+                        text: "No PSBT Created Yet";
+                        font-size: 20px;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Start workflow by having Alice create PSBT";
+                        color: #808080;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                if has-psbt: VerticalBox {
+                    padding: 16px;
+
+                    Text {
+                        text: "PSBT Properties";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+
+                    ScrollView {
+                        VerticalBox {
+                            spacing: 16px;
+
+                            // Global fields
+                            if global-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Global Fields (" + global-fields.length + " fields)";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in global-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-highlighted ? #ccffcc :
+                                               field.is-sp-field ? #e6f2ff :
+                                               #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+
+                            // Input fields
+                            if input-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Input Maps";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in input-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-highlighted ? #ccffcc :
+                                               field.is-sp-field ? #e6f2ff :
+                                               #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+
+                            // Output fields
+                            if output-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Output Maps";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in output-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-highlighted ? #ccffcc :
+                                               field.is-sp-field ? #e6f2ff :
+                                               #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottom panel - Transaction summary and input states
+        Rectangle {
+            background: #484848;
+            height: 120px;
+
+            VerticalBox {
+                padding: 10px;
+
+                if has-psbt: HorizontalBox {
+                    spacing: 10px;
+                    padding: 5px;
+
+                    Text {
+                        text: "Transaction Summary";
+                        font-weight: 700;
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Inputs: " + tx-summary.total-input + " sats (" + tx-summary.num-inputs + " items)";
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Outputs: " + tx-summary.total-output + " sats (" + tx-summary.num-outputs + " items)";
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Fee: " + tx-summary.fee + " sats";
+                        color: tx-summary.fee > 100000 ? #e6b300 : #33cc33;
+                    }
+                }
+
+                if has-psbt: Rectangle { width: 100%; height: 1px; background: #666666; }
+
+                // Input states grid
+                if input-states.length > 0: HorizontalBox {
+                    spacing: 20px;
+
+                    for state in input-states: VerticalBox {
+                        spacing: 4px;
+
+                        Text {
+                            text: "Input " + state.index + ": " + state.signer-name;
+                            font-weight: 700;
+                            font-size: 12px;
+                        }
+
+                        HorizontalBox {
+                            spacing: 8px;
+
+                            Text {
+                                text: state.has-ecdh ? "✅ ECDH" : "⚪ ECDH";
+                                font-size: 10px;
+                                color: state.has-ecdh ? #33cc33 : #666666;
+                            }
+
+                            Text {
+                                text: state.has-dleq ? "✅ DLEQ" : "⚪ DLEQ";
+                                font-size: 10px;
+                                color: state.has-dleq ? #33cc33 : #666666;
+                            }
+
+                            Text {
+                                text: state.has-sig ? "✅ SIG" : "⚪ SIG";
+                                font-size: 10px;
+                                color: state.has-sig ? #33cc33 : #666666;
+                            }
+                        }
+                    }
+                }
+
+                if has-validation: HorizontalBox {
+                    spacing: 16px;
+
+                    Text {
+                        text: validation.dleq-valid ? "✅ DLEQ Valid" : "⚪ DLEQ Pending";
+                        color: validation.dleq-valid ? #33cc33 : #666666;
+                        font-size: 12px;
+                    }
+
+                    Text {
+                        text: validation.scripts-computed ? "✅ Scripts Computed" : "⚪ Scripts Pending";
+                        color: validation.scripts-computed ? #33cc33 : #666666;
+                        font-size: 12px;
+                    }
+
+                    Text {
+                        text: validation.tx-extracted ? "✅ TX Extracted" : "⚪ TX Pending";
+                        color: validation.tx-extracted ? #33cc33 : #666666;
+                        font-size: 12px;
+                    }
+                }
+
+                if !has-psbt: Text {
+                    text: "No transaction data";
+                    color: #808080;
+                }
+            }
+        }
+    }
+}

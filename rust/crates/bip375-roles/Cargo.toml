@@ -1,0 +1,17 @@
+[package]
+name = "bip375-roles"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+bip375-core.workspace = true
+bip375-crypto.workspace = true
+bitcoin.workspace = true
+secp256k1.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+hex.workspace = true

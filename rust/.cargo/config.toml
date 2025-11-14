@@ -1,0 +1,4 @@
+[alias]
+hardware-signer = "run -p hardware-signer --bin hardware-signer --features=gui"
+multi-signer = "run -p multi-signer --features=gui"
+psbt-viewer = "run -p psbt-viewer"

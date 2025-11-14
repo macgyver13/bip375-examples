@@ -1,0 +1,460 @@
+// BIP-375 Hardware Signer GUI
+// Main application window
+
+import { Button, VerticalBox, HorizontalBox, ScrollView, CheckBox, TextEdit, Palette } from "std-widgets.slint";
+
+// Data structures
+export struct PsbtField {
+    field-name: string,
+    field-type: string,
+    key-preview: string,      // Preview of key_data (for fields with keys)
+    value-preview: string,
+    is-highlighted: bool,
+    is-sp-field: bool,
+    map-index: int,  // -1 for global fields, >= 0 for input/output index
+}
+
+export struct TransactionSummary {
+    total-input: int,
+    total-output: int,
+    fee: int,
+    num-inputs: int,
+    num-outputs: int,
+}
+
+export struct ValidationResults {
+    ecdh-complete: bool,
+    dleq-valid: bool,
+    all-signed: bool,
+    attack-detected: bool,
+}
+
+component MenuButton inherits Button {
+    preferred-height: 40px;
+    max-height: 40px;
+}
+
+component PSBTFields inherits HorizontalBox{
+    padding: 8px;
+    spacing: 8px;
+
+    in property <PsbtField> field;
+
+    Text {
+        text: field.field-type;
+        font-size: 12px;
+        color: #666666;
+        vertical-alignment: center;
+        max-width: 40px;
+    }
+
+    if field.map-index >= 0: Text {
+        text: "[" + field.map-index + "]";
+        font-size: 12px;
+        color: #888888;
+        font-weight: 700;
+        vertical-alignment: center;
+        horizontal-alignment: left;
+        max-width: 30px;
+    }
+
+    TextInput {
+        text: field.is-sp-field ? field.field-name + " ✨" : field.field-name;
+        font-size: 14px;
+        color: #2c2c2c;
+        read-only: true;
+        horizontal-alignment: left;
+        max-width: 300px;
+    }
+
+    VerticalBox {
+        alignment: LayoutAlignment.center;
+        spacing: 2px;
+        padding: 0px;
+        horizontal-stretch: 1;
+
+        if field.key-preview != "": TextInput {
+            read-only: true;
+            text: "key: " + field.key-preview;
+            font-size: 10px;
+            color: #666666;
+            horizontal-alignment: right;
+        }
+
+        TextInput {
+            read-only: true;
+            text: field.value-preview;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: right;
+        }
+    }
+
+
+}
+
+// Main application component
+export component AppWindow inherits Window {
+    title: "BIP-375 Hardware Signer Demo";
+    preferred-width: 1400px;
+    preferred-height: 900px;
+    min-width: 1200px;
+    min-height: 700px;
+
+    // Properties
+    in-out property <string> workflow-state: "Ready";
+    in-out property <bool> attack-mode: false;
+    in-out property <bool> has-psbt: false;
+
+    // PSBT fields (passed from Rust)
+    in-out property <[PsbtField]> global-fields: [];
+    in-out property <[PsbtField]> input-fields: [];
+    in-out property <[PsbtField]> output-fields: [];
+
+    // Transaction summary
+    in-out property <TransactionSummary> tx-summary: {
+        total-input: 0,
+        total-output: 0,
+        fee: 0,
+        num-inputs: 0,
+        num-outputs: 0,
+    };
+
+    // Validation results
+    in-out property <ValidationResults> validation: {
+        ecdh-complete: false,
+        dleq-valid: false,
+        all-signed: false,
+        attack-detected: false,
+    };
+    in-out property <bool> has-validation: false;
+
+    // Callbacks (handled by Rust)
+    callback create-psbt();
+    callback sign-psbt();
+    callback finalize-transaction();
+    callback reset();
+
+    VerticalBox {
+        // Header
+        Rectangle {
+            background: #444444;
+            height: 5%;
+
+            HorizontalBox {
+                padding: 16px;
+
+                Text {
+                    text: "BIP-375 Hardware Signer Demo";
+                    font-size: 20px;
+                    font-weight: 700;
+                    horizontal-alignment: left;
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: attack-mode ? "🚨 ATTACK MODE" : "NORMAL MODE";
+                    color: attack-mode ? #e63333 : #33cc33;
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+            }
+        }
+
+        HorizontalBox {
+            vertical-stretch: 1;
+            padding: 0px;
+
+            // Left panel - Workflow
+            Rectangle {
+                width: 350px;
+                background: #444444;
+
+                VerticalBox {
+                    alignment: LayoutAlignment.end;
+                    padding: 16px;
+                    spacing: 16px;
+
+                    Text {
+                        text: "Workflow";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+
+                    // State indicator
+                    VerticalBox {
+                        spacing: 8px;
+                        alignment: LayoutAlignment.end;
+
+                        Text {
+                            text: "Current State:";
+                            font-size: 16px;
+                        }
+
+                        Text {
+                            text: workflow-state == "Ready" ? "● Ready" :
+                                  workflow-state == "PsbtCreated" ? "● PSBT Created" :
+                                  workflow-state == "PsbtSigned" ? "● PSBT Signed" :
+                                  "● Finalized";
+                            color: workflow-state == "Ready" ? #808080 :
+                                   workflow-state == "PsbtCreated" ? #3399e6 :
+                                   workflow-state == "PsbtSigned" ? #9966e6 :
+                                   #33cc33;
+                            font-size: 14px;
+                        }
+                    }
+
+                    // Step buttons
+                    VerticalBox {
+                        spacing: 8px;
+                        padding: 0px;
+
+                        MenuButton {
+                            text: "1. Create PSBT\n(Coordinator)";
+                            enabled: workflow-state == "Ready" || workflow-state == "TransactionExtracted";
+                            clicked => { root.create-psbt(); }
+                        }
+
+                        if workflow-state == "PsbtCreated": HorizontalBox {
+                            padding-top: 0px; padding-bottom: 0px;
+                            Text {
+                                text: "Simulate Malicious Hardware:";
+                                vertical-alignment: center;
+                            }
+
+                            CheckBox {
+                                checked <=> root.attack-mode;
+                            }
+                        }
+
+                        MenuButton {
+                            text: "2. Sign PSBT\n(Hardware Device)";
+                            enabled: workflow-state == "PsbtCreated";
+                            clicked => { root.sign-psbt(); }
+                        }
+
+                        MenuButton {
+                            text: "3. Finalize Transaction\n(Coordinator)";
+                            enabled: workflow-state == "PsbtSigned";
+                            clicked => { root.finalize-transaction(); }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    // Controls
+                    MenuButton {
+                        text: "🔄 Reset";
+                        clicked => { root.reset(); }
+                    }
+
+                    
+                }
+            }
+
+            // Center panel - PSBT Viewer
+            Rectangle {
+                background: #444444;
+                horizontal-stretch: 1;
+                height: 78%; //required to handle has-psbt true stretch
+
+                if !has-psbt: VerticalBox {
+                    alignment: center;
+
+                    Text {
+                        text: "No PSBT Created Yet";
+                        font-size: 20px;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Create a PSBT to begin";
+                        color: #808080;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                if has-psbt: VerticalBox {
+                    padding: 16px;
+
+                    Text {
+                        text: "PSBT Properties";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+
+                    ScrollView {
+                        VerticalBox {
+                            spacing: 16px;
+
+                            // Global fields
+                            if global-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Global Fields (" + global-fields.length + " fields)";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in global-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-highlighted ? #ccffcc :
+                                               field.is-sp-field ? #e6f2ff :
+                                               #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+
+                            // Input fields
+                            if input-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Input Maps";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in input-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-highlighted ? #ccffcc :
+                                               field.is-sp-field ? #e6f2ff :
+                                               #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+
+                            // Output fields
+                            if output-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Output Maps";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in output-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-highlighted ? #ccffcc :
+                                               field.is-sp-field ? #e6f2ff :
+                                               #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottom panel - Transaction summary
+        Rectangle {
+            background: #484848;
+
+            VerticalBox {
+                padding: 10px;
+
+                if has-psbt: HorizontalBox {
+                    spacing: 10px;
+                    padding: 5px;
+                    height: 5%;
+
+                    Text {
+                        text: "Transaction Summary";
+                        font-weight: 700;
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Inputs: " + tx-summary.total-input + " sats (" + tx-summary.num-inputs + " items)";
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Outputs: " + tx-summary.total-output + " sats (" + tx-summary.num-outputs + " items)";
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Fee: " + tx-summary.fee + " sats";
+                        color: tx-summary.fee > 100000 ? #e6b300 : #33cc33;
+                    }
+                }
+
+                if has-psbt: Rectangle { width: 100%; height: 1px; background: #666666; }
+
+                if has-validation: HorizontalBox {
+                    padding: 0px;
+
+                    if validation.attack-detected: Text {
+                        text: "🚨 ATTACK DETECTED";
+                        color: #e63333;
+                        font-weight: 700;
+                    }
+
+                    if !validation.attack-detected: HorizontalBox {
+                        spacing: 5px;
+
+                        Text {
+                            text: "✅ ECDH Complete";
+                            color: validation.ecdh-complete ? #33cc33 : #e63333;
+                        }
+
+                        Text {
+                            text: "✅ DLEQ Valid";
+                            color: validation.dleq-valid ? #33cc33 : #e63333;
+                        }
+
+                        Text {
+                            text: "✅ All Signed";
+                            color: validation.all-signed ? #33cc33 : #e63333;
+                        }
+                    }
+                }
+
+                if !has-psbt: Text {
+                    text: "No transaction data";
+                    color: #808080;
+                }
+        }
+    }
+}
+}

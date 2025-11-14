@@ -1,0 +1,11 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bip375-core.workspace = true
+bip375-io.workspace = true
+hex.workspace = true
+secp256k1.workspace = true
+sha2.workspace = true

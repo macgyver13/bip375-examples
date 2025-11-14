@@ -1,0 +1,21 @@
+[package]
+name = "psbt-viewer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bip375-core.workspace = true
+bip375-gui-common = { workspace = true }
+slint = "1.8"
+serde = { workspace = true }
+serde_json = { workspace = true }
+rfd = "0.15"
+
+[build-dependencies]
+slint-build = "1.8"
+
+[package.metadata.bundle]
+name = "PSBT Viewer"
+identifier = "xyz.spmac.psbtviewer"
+version = "0.1.0"
+resources = ["../../../test_vectors.json"]

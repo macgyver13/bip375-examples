@@ -1,0 +1,46 @@
+[package]
+name = "hardware-signer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "cli"
+
+[features]
+default = []
+gui = ["slint","slint-build"]
+
+[[bin]]
+name = "cli"
+path = "src/main.rs"
+
+[[bin]]
+name = "hardware-signer"
+path = "src/gui/main.rs"
+required-features = ["gui"]
+
+[dependencies]
+bip375-core.workspace = true
+bip375-crypto.workspace = true
+bip375-gui-common.workspace = true
+bip375-io.workspace = true
+bip375-roles.workspace = true
+bitcoin.workspace = true
+secp256k1.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hex.workspace = true
+sha2.workspace = true
+ripemd.workspace = true
+chrono.workspace = true
+common = { path = "../common" }
+
+# GUI framework
+slint = { version = "1.8", optional = true }
+
+[build-dependencies]
+slint-build = { version = "1.8", optional = true }
+
+[package.metadata.bundle.bin.hardware-signer]
+name = "Hardware Signer Demo"
+identifier = "xyz.spmac.hardwaresigner"
+version = "0.1.0"

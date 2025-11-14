@@ -1,0 +1,12 @@
+[package]
+name = "bip375-gui-common"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bip375-core.workspace = true
+bip375-io.workspace = true
+hex.workspace = true
+base64 = "0.22"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true

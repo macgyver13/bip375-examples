@@ -1,0 +1,482 @@
+// BIP-375 PSBT Viewer GUI
+// Standalone PSBT visualization and import/export tool
+
+import { Button, VerticalBox, HorizontalBox, ScrollView, TextEdit, LineEdit, Palette } from "std-widgets.slint";
+
+// Data structures
+export struct PsbtField {
+    field-name: string,
+    field-type: string,
+    key-preview: string,      // Preview of key_data (for fields with keys)
+    value-preview: string,
+    is-sp-field: bool,
+    map-index: int,  // -1 for global fields, >= 0 for input/output index
+}
+
+export struct TransactionSummary {
+    total-input: int,
+    total-output: int,
+    fee: int,
+    num-inputs: int,
+    num-outputs: int,
+}
+
+export struct TestVector {
+    description: string,
+    is-valid: bool,
+    comment: string,
+    psbt-base64: string,
+}
+
+component MenuButton inherits Button {
+    preferred-height: 40px;
+    max-height: 40px;
+}
+
+component PSBTFields inherits HorizontalBox{
+    padding: 8px;
+    spacing: 8px;
+
+    in property <PsbtField> field;
+
+    Text {
+        text: field.field-type;
+        font-size: 12px;
+        color: #666666;
+        vertical-alignment: center;
+        max-width: 40px;
+    }
+
+    if field.map-index >= 0: Text {
+        text: "[" + field.map-index + "]";
+        font-size: 12px;
+        color: #888888;
+        font-weight: 700;
+        vertical-alignment: center;
+        horizontal-alignment: left;
+        max-width: 30px;
+    }
+
+    TextInput {
+        text: field.is-sp-field ? field.field-name + " ✨" : field.field-name;
+        font-size: 14px;
+        color: #2c2c2c;
+        read-only: true;
+        horizontal-alignment: left;
+        max-width: 300px;
+    }
+
+    VerticalBox {
+        alignment: LayoutAlignment.center;
+        spacing: 2px;
+        padding: 0px;
+        horizontal-stretch: 1;
+
+        if field.key-preview != "": TextInput {
+            read-only: true;
+            text: "key: " + field.key-preview;
+            font-size: 10px;
+            color: #666666;
+            horizontal-alignment: right;
+        }
+
+        TextInput {
+            read-only: true;
+            text: field.value-preview;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// Main application component
+export component AppWindow inherits Window {
+    title: "BIP-375 PSBT Viewer";
+    preferred-width: 1400px;
+    preferred-height: 900px;
+    min-width: 1200px;
+    min-height: 700px;
+
+    // Properties
+    in-out property <bool> has-psbt: false;
+    in-out property <string> import-text: "";
+    in-out property <string> status-message: "";
+
+    // PSBT fields (passed from Rust)
+    in-out property <[PsbtField]> global-fields: [];
+    in-out property <[PsbtField]> input-fields: [];
+    in-out property <[PsbtField]> output-fields: [];
+
+    // Transaction summary
+    in-out property <TransactionSummary> tx-summary: {
+        total-input: 0,
+        total-output: 0,
+        fee: 0,
+        num-inputs: 0,
+        num-outputs: 0,
+    };
+
+    // Test vector properties
+    in-out property <[TestVector]> test-vectors: [];
+    in-out property <int> selected-test-vector-index: -1;
+    in-out property <string> test-vector-status: "";
+
+    // Callbacks (handled by Rust)
+    callback import-psbt(string);
+    callback clear();
+    callback browse-test-vectors();
+    callback select-test-vector(int);
+
+    VerticalBox {
+        // Header
+        Rectangle {
+            background: #444444;
+            height: 60px;
+
+            HorizontalBox {
+                padding: 16px;
+
+                Text {
+                    text: "BIP-375 PSBT Viewer";
+                    font-size: 20px;
+                    font-weight: 700;
+                    horizontal-alignment: left;
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: has-psbt ? "✅ PSBT Loaded" : "⚪ No PSBT";
+                    color: has-psbt ? #33cc33 : #808080;
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+            }
+        }
+
+        HorizontalBox {
+            vertical-stretch: 1;
+            padding: 0px;
+
+            // Left panel - Test Vectors & Import
+            Rectangle {
+                width: 400px;
+                background: #444444;
+
+                VerticalBox {
+                    alignment: LayoutAlignment.start;
+                    padding: 16px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "Import PSBT";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+
+                    // Test Vector Browser Section
+                    VerticalBox {
+                        spacing: 8px;
+
+                        // Header with browse button
+                        HorizontalBox {
+                            spacing: 8px;
+                            padding: 0px;
+
+                            Text {
+                                text: "Test Vectors";
+                                font-size: 16px;
+                                font-weight: 600;
+                                horizontal-stretch: 1;
+                            }
+
+                            Button {
+                                text: "📁";
+                                width: 30px;
+                                height: 30px;
+                                clicked => { root.browse-test-vectors(); }
+                            }
+                        }
+
+                        // Status message
+                        if test-vector-status != "": Text {
+                            text: test-vector-status;
+                            font-size: 11px;
+                            color: #aaaaaa;
+                            wrap: word-wrap;
+                        }
+
+                        // Test vector list (scrollable)
+                        ScrollView {
+                            max-height: 750px;
+                            min-height: 200px;
+
+                                VerticalBox {
+                                    spacing: 4px;
+
+                                    for vector[index] in test-vectors: Rectangle {
+                                        height: 70px;
+                                        background: selected-test-vector-index == index ? #555555 : (touch-area.has-hover ? #4a4a4a : #3a3a3a);
+                                        border-radius: 4px;
+
+                                        touch-area := TouchArea {
+                                            clicked => { root.select-test-vector(index); }
+                                        }
+
+                                        HorizontalBox {
+                                            padding: 8px;
+                                            spacing: 8px;
+
+                                            // Validity indicator
+                                            Rectangle {
+                                                width: 8px;
+                                                background: vector.is-valid ? #33cc33 : #ff5555;
+                                                border-radius: 4px;
+                                            }
+
+                                            VerticalBox {
+                                                alignment: LayoutAlignment.start;
+                                                spacing: 4px;
+
+                                                Text {
+                                                    text: vector.description;
+                                                    font-size: 12px;
+                                                    font-weight: 600;
+                                                    wrap: word-wrap;
+                                                    color: #ffffff;
+                                                }
+
+                                                Text {
+                                                    text: vector.is-valid ? "✅ Valid" : "❌ Invalid";
+                                                    font-size: 10px;
+                                                    color: vector.is-valid ? #88dd88 : #ff8888;
+                                                }
+
+                                                if vector.comment != "": Text {
+                                                    text: vector.comment;
+                                                    font-size: 9px;
+                                                    color: #999999;
+                                                    wrap: word-wrap;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    // Import section
+                    VerticalBox {
+                        spacing: 8px;
+
+                        Text {
+                            text: "Import PSBT (Base64):";
+                            font-size: 14px;
+                        }
+
+                        TextEdit {
+                            text <=> import-text;
+                            font-size: 14px;
+                            min-height: 180px;
+                            placeholder-text: "Paste base64 PSBT here...";
+                        }
+
+                        MenuButton {
+                            text: "Import PSBT";
+                            enabled: import-text != "";
+                            clicked => { root.import-psbt(import-text); }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    // Status message
+                    if status-message != "": Text {
+                        text: status-message;
+                        font-size: 12px;
+                        color: #33cc33;
+                        wrap: word-wrap;
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                    }
+
+                    // Clear button
+                    MenuButton {
+                        text: "🔄 Clear";
+                        clicked => { root.clear(); }
+                    }
+                }
+            }
+
+            // Center panel - PSBT Viewer
+            Rectangle {
+                background: #444444;
+                horizontal-stretch: 1;
+
+                if !has-psbt: VerticalBox {
+                    alignment: center;
+
+                    Text {
+                        text: "No PSBT Loaded";
+                        font-size: 20px;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Import a PSBT to view its contents";
+                        color: #808080;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                if has-psbt: VerticalBox {
+                    padding: 16px;
+
+                    Text {
+                        text: "PSBT Properties";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+
+                    ScrollView {
+                        VerticalBox {
+                            spacing: 16px;
+
+                            // Global fields
+                            if global-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Global Fields (" + global-fields.length + " fields)";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in global-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-sp-field ? #e6f2ff : #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+
+                            // Input fields
+                            if input-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Input Maps";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in input-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-sp-field ? #e6f2ff : #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+
+                            // Output fields
+                            if output-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Output Maps";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in output-fields: Rectangle {
+                                    height: 40px;
+                                    background: field.is-sp-field ? #e6f2ff : #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottom panel - Transaction summary
+        Rectangle {
+            background: #484848;
+            height: 80px;
+
+            VerticalBox {
+                padding: 10px;
+
+                if has-psbt: HorizontalBox {
+                    spacing: 10px;
+                    padding: 5px;
+
+                    Text {
+                        text: "Transaction Summary";
+                        font-weight: 700;
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Inputs: " + tx-summary.total-input + " sats (" + tx-summary.num-inputs + " items)";
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Outputs: " + tx-summary.total-output + " sats (" + tx-summary.num-outputs + " items)";
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Fee: " + tx-summary.fee + " sats";
+                        color: tx-summary.fee > 100000 ? #e6b300 : #33cc33;
+                    }
+                }
+
+                if !has-psbt: Text {
+                    text: "No transaction data";
+                    color: #808080;
+                }
+            }
+        }
+    }
+}
