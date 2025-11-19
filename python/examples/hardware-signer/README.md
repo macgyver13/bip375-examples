@@ -18,6 +18,27 @@ This directory demonstrates a realistic air-gapped hardware wallet workflow for 
   - Silent payment output: 245,000 sats
 - **Transaction fee**: 5,000 sats
 
+## BIP39 Mnemonic Support
+
+Both scripts support **BIP39 mnemonics** for deterministic key generation, enabling interoperability with other wallets:
+
+```bash
+# Use BIP39 mnemonic (12 or 24 words)
+python3 wallet_coordinator.py --mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+python3 hw_device.py --mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
+# Or use simple seed (for testing)
+python3 wallet_coordinator.py --seed "my_test_seed"
+python3 hw_device.py --seed "my_test_seed"
+```
+
+**Key Derivation Paths** (BIP352 compliant):
+- Scan key: `m/352'/0'/0'/1'/0`
+- Spend key: `m/352'/0'/0'/0'/0`
+- Input keys: `m/84'/0'/0'/0/{index}` (BIP84)
+
+**Note**: The hardware wallet and coordinator use the **same mnemonic** (they're the same wallet split into online/offline parts). The recipient uses a separate demo seed.
+
 ## Examples
 
 ### Interactive Scripts (Run These)
