@@ -147,8 +147,8 @@ class PublicKey(GE):
 class Wallet:
     """Deterministic wallet for generating silent payment keys
     
-    Supports both simple seed-based derivation (for testing) and BIP39 mnemonic
-    with BIP32 hierarchical deterministic derivation (for production use).
+    Supports both simple seed-based derivation and BIP39 mnemonic
+    with BIP32 hierarchical deterministic derivation (for testing).
     
     BIP352 Silent Payments Derivation Paths:
     - Scan key:  m/352'/0'/0'/1'/0
@@ -162,7 +162,7 @@ class Wallet:
         
         Args:
             seed: Simple seed string (for testing/demo, backward compatibility)
-            mnemonic: BIP39 mnemonic phrase (12 or 24 words, for production)
+            mnemonic: BIP39 mnemonic phrase (12 or 24 words)
             account: BIP32 account number (default: 0)
             coin_type: BIP32 coin type (default: 0 for Bitcoin mainnet)
         """

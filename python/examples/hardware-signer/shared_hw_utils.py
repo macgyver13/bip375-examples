@@ -52,7 +52,7 @@ def get_hardware_wallet(seed: str = None, mnemonic: str = None):
     
     Args:
         seed: Simple seed string (for backward compatibility/testing)
-        mnemonic: BIP39 mnemonic phrase (12 or 24 words, for production use)
+        mnemonic: BIP39 mnemonic phrase (12 or 24 words)
     
     Returns:
         Wallet instance configured with the provided seed material
@@ -65,23 +65,25 @@ def get_hardware_wallet(seed: str = None, mnemonic: str = None):
         # Default for demo
         return Wallet(seed="hardware_wallet_coldcard_demo")
 
-def get_transaction_inputs():
+def get_transaction_inputs(wallet: Wallet):
     """
     Get the transaction inputs for the hardware signing scenario
 
     2 inputs controlled by the hardware wallet:
     - Input 0: 100,000 sats
     - Input 1: 200,000 sats
+    
+    Args:
+        hw_wallet: Wallet instance for the hardware wallet
 
     Returns:
         List of UTXO objects with private keys set to None initially.
         Hardware device will set private keys during signing.
     """
-    hw_wallet = get_hardware_wallet()
 
     # Generate public keys for the inputs
-    pubkey0 = hw_wallet.input_key_pair(0)[1]
-    pubkey1 = hw_wallet.input_key_pair(1)[1]
+    pubkey0 = wallet.input_key_pair(0)[1]
+    pubkey1 = wallet.input_key_pair(1)[1]
 
     inputs = [
         # Input 0
@@ -106,13 +108,17 @@ def get_transaction_inputs():
 
     return inputs
 
-def get_transaction_outputs():
+def get_transaction_outputs(wallet: Wallet, recipient_address):
     """
     Get the transaction outputs for the hardware signing scenario
 
     2 outputs:
     - Output 0: Silent payment CHANGE output (50,000 sats with label=0)
     - Output 1: Silent payment output to recipient (245,000 sats)
+    
+    Args:
+        wallet: Wallet instance for the hardware wallet
+        recipient_address: SilentPaymentAddress for recipient
 
     Returns:
         List of output dictionaries
@@ -139,11 +145,6 @@ def get_transaction_outputs():
 
     See BIP 375 "Change Detection" section and BIP 352 "Labels" section.
     """
-    # Hardware wallet keys - change returns to same wallet
-    hw_wallet = get_hardware_wallet()
-
-    # Recipient address (external party)
-    recipient_address = get_recipient_address()
 
     outputs = [
         # Silent payment CHANGE output - returns to hardware wallet
@@ -151,8 +152,8 @@ def get_transaction_outputs():
         {
             "amount": 50000,  # 50,000 sats
             "address": SilentPaymentAddress(
-                scan_key=hw_wallet.scan_pub,
-                spend_key=hw_wallet.spend_pub,
+                scan_key=wallet.scan_pub,
+                spend_key=wallet.spend_pub,
                 label=0  # Label 0 = change (BIP 352)
             )
         },

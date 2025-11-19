@@ -33,7 +33,7 @@ from shared_hw_utils import (
 # Add parent directories to path for PSBT imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from psbt_sp.psbt import SilentPaymentPSBT
-from psbt_sp.crypto import PublicKey
+from psbt_sp.crypto import Wallet, PublicKey
 from secp256k1_374 import GE
 
 def receive_psbt(auto_read=False):
@@ -119,11 +119,13 @@ def receive_psbt(auto_read=False):
         print(f"\n❌ ERROR: Invalid choice '{choice}'. Please choose 'read' or 'paste'.")
         return None, None
 
-def verify_transaction_details(auto_approve=False, attack_mode=False):
+def verify_transaction_details(wallet: Wallet, recipient_address, auto_approve=False, attack_mode=False):
     """
     Display transaction details on hardware device screen for user verification
 
     Args:
+        wallet: Wallet instance for the hardware wallet
+        recipient_address: SilentPaymentAddress for recipient
         auto_approve: If True, automatically approve without user prompt
         attack_mode: If True, simulate attack mode
 
@@ -133,9 +135,8 @@ def verify_transaction_details(auto_approve=False, attack_mode=False):
     print(" HARDWARE DEVICE DISPLAY (Secure Element)")
     print("=" * 70)
 
-    inputs = get_transaction_inputs()
-    outputs = get_transaction_outputs()
-
+    inputs = get_transaction_inputs(wallet)
+    outputs = get_transaction_outputs(wallet, recipient_address)
     print_transaction_details(inputs, outputs)
 
     print("\n⚠️  VERIFY TRANSACTION ON DEVICE SCREEN")
@@ -170,8 +171,8 @@ def verify_transaction_details(auto_approve=False, attack_mode=False):
             print("\n❌ Transaction REJECTED by user")
             return False
 
-def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False, 
-              mnemonic: str = None, seed: str = None):
+def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet, recipient_address,
+              attack_mode=False):
     """
     Sign the PSBT with hardware wallet private keys
 
@@ -180,21 +181,19 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False,
     Args:
         psbt: The PSBT to sign
         metadata: Transaction metadata
+        wallet: Wallet instance for the hardware wallet
+        recipient_address: SilentPaymentAddress for recipient
         attack_mode: If True, simulate malicious behavior with wrong scan key
-        mnemonic: BIP39 mnemonic phrase for the hardware wallet
-        seed: Simple seed string (for testing/demo)
     """
     print("\n SIGNER: Processing transaction with hardware keys...")
 
     # Get private keys from hardware wallet's secure storage
-    hw_wallet = get_hardware_wallet(seed=seed, mnemonic=mnemonic)
-    inputs = get_transaction_inputs()
+    inputs = get_transaction_inputs(wallet)
 
     # Get all scan keys from outputs
     # We need scan keys for ALL silent payment outputs:
     # 1. Change output (hardware wallet's scan key)
     # 2. Recipient output (recipient's scan key)
-    recipient_address = get_recipient_address()
 
     if attack_mode:
         # ATTACK SIMULATION: Use attacker's scan key instead of legitimate recipient
@@ -236,7 +235,7 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False,
 
         # Use malicious scan key for ECDH computation
         # Note: In attack mode, we only use malicious key (not realistic but for demo)
-        scan_keys = [malicious_scan_key, hw_wallet.scan_pub]
+        scan_keys = [malicious_scan_key, wallet.scan_pub]
     else:
         # Normal mode: Extract scan keys directly from PSBT output fields
         from psbt_sp.psbt_utils import extract_scan_keys_from_outputs
@@ -251,7 +250,7 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False,
         # In real hardware wallet, device wouldn't know which is change vs recipient
         # It just processes all scan keys found in PSBT
         if len(scan_keys) >= 2:
-            if scan_keys[0].bytes == hw_wallet.scan_pub.bytes:
+            if scan_keys[0].bytes == wallet.scan_pub.bytes:
                 print(f"     (Output 0 is change to hardware wallet)")
             if len(scan_keys) > 1:
                 print(f"     (Output 1 is payment to recipient)")
@@ -263,7 +262,7 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False,
 
     # Set private keys for hardware-controlled inputs
     for input_idx in hw_controlled_inputs:
-        private_key = hw_wallet.input_key_pair(input_idx)[0]
+        private_key = wallet.input_key_pair(input_idx)[0]
         inputs[input_idx].private_key = private_key
 
     print(f"   Set private keys for inputs {hw_controlled_inputs}")
@@ -282,7 +281,7 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False,
     # Prepare scan private keys for label computation
     # Hardware wallet knows its own scan private key (for change with label=0)
     scan_privkeys = {
-        hw_wallet.scan_pub.bytes: hw_wallet.scan_priv.bytes
+        wallet.scan_pub.bytes: wallet.scan_priv.bytes
     }
 
     # Perform signing role
@@ -413,10 +412,16 @@ def main():
         print("❌ FAILED TO RECEIVE PSBT")
         print("=" * 70)
         sys.exit(1)
+    
+    # Create wallet instance once
+    hw_wallet = get_hardware_wallet(seed=seed, mnemonic=mnemonic)
+    recipient_address = get_recipient_address()  # Demo recipient (separate wallet)
 
     # Step 2: Verify transaction details
     print_separator()
-    approval_result = verify_transaction_details(auto_approve=args.auto_approve, attack_mode=args.attack)
+    approval_result = verify_transaction_details(hw_wallet, recipient_address,
+                                                 auto_approve=args.auto_approve, 
+                                                  attack_mode=args.attack)
 
     if not approval_result:
         print("\n" + "=" * 70)
@@ -429,7 +434,7 @@ def main():
 
     # Step 3: Sign PSBT
     print_separator()
-    signed_psbt = sign_psbt(psbt, metadata, attack_mode, mnemonic=mnemonic, seed=seed)
+    signed_psbt = sign_psbt(psbt, metadata, hw_wallet, recipient_address, attack_mode)
 
     if signed_psbt is None:
         print("\n" + "=" * 70)
