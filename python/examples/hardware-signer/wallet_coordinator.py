@@ -23,6 +23,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from shared_hw_utils import (
     get_transaction_inputs, get_transaction_outputs, get_recipient_address,
+    get_hardware_wallet,
     print_transaction_details,
     save_psbt_to_transfer_file, load_psbt_from_transfer_file,
     prompt_for_transfer, wait_for_user_input, print_header, reset_demo, cleanup_transfer_file, TRANSFER_FILE
@@ -32,11 +33,15 @@ from shared_hw_utils import (
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from psbt_sp.psbt import SilentPaymentPSBT, PSBTFieldType
 
-def create_psbt():
+def create_psbt(mnemonic: str = None, seed: str = None):
     """
     Step 1: Create initial PSBT structure
 
     Roles: CREATOR + CONSTRUCTOR + UPDATER
+    
+    Args:
+        mnemonic: BIP39 mnemonic phrase for the hardware wallet
+        seed: Simple seed string (for testing/demo)
     """
     print_header(1, "Create PSBT Structure", "WALLET COORDINATOR (Online)")
 
@@ -45,7 +50,7 @@ def create_psbt():
     # Get transaction components
     inputs = get_transaction_inputs()
     outputs = get_transaction_outputs()
-    recipient_address = get_recipient_address()
+    recipient_address = get_recipient_address(mnemonic=mnemonic)
 
     # Display transaction details for user validation
     print_transaction_details(inputs, outputs)
@@ -62,7 +67,7 @@ def create_psbt():
     # 2. Derive public keys from xpub + path
     # 3. Match public keys to UTXOs being spent
     from psbt_sp.crypto import Wallet
-    hw_wallet = Wallet(seed="hardware_wallet_coldcard_demo")  # Demo purposes only
+    hw_wallet = get_hardware_wallet(seed=seed, mnemonic=mnemonic)
 
     # Build derivation info for each input (privacy mode - no derivation path revealed)
     derivation_paths = []
@@ -105,7 +110,8 @@ def create_psbt():
 
     return True  # Success
 
-def finalize_transaction(auto_read=False, auto_broadcast=False):
+def finalize_transaction(auto_read=False, auto_broadcast=False, 
+                         mnemonic: str = None, seed: str = None):
     """
     Step 3: Verify and finalize transaction
 
@@ -114,6 +120,8 @@ def finalize_transaction(auto_read=False, auto_broadcast=False):
     Args:
         auto_read: If True, automatically read from transfer file
         auto_broadcast: If True, skip broadcast confirmation
+        mnemonic: BIP39 mnemonic phrase for the hardware wallet
+        seed: Simple seed string (for testing/demo)
     """
     print_header(3, "Verify and Finalize Transaction", "WALLET COORDINATOR (Online)")
 
@@ -214,8 +222,8 @@ def finalize_transaction(auto_read=False, auto_broadcast=False):
     # Collect all expected scan keys from transaction outputs
     # We need to validate DLEQ proofs for ALL scan keys in the transaction
     from psbt_sp.crypto import Wallet
-    hw_wallet = Wallet(seed="hardware_wallet_coldcard_demo")  # Must match hw_device.py
-    recipient_address = get_recipient_address()
+    hw_wallet = get_hardware_wallet(seed=seed, mnemonic=mnemonic)
+    recipient_address = get_recipient_address(mnemonic=mnemonic)
 
     # Expected scan keys:
     # 1. Change output (hardware wallet's scan key)
@@ -414,7 +422,32 @@ def main():
                        help='Automatically read from transfer file when finalizing')
     parser.add_argument('--auto-broadcast', action='store_true',
                        help='Skip broadcast confirmation prompt')
+    parser.add_argument('--mnemonic', type=str,
+                       help='BIP39 mnemonic phrase (12 or 24 words)')
+    parser.add_argument('--seed', type=str,
+                       help='Simple seed string (for testing/demo)')
     args = parser.parse_args()
+    
+    # Handle mnemonic/seed input
+    mnemonic = None
+    seed = None
+    
+    if args.mnemonic:
+        # Validate mnemonic
+        try:
+            from mnemonic import Mnemonic
+            mnemo = Mnemonic("english")
+            if not mnemo.check(args.mnemonic):
+                print("\n❌ ERROR: Invalid BIP39 mnemonic phrase!")
+                print("   Please check your mnemonic and try again.")
+                sys.exit(1)
+            mnemonic = args.mnemonic
+        except ImportError:
+            print("\n❌ ERROR: 'mnemonic' library not installed!")
+            print("   Install with: pip install mnemonic")
+            sys.exit(1)
+    elif args.seed:
+        seed = args.seed
 
     print("\n" + "═" * 70)
     print(" " * 15 + "WALLET COORDINATOR - Air-Gapped Demo" + " " * 16)
@@ -442,14 +475,14 @@ def main():
 
         print("\n No existing PSBT found. Starting new transaction...")
         reset_demo()  # Clean up any old files
-        success = create_psbt()
+        success = create_psbt(mnemonic=mnemonic, seed=seed)
 
     elif metadata.get("step") == "created":
         # PSBT exists but not signed
         if action in ['create', 'new']:
             print("\n🧹 Starting fresh transaction...")
             reset_demo()
-            success = create_psbt()
+            success = create_psbt(mnemonic=mnemonic, seed=seed)
         elif action in ['finalize', 'read']:
             print("\n⚠️  Found unsigned PSBT in transfer file")
             print(f"   Created by: {metadata.get('created_by', 'unknown')}")
@@ -470,7 +503,7 @@ def main():
             if choice == "new":
                 print("\n Starting fresh transaction...")
                 reset_demo()
-                success = create_psbt()
+                success = create_psbt(mnemonic=mnemonic, seed=seed)
             else:
                 print("\n Waiting for hw_device.py to sign the PSBT.")
                 print("   Run hw_device.py, then run this script again to finalize.")
@@ -481,12 +514,13 @@ def main():
         if action in ['create', 'new']:
             print("\n Starting fresh transaction...")
             reset_demo()
-            success = create_psbt()
+            success = create_psbt(mnemonic=mnemonic, seed=seed)
         else:
             print("\n Found signed PSBT from hardware device")
             print("\n Proceeding to finalization...")
             success = finalize_transaction(auto_read=(args.auto_read or action == 'read'),
-                                          auto_broadcast=args.auto_broadcast)
+                                          auto_broadcast=args.auto_broadcast,
+                                          mnemonic=mnemonic, seed=seed)
 
             if success:
                 # Clean up transfer file on success

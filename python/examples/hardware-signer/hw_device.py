@@ -170,7 +170,8 @@ def verify_transaction_details(auto_approve=False, attack_mode=False):
             print("\n❌ Transaction REJECTED by user")
             return False
 
-def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
+def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False, 
+              mnemonic: str = None, seed: str = None):
     """
     Sign the PSBT with hardware wallet private keys
 
@@ -180,11 +181,13 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
         psbt: The PSBT to sign
         metadata: Transaction metadata
         attack_mode: If True, simulate malicious behavior with wrong scan key
+        mnemonic: BIP39 mnemonic phrase for the hardware wallet
+        seed: Simple seed string (for testing/demo)
     """
     print("\n SIGNER: Processing transaction with hardware keys...")
 
     # Get private keys from hardware wallet's secure storage
-    hw_wallet = get_hardware_wallet()
+    hw_wallet = get_hardware_wallet(seed=seed, mnemonic=mnemonic)
     inputs = get_transaction_inputs()
 
     # Get all scan keys from outputs
@@ -339,7 +342,62 @@ def main():
                        help='Automatically approve transaction without prompt')
     parser.add_argument('--attack', action='store_true',
                        help='Simulate malicious hardware (attack mode)')
+    parser.add_argument('--mnemonic', type=str,
+                       help='BIP39 mnemonic phrase (12 or 24 words)')
+    parser.add_argument('--seed', type=str,
+                       help='Simple seed string (for testing/demo)')
     args = parser.parse_args()
+    
+    # Handle mnemonic/seed input
+    mnemonic = None
+    seed = None
+    
+    if args.mnemonic:
+        # Validate mnemonic
+        try:
+            from mnemonic import Mnemonic
+            mnemo = Mnemonic("english")
+            if not mnemo.check(args.mnemonic):
+                print("\n❌ ERROR: Invalid BIP39 mnemonic phrase!")
+                print("   Please check your mnemonic and try again.")
+                sys.exit(1)
+            mnemonic = args.mnemonic
+            print("\n Using provided BIP39 mnemonic")
+        except ImportError:
+            print("\n❌ ERROR: 'mnemonic' library not installed!")
+            print("   Install with: pip install mnemonic")
+            sys.exit(1)
+    elif args.seed:
+        seed = args.seed
+        print(f"\n Using provided seed: {seed}")
+    else:
+        # Prompt user for mnemonic
+        print("\n" + "=" * 70)
+        print(" SEED CONFIGURATION")
+        print("=" * 70)
+        print("\n Enter your BIP39 mnemonic phrase (12 or 24 words):")
+        print("   (or press Enter to use demo seed)")
+        print()
+        user_input = input("→ ").strip()
+        
+        if user_input:
+            # Validate mnemonic
+            try:
+                from mnemonic import Mnemonic
+                mnemo = Mnemonic("english")
+                if not mnemo.check(user_input):
+                    print("\n❌ ERROR: Invalid BIP39 mnemonic phrase!")
+                    print("   Please check your mnemonic and try again.")
+                    sys.exit(1)
+                mnemonic = user_input
+                print("\n BIP39 mnemonic validated successfully")
+            except ImportError:
+                print("\n❌ ERROR: 'mnemonic' library not installed!")
+                print("   Install with: pip install mnemonic")
+                sys.exit(1)
+        else:
+            seed = "hardware_wallet_coldcard_demo"
+            print("\n Using demo seed (for testing only)")
 
     print("\n" + "═" * 70)
     print(" " * 17 + "HARDWARE DEVICE - Air-Gapped Demo")
@@ -371,7 +429,7 @@ def main():
 
     # Step 3: Sign PSBT
     print_separator()
-    signed_psbt = sign_psbt(psbt, metadata, attack_mode)
+    signed_psbt = sign_psbt(psbt, metadata, attack_mode, mnemonic=mnemonic, seed=seed)
 
     if signed_psbt is None:
         print("\n" + "=" * 70)

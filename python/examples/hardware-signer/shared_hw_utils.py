@@ -25,26 +25,45 @@ def compute_pubkey_hash(public_key: PublicKey) -> bytes:
     ripemd160_hash = hashlib.new('ripemd160', sha256_hash).digest()
     return ripemd160_hash
 
-def get_recipient_address():
+def get_recipient_address(mnemonic: str = None):
     """
     Get the silent payment recipient address
 
     In a real scenario, this would be provided by the recipient
     or scanned from a QR code / copied from a payment request.
+    
+    Args:
+        mnemonic: Optional BIP39 mnemonic for the recipient wallet
     """
-    wallet = Wallet(seed="recipient_hardware_signer_demo")
+    if mnemonic:
+        wallet = Wallet(mnemonic=mnemonic)
+    else:
+        wallet = Wallet(seed="recipient_hardware_signer_demo")
     return SilentPaymentAddress(
         scan_key=wallet.scan_pub,
         spend_key=wallet.spend_pub
     )
 
-def get_hardware_wallet():
+def get_hardware_wallet(seed: str = None, mnemonic: str = None):
     """
     Get the hardware wallet's deterministic wallet for key generation
 
     In a real scenario, this would be a hardware device with secure storage.
+    
+    Args:
+        seed: Simple seed string (for backward compatibility/testing)
+        mnemonic: BIP39 mnemonic phrase (12 or 24 words, for production use)
+    
+    Returns:
+        Wallet instance configured with the provided seed material
     """
-    return Wallet(seed="hardware_wallet_coldcard_demo")
+    if mnemonic:
+        return Wallet(mnemonic=mnemonic)
+    elif seed:
+        return Wallet(seed=seed)
+    else:
+        # Default for demo
+        return Wallet(seed="hardware_wallet_coldcard_demo")
 
 def get_transaction_inputs():
     """
