@@ -26,6 +26,7 @@ members = [
     "crates/bip375-gui-common",
     "crates/bip375-io",
     "crates/bip375-roles",
+    "crates/bip375-uniffi",
     "examples/hardware-signer",
     "examples/multi-signer",
     "tools/psbt-viewer",
