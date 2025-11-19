@@ -1,0 +1,68 @@
+namespace bip375 {
+  [Throws=Bip375Error]
+  SilentPaymentPsbt roles_create_psbt(sequence<Utxo> inputs, sequence<Output> outputs);
+  
+  [Throws=Bip375Error]
+  void roles_add_inputs(SilentPaymentPsbt psbt, sequence<Utxo> inputs);
+  
+  [Throws=Bip375Error]
+  void roles_add_outputs(SilentPaymentPsbt psbt, sequence<Output> outputs);
+  
+  // TODO: Implement this function when ecdh_sharer module is available
+  // [Throws=Bip375Error]
+  // void roles_add_ecdh_shares_full(SilentPaymentPsbt psbt, sequence<Utxo> inputs, sequence<sequence<u8>> scan_keys, boolean include_dleq);
+  
+  [Throws=Bip375Error]
+  void roles_finalize_inputs(SilentPaymentPsbt psbt);
+  
+  [Throws=Bip375Error]
+  sequence<u8> roles_extract_transaction(SilentPaymentPsbt psbt);
+};
+
+[Error]
+enum Bip375Error {
+  "InvalidData",
+  "SerializationError",
+  "CryptoError",
+  "IoError",
+  "ValidationError",
+  "InvalidAddress",
+  "InvalidKey",
+  "InvalidProof",
+  "SigningError",
+  "PsbtError",
+};
+
+dictionary SilentPaymentAddress {
+  sequence<u8> scan_key;
+  sequence<u8> spend_key;
+  u32? label;
+};
+
+dictionary Utxo {
+  string txid;
+  u32 vout;
+  u64 amount;
+  sequence<u8> script_pubkey;
+  sequence<u8>? private_key;
+  u32? sequence;
+};
+
+dictionary Output {
+  u64 amount;
+  sequence<u8>? script_pubkey;
+  SilentPaymentAddress? sp_address;
+};
+
+interface SilentPaymentPsbt {
+  constructor();
+  
+  [Name=deserialize, Throws=Bip375Error]
+  constructor(sequence<u8> data);
+  
+  [Throws=Bip375Error]
+  sequence<u8> serialize();
+  
+  u32 num_inputs();
+  u32 num_outputs();
+};
