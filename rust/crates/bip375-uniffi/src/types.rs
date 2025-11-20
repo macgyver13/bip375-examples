@@ -27,10 +27,10 @@ impl SilentPaymentAddress {
     pub fn to_core(&self) -> Result<core::types::SilentPaymentAddress, Bip375Error> {
         use secp256k1::PublicKey;
 
-        let scan_key = PublicKey::from_slice(&self.scan_key)
-            .map_err(|_| Bip375Error::InvalidKey)?;
-        let spend_key = PublicKey::from_slice(&self.spend_key)
-            .map_err(|_| Bip375Error::InvalidKey)?;
+        let scan_key =
+            PublicKey::from_slice(&self.scan_key).map_err(|_| Bip375Error::InvalidKey)?;
+        let spend_key =
+            PublicKey::from_slice(&self.spend_key).map_err(|_| Bip375Error::InvalidKey)?;
 
         Ok(core::types::SilentPaymentAddress {
             scan_key,
@@ -48,7 +48,7 @@ impl SilentPaymentAddress {
 pub struct EcdhShare {
     pub scan_key: Vec<u8>,
     pub share_point: Vec<u8>,
-    pub dleq_proof: Option<[u8; 64]>,
+    pub dleq_proof: Option<Vec<u8>>,
 }
 
 impl EcdhShare {
@@ -56,22 +56,33 @@ impl EcdhShare {
         Self {
             scan_key: share.scan_key.serialize().to_vec(),
             share_point: share.share.serialize().to_vec(),
-            dleq_proof: share.dleq_proof.clone(),
+            dleq_proof: share.dleq_proof.map(|p| p.to_vec()),
         }
     }
 
     pub fn to_core(&self) -> Result<core::types::EcdhShare, Bip375Error> {
         use secp256k1::PublicKey;
 
-        let scan_key = PublicKey::from_slice(&self.scan_key)
-            .map_err(|_| Bip375Error::InvalidKey)?;
-        let share = PublicKey::from_slice(&self.share_point)
-            .map_err(|_| Bip375Error::InvalidKey)?;
+        let scan_key =
+            PublicKey::from_slice(&self.scan_key).map_err(|_| Bip375Error::InvalidKey)?;
+        let share =
+            PublicKey::from_slice(&self.share_point).map_err(|_| Bip375Error::InvalidKey)?;
+
+        let dleq_proof = if let Some(ref proof_vec) = self.dleq_proof {
+            if proof_vec.len() != 64 {
+                return Err(Bip375Error::InvalidProof);
+            }
+            let mut proof_array = [0u8; 64];
+            proof_array.copy_from_slice(proof_vec);
+            Some(proof_array)
+        } else {
+            None
+        };
 
         Ok(core::types::EcdhShare {
             scan_key,
             share,
-            dleq_proof: self.dleq_proof.clone(),
+            dleq_proof,
         })
     }
 }
@@ -96,18 +107,17 @@ impl Utxo {
         use secp256k1::SecretKey;
         use std::str::FromStr;
 
-        let txid = Txid::from_str(&self.txid)
-            .map_err(|_| Bip375Error::InvalidData)?;
+        let txid = Txid::from_str(&self.txid).map_err(|_| Bip375Error::InvalidData)?;
 
         let private_key = if let Some(ref pk_bytes) = self.private_key {
-            Some(SecretKey::from_slice(pk_bytes)
-                .map_err(|_| Bip375Error::InvalidKey)?)
+            Some(SecretKey::from_slice(pk_bytes).map_err(|_| Bip375Error::InvalidKey)?)
         } else {
             None
         };
 
         let amount = Amount::from_sat(self.amount);
-        let sequence = self.sequence
+        let sequence = self
+            .sequence
             .map(Sequence::from_consensus)
             .unwrap_or(Sequence::ZERO);
 
@@ -136,13 +146,11 @@ pub struct Output {
 impl Output {
     pub fn to_core(&self) -> Result<core::types::Output, Bip375Error> {
         use bitcoin::Amount;
-        
+
         let recipient = if let Some(ref addr) = self.sp_address {
             core::types::OutputRecipient::SilentPayment(addr.to_core()?)
         } else if let Some(ref script) = self.script_pubkey {
-            core::types::OutputRecipient::Address(
-                bitcoin::ScriptBuf::from_bytes(script.clone())
-            )
+            core::types::OutputRecipient::Address(bitcoin::ScriptBuf::from_bytes(script.clone()))
         } else {
             return Err(Bip375Error::InvalidData);
         };
@@ -286,7 +294,27 @@ impl SilentPaymentPsbt {
             return Err(Bip375Error::InvalidData);
         }
 
-        Ok(psbt.get_output_sp_address(idx).map(|addr| SilentPaymentAddress::from_core(&addr)))
+        Ok(psbt
+            .get_output_sp_address(idx)
+            .map(|addr| SilentPaymentAddress::from_core(&addr)))
+    }
+
+    pub fn get_output_script(&self, output_index: u32) -> Result<Vec<u8>, Bip375Error> {
+        let psbt = self.inner.lock().unwrap();
+        let idx = output_index as usize;
+
+        if idx >= psbt.num_outputs() {
+            return Err(Bip375Error::InvalidData);
+        }
+
+        // Get the PSBT_OUT_SCRIPT field (0x04)
+        const PSBT_OUT_SCRIPT: u8 = 0x04;
+        if let Some(field) = psbt.get_output_field(idx, PSBT_OUT_SCRIPT) {
+            Ok(field.value_data.clone())
+        } else {
+            // Return empty if no script has been computed yet
+            Ok(Vec::new())
+        }
     }
 
     pub fn get_global_ecdh_shares(&self) -> Result<Vec<EcdhShare>, Bip375Error> {

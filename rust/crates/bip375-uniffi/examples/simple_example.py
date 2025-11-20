@@ -10,7 +10,9 @@ This example shows:
 5. Saving/loading PSBTs with metadata
 """
 
+import time
 import bip375
+
 # Import the role functions directly from bip375
 from bip375 import (
     roles_create_psbt,
@@ -18,11 +20,19 @@ from bip375 import (
     roles_add_outputs,
     roles_finalize_inputs,
     roles_extract_transaction,
+    bip352_compute_ecdh_share,
+    dleq_generate_proof,
+    dleq_verify_proof,
+    roles_add_ecdh_shares_full,
+    roles_sign_inputs,
+    roles_finalize_inputs,
+    roles_extract_transaction,
+    file_io_save_psbt,
+    file_io_load_psbt,
     Utxo,
     Output,
     SilentPaymentAddress
 )
-
 
 def main():
     print("BIP-375 Python Bindings - Simple Example")
@@ -66,40 +76,45 @@ def main():
     # Create PSBT
     psbt = roles_create_psbt(inputs, outputs)
     print(f"✓ Created PSBT")
+    
+    # Add inputs and outputs to the PSBT
+    roles_add_inputs(psbt, inputs)
+    roles_add_outputs(psbt, outputs)
+    print(f"✓ Added {len(inputs)} input(s) and {len(outputs)} output(s)")
 
     print("\n2. Computing ECDH shares")
     print("-" * 50)
 
-    # # Compute ECDH share manually (for demonstration)
-    # ecdh_share = bip352.compute_ecdh_share(privkey, scan_key)
-    # print(f"✓ ECDH share: {ecdh_share.hex()}")
+    # Compute ECDH share manually (for demonstration)
+    ecdh_share = bip352_compute_ecdh_share(privkey, scan_key)
+    print(f"✓ ECDH share: {ecdh_share.hex()}")
 
-    # # Generate DLEQ proof
-    # aux_rand = bytes(32)  # Should be random in production
-    # proof = dleq.generate_proof(privkey, scan_key, aux_rand)
-    # print(f"✓ DLEQ proof generated: {len(proof)} bytes")
+    # Generate DLEQ proof
+    aux_rand = bytes(32)  # Should be random in production
+    proof = dleq_generate_proof(privkey, scan_key, aux_rand)
+    print(f"✓ DLEQ proof generated: {proof.hex()} ({len(proof)} bytes)")
 
-    # # Verify the proof
-    # is_valid = dleq.verify_proof(pubkey, scan_key, ecdh_share, proof)
-    # print(f"✓ DLEQ proof valid: {is_valid}")
+    # Verify the proof
+    is_valid = dleq_verify_proof(pubkey, scan_key, ecdh_share, proof)
+    print(f"✓ DLEQ proof valid: {is_valid}")
 
-    # print("\n3. Adding ECDH shares to PSBT")
-    # print("-" * 50)
+    print("\n3. Adding ECDH shares to PSBT")
+    print("-" * 50)
 
-    # # Add ECDH shares for all inputs (with DLEQ proofs)
-    # scan_keys = [scan_key]
-    # roles.add_ecdh_shares_full(psbt, inputs, scan_keys, include_dleq=True)
-    # print("✓ ECDH shares added to PSBT")
+    # Add ECDH shares for all inputs (with DLEQ proofs)
+    scan_keys = [scan_key]
+    roles_add_ecdh_shares_full(psbt, inputs, scan_keys)
+    print("✓ ECDH shares added to PSBT")
 
-    # # Check ECDH shares were added
-    # input_shares = psbt.get_input_ecdh_shares(0)
-    # print(f"✓ Input 0 has {len(input_shares)} ECDH share(s)")
-    # if input_shares:
-    #     share = input_shares[0]
-    #     print(f"  - Scan key: {share.scan_key.hex()[:16]}...")
-    #     print(f"  - Share point: {share.share_point.hex()[:16]}...")
-    #     if share.dleq_proof:
-    #         print(f"  - DLEQ proof: {len(share.dleq_proof)} bytes")
+    # Check ECDH shares were added
+    input_shares = psbt.get_input_ecdh_shares(0)
+    print(f"✓ Input 0 has {len(input_shares)} ECDH share(s)")
+    if input_shares:
+        share = input_shares[0]
+        print(f"  - Scan key: {share.scan_key.hex()[:16]}...")
+        print(f"  - Share point: {share.share_point.hex()[:16]}...")
+        if share.dleq_proof:
+            print(f"  - DLEQ proof: {len(share.dleq_proof)} bytes")
 
     # print("\n4. Aggregating ECDH shares")
     # print("-" * 50)
@@ -114,63 +129,52 @@ def main():
     #         print(f"  - Scan key: {scan_key_bytes.hex()[:16]}...")
     #         print(f"    Aggregated point: {share_point.hex()[:16]}...")
 
-    # print("\n5. Signing inputs")
-    # print("-" * 50)
+    print("\n5. Signing inputs")
+    print("-" * 50)
 
-    # roles.sign_inputs(psbt, inputs)
-    # print("✓ All inputs signed")
+    roles_sign_inputs(psbt, inputs)
+    print("✓ All inputs signed")
 
-    # print("\n6. Finalizing PSBT")
-    # print("-" * 50)
+    print("\n6. Finalizing PSBT")
+    print("-" * 50)
 
-    # # Finalize (compute output scripts from silent payment addresses)
-    # roles.finalize_inputs(psbt)
-    # print("✓ PSBT finalized (output scripts computed)")
+    # Finalize (compute output scripts from silent payment addresses)
+    roles_finalize_inputs(psbt)
+    print("✓ PSBT finalized (output scripts computed)")
 
-    # # Check output script was computed
-    # output_script = psbt.get_output_script(0)
-    # if output_script:
-    #     print(f"  - Output 0 script: {output_script.hex()[:32]}...")
+    # Check output script was computed
+    output_script = psbt.get_output_script(0)
+    if output_script:
+        print(f"  - Output 0 script: {output_script.hex()[:32]}...")
 
-    # print("\n7. Extracting transaction")
-    # print("-" * 50)
+    print("\n7. Extracting transaction")
+    print("-" * 50)
 
-    # # Extract final transaction
-    # tx_bytes = roles.extract_transaction(psbt)
-    # print(f"✓ Transaction extracted: {len(tx_bytes)} bytes")
-    # print(f"  Transaction (hex): {tx_bytes.hex()[:64]}...")
+    # Extract final transaction
+    tx_bytes = roles_extract_transaction(psbt)
+    print(f"✓ Transaction extracted: {len(tx_bytes)} bytes")
+    print(f"  Transaction (hex): {tx_bytes.hex()}")
 
-    # print("\n8. Saving and loading PSBT")
-    # print("-" * 50)
+    print("\n8. Saving and loading PSBT")
+    print("-" * 50)
 
-    # # Save with metadata
-    # metadata = bip375.PsbtMetadata(
-    #     creator="simple-example",
-    #     stage="finalized",
-    #     description="Example silent payment transaction",
-    # )
+    # Save with metadata
+    metadata = bip375.PsbtMetadata(
+        creator="simple-example",
+        stage="finalized",
+        description="Example silent payment transaction",
+        created_at=None,
+        modified_at=None,
+    )
 
-    # # Save as binary
-    # binary_path = "/tmp/example.psbt"
-    # file_io.save_psbt_binary(psbt, binary_path)
-    # print(f"✓ Saved PSBT to {binary_path}")
+    # Save as JSON with metadata
+    json_path = "transfer.json"
+    file_io_save_psbt(psbt, metadata, json_path)
+    print(f"✓ Saved PSBT with metadata to {json_path}")
 
-    # # Load back
-    # loaded_psbt = file_io.load_psbt_binary(binary_path)
-    # print(f"✓ Loaded PSBT: {loaded_psbt.num_inputs()} inputs, {loaded_psbt.num_outputs()} outputs")
-
-    # # Save as JSON with metadata
-    # json_path = "/tmp/example.json"
-    # file_io.save_psbt_json(psbt, json_path, metadata)
-    # print(f"✓ Saved PSBT with metadata to {json_path}")
-
-    print("\n" + "=" * 50)
-    print("Example completed successfully!")
-    print("\nThe Rust bindings provide:")
-    print("- Fast cryptographic operations")
-    print("- Memory-safe PSBT handling")
-    print("- Full BIP-375 support")
-    print("- Compatible API with pure Python implementation")
+    # Load back
+    loaded_psbt = file_io_load_psbt(json_path)
+    print(f"✓ Loaded PSBT: {loaded_psbt.num_inputs()} inputs, {loaded_psbt.num_outputs()} outputs")
 
 
 if __name__ == "__main__":

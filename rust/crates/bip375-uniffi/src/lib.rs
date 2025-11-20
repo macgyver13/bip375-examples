@@ -1,20 +1,20 @@
 // UniFFI bindings for BIP-375 implementation
 // This crate exposes the Rust BIP-375 implementation to Python and other languages
 
-mod types;
-// mod crypto;
 // mod aggregation;
-// mod file_io;
-mod roles;
+mod crypto;
 mod errors;
+mod file_io;
+mod roles;
+mod types;
 
 // Re-export public types
+pub use crypto::*;
 pub use types::*;
-// pub use crypto::*;
 // pub use aggregation::*;
-// pub use file_io::*;
-pub use roles::*;
 pub use errors::*;
+pub use file_io::*;
+pub use roles::*;
 
 // UniFFI setup
 uniffi::include_scaffolding!("bip375");
