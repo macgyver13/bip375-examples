@@ -3,8 +3,7 @@
 //! Adds inputs and outputs to the PSBT.
 
 use bip375_core::{
-    constants::*, Error, Output, OutputRecipient, PsbtField, Result,
-    SilentPaymentPsbt, Utxo,
+    constants::*, Error, Output, OutputRecipient, PsbtField, Result, SilentPaymentPsbt, Utxo,
 };
 use bitcoin::hashes::Hash;
 
@@ -34,7 +33,10 @@ pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
         // Add PSBT_IN_SEQUENCE
         psbt.add_input_field(
             i,
-            PsbtField::with_value(PSBT_IN_SEQUENCE, utxo.sequence.to_consensus_u32().to_le_bytes().to_vec()),
+            PsbtField::with_value(
+                PSBT_IN_SEQUENCE,
+                utxo.sequence.to_consensus_u32().to_le_bytes().to_vec(),
+            ),
         )?;
 
         // Add PSBT_IN_WITNESS_UTXO (required for SegWit inputs)
@@ -46,7 +48,10 @@ pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
         // Script
         witness_utxo_bytes.extend_from_slice(utxo.script_pubkey.as_bytes());
 
-        psbt.add_input_field(i, PsbtField::with_value(PSBT_IN_WITNESS_UTXO, witness_utxo_bytes))?;
+        psbt.add_input_field(
+            i,
+            PsbtField::with_value(PSBT_IN_WITNESS_UTXO, witness_utxo_bytes),
+        )?;
     }
 
     Ok(())
@@ -63,9 +68,8 @@ pub fn add_outputs(psbt: &mut SilentPaymentPsbt, outputs: &[Output]) -> Result<(
     }
 
     for (i, output) in outputs.iter().enumerate() {
-        // Add PSBT_OUT_AMOUNT
-        let mut amount_bytes = Vec::new();
-        PsbtField::write_compact_size(&mut amount_bytes, output.amount.to_sat())?;
+        // Add PSBT_OUT_AMOUNT (64-bit signed little-endian per PSBT v2 spec)
+        let amount_bytes = output.amount.to_sat().to_le_bytes().to_vec();
         psbt.add_output_field(i, PsbtField::with_value(PSBT_OUT_AMOUNT, amount_bytes))?;
 
         match &output.recipient {
@@ -82,11 +86,8 @@ pub fn add_outputs(psbt: &mut SilentPaymentPsbt, outputs: &[Output]) -> Result<(
                 let mut sp_info = Vec::with_capacity(66);
                 sp_info.extend_from_slice(&sp_address.scan_key.serialize());
                 sp_info.extend_from_slice(&sp_address.spend_key.serialize());
-                
-                psbt.add_output_field(
-                    i,
-                    PsbtField::with_value(PSBT_OUT_SP_V0_INFO, sp_info),
-                )?;
+
+                psbt.add_output_field(i, PsbtField::with_value(PSBT_OUT_SP_V0_INFO, sp_info))?;
 
                 // Add PSBT_OUT_SP_V0_LABEL if present (separate field per BIP-375)
                 if let Some(label) = sp_address.label {

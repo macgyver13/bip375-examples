@@ -127,6 +127,7 @@ export component AppWindow inherits Window {
     callback clear();
     callback browse-test-vectors();
     callback select-test-vector(int);
+    callback load-psbt-file();
 
     VerticalBox {
         // Header
@@ -290,6 +291,11 @@ export component AppWindow inherits Window {
                             text: "Import PSBT";
                             enabled: import-text != "";
                             clicked => { root.import-psbt(import-text); }
+                        }
+
+                        MenuButton {
+                            text: "Load PSBT File";
+                            clicked => { root.load-psbt-file(); }
                         }
                     }
 

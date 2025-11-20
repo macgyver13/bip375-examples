@@ -3748,6 +3748,7 @@ version = "0.1.0"
 dependencies = [
  "bip375-core",
  "bip375-gui-common",
+ "bip375-io",
  "rfd",
  "serde",
  "serde_json",

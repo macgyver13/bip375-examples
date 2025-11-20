@@ -80,17 +80,52 @@ pub fn is_sp_field(field_type: u8) -> bool {
 
 /// Compute transaction summary from PSBT
 ///
-/// Note: This is a placeholder that needs actual transaction input/output data.
-/// In a real implementation, this should extract amounts from the PSBT's witness_utxo
-/// and output amount fields.
-pub fn compute_transaction_summary(_psbt: &SilentPaymentPsbt) -> TransactionSummary {
-    // TODO: Extract actual values from PSBT
-    // For now, return placeholder values
+/// Extracts input amounts from PSBT_IN_WITNESS_UTXO fields and output amounts
+/// from PSBT_OUT_AMOUNT fields to compute totals and fees.
+pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSummary {
+    let mut total_input = 0u64;
+    let mut total_output = 0u64;
+    let num_inputs = psbt.input_maps.len();
+    let num_outputs = psbt.output_maps.len();
+
+    // Extract input amounts from PSBT_IN_WITNESS_UTXO fields
+    for input_map in &psbt.input_maps {
+        for field in input_map {
+            if field.field_type == constants::PSBT_IN_WITNESS_UTXO {
+                // PSBT_IN_WITNESS_UTXO contains a TxOut structure:
+                // - 8 bytes: amount (little-endian u64)
+                // - variable: scriptPubKey (compact size + script)
+                if field.value_data.len() >= 8 {
+                    let amount_bytes: [u8; 8] = field.value_data[0..8].try_into().unwrap();
+                    let amount = u64::from_le_bytes(amount_bytes);
+                    total_input += amount;
+                }
+            }
+        }
+    }
+
+    // Extract output amounts from PSBT_OUT_AMOUNT fields
+    for output_map in &psbt.output_maps {
+        for field in output_map {
+            if field.field_type == constants::PSBT_OUT_AMOUNT {
+                // PSBT_OUT_AMOUNT is a 64-bit signed little-endian integer per PSBT v2 spec
+                if field.value_data.len() == 8 {
+                    let amount_bytes: [u8; 8] = field.value_data[0..8].try_into().unwrap();
+                    let amount = u64::from_le_bytes(amount_bytes);
+                    total_output += amount;
+                }
+            }
+        }
+    }
+
+    // Calculate fee (inputs - outputs)
+    let fee = total_input.saturating_sub(total_output);
+
     TransactionSummary {
-        total_input: 0,
-        total_output: 0,
-        fee: 0,
-        num_inputs: 0,
-        num_outputs: 0,
+        total_input,
+        total_output,
+        fee,
+        num_inputs,
+        num_outputs,
     }
 }

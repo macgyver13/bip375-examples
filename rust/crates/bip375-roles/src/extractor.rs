@@ -2,7 +2,7 @@
 //!
 //! Extracts the final Bitcoin transaction from a completed PSBT.
 
-use bip375_core::{constants::*, Error, PsbtField, Result, SilentPaymentPsbt};
+use bip375_core::{constants::*, Error, Result, SilentPaymentPsbt};
 use bitcoin::{
     absolute::LockTime, hashes::Hash as BitcoinHash, transaction::Version, Amount, OutPoint,
     ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
@@ -27,16 +27,17 @@ pub fn extract_transaction(psbt: &SilentPaymentPsbt) -> Result<Transaction> {
     ]);
 
     // Get locktime (if present, otherwise 0)
-    let locktime = if let Some(locktime_field) = psbt.get_global_field(PSBT_GLOBAL_FALLBACK_LOCKTIME) {
-        u32::from_le_bytes([
-            locktime_field.value_data[0],
-            locktime_field.value_data[1],
-            locktime_field.value_data[2],
-            locktime_field.value_data[3],
-        ])
-    } else {
-        0
-    };
+    let locktime =
+        if let Some(locktime_field) = psbt.get_global_field(PSBT_GLOBAL_FALLBACK_LOCKTIME) {
+            u32::from_le_bytes([
+                locktime_field.value_data[0],
+                locktime_field.value_data[1],
+                locktime_field.value_data[2],
+                locktime_field.value_data[3],
+            ])
+        } else {
+            0
+        };
 
     // Build inputs
     let mut inputs = Vec::new();
@@ -139,11 +140,15 @@ fn extract_output(psbt: &SilentPaymentPsbt, output_idx: usize) -> Result<TxOut> 
         .get_output_field(output_idx, PSBT_OUT_AMOUNT)
         .ok_or_else(|| Error::MissingField(format!("Output {} amount", output_idx)))?;
 
-    // Parse compact size amount
-    use std::io::Cursor;
-    let mut cursor = Cursor::new(&amount_field.value_data);
-    let amount_sats = PsbtField::read_compact_size(&mut cursor)
-        .map_err(|e| Error::InvalidFieldData(format!("Invalid amount: {}", e)))?;
+    // Parse 64-bit little-endian amount (PSBT v2 spec)
+    if amount_field.value_data.len() != 8 {
+        return Err(Error::InvalidFieldData(format!(
+            "Invalid amount length: expected 8 bytes, got {}",
+            amount_field.value_data.len()
+        )));
+    }
+    let amount_bytes: [u8; 8] = amount_field.value_data[0..8].try_into().unwrap();
+    let amount_sats = u64::from_le_bytes(amount_bytes);
     let amount = Amount::from_sat(amount_sats);
 
     // Get script

@@ -57,3 +57,11 @@ pub fn browse_for_test_vectors() -> Option<String> {
 
     fs::read_to_string(file).ok()
 }
+
+/// Opens a file dialog for selecting a binary PSBT file
+pub fn browse_for_psbt_file() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("PSBT", &["psbt"])
+        .set_title("Select PSBT file")
+        .pick_file()
+}

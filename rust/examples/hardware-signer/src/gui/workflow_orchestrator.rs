@@ -6,8 +6,8 @@
 use super::app_state::*;
 use crate::{hw_device::HardwareDevice, shared_utils::*, wallet_coordinator::WalletCoordinator};
 use bip375_core::SilentPaymentPsbt;
-use std::collections::HashSet;
 use common::*;
+use std::collections::HashSet;
 
 /// Orchestrates workflow steps and captures PSBT changes
 pub struct WorkflowOrchestrator;
@@ -19,11 +19,11 @@ impl WorkflowOrchestrator {
         let before_psbt = state.current_psbt.clone();
 
         // Execute business logic (auto_continue for GUI mode)
-        WalletCoordinator::create_psbt(true).map_err(|e| format!("Failed to create PSBT: {}", e))?;
+        WalletCoordinator::create_psbt(true)
+            .map_err(|e| format!("Failed to create PSBT: {}", e))?;
 
         // Load the created PSBT
-        let (psbt, _metadata) = load_psbt()
-            .map_err(|e| format!("Failed to load PSBT: {}", e))?;
+        let (psbt, _metadata) = load_psbt().map_err(|e| format!("Failed to load PSBT: {}", e))?;
 
         // Identify new fields (all fields are new in this case)
         let new_fields = Self::compute_new_fields(before_psbt.as_ref(), &psbt);
@@ -38,7 +38,7 @@ impl WorkflowOrchestrator {
         });
         state.highlighted_fields = new_fields;
         state.workflow_state = WorkflowState::PsbtCreated;
-        state.transaction_summary = Some(Self::compute_transaction_summary());
+        state.transaction_summary = Some(Self::compute_transaction_summary(&psbt));
 
         Ok(())
     }
@@ -61,8 +61,8 @@ impl WorkflowOrchestrator {
         HardwareDevice::sign_workflow(true, true, state.attack_mode)
             .map_err(|e| format!("Failed to sign PSBT: {}", e))?;
 
-        
-        let (psbt, _metadata) = load_psbt().map_err(|e| format!("Failed to load signed PSBT: {}", e))?;
+        let (psbt, _metadata) =
+            load_psbt().map_err(|e| format!("Failed to load signed PSBT: {}", e))?;
         // Identify new fields (ECDH shares, DLEQ proofs, signatures)
         let new_fields = Self::compute_new_fields(before_psbt.as_ref(), &psbt);
 
@@ -93,8 +93,8 @@ impl WorkflowOrchestrator {
         match WalletCoordinator::finalize_transaction(true) {
             Ok(_) => {
                 // Load finalized PSBT (need to reload to see output scripts)
-                let (psbt, _) = load_psbt()
-                    .map_err(|e| format!("Failed to load finalized PSBT: {}", e))?;
+                let (psbt, _) =
+                    load_psbt().map_err(|e| format!("Failed to load finalized PSBT: {}", e))?;
 
                 // Compute validation results
                 let validation = ValidationResults {
@@ -156,20 +156,8 @@ impl WorkflowOrchestrator {
         bip375_gui_common::psbt_analyzer::compute_field_diff(before, after)
     }
 
-    /// Compute transaction summary
-    fn compute_transaction_summary() -> TransactionSummary {
-        let inputs = create_transaction_inputs();
-        let outputs = create_transaction_outputs();
-
-        let total_input: u64 = inputs.iter().map(|u| u.amount.to_sat()).sum();
-        let total_output: u64 = outputs.iter().map(|o| o.amount.to_sat()).sum();
-
-        TransactionSummary {
-            total_input,
-            total_output,
-            fee: total_input - total_output,
-            num_inputs: inputs.len(),
-            num_outputs: outputs.len(),
-        }
+    /// Compute transaction summary from PSBT
+    fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSummary {
+        bip375_gui_common::psbt_analyzer::compute_transaction_summary(psbt)
     }
 }

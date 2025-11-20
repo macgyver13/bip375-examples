@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 bip375-core.workspace = true
 bip375-gui-common = { workspace = true }
+bip375-io.workspace = true
 slint = "1.8"
 serde = { workspace = true }
 serde_json = { workspace = true }

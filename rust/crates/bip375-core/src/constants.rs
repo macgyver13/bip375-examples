@@ -59,6 +59,7 @@ pub const PSBT_OUT_SCRIPT: u8 = 0x04;
 pub const PSBT_OUT_TAP_INTERNAL_KEY: u8 = 0x05;
 pub const PSBT_OUT_TAP_TREE: u8 = 0x06;
 pub const PSBT_OUT_TAP_BIP32_DERIVATION: u8 = 0x07;
+pub const PSBT_OUT_DNSSEC_PROOF: u8 = 0x35;
 pub const PSBT_OUT_PROPRIETARY: u8 = 0xfc;
 
 // BIP-375 Silent Payment Output Fields (Dedicated Field Types)
@@ -119,7 +120,9 @@ pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str 
         (FieldCategory::Input, PSBT_IN_OUTPUT_INDEX) => "PSBT_IN_OUTPUT_INDEX",
         (FieldCategory::Input, PSBT_IN_SEQUENCE) => "PSBT_IN_SEQUENCE",
         (FieldCategory::Input, PSBT_IN_REQUIRED_TIME_LOCKTIME) => "PSBT_IN_REQUIRED_TIME_LOCKTIME",
-        (FieldCategory::Input, PSBT_IN_REQUIRED_HEIGHT_LOCKTIME) => "PSBT_IN_REQUIRED_HEIGHT_LOCKTIME",
+        (FieldCategory::Input, PSBT_IN_REQUIRED_HEIGHT_LOCKTIME) => {
+            "PSBT_IN_REQUIRED_HEIGHT_LOCKTIME"
+        }
         (FieldCategory::Input, PSBT_IN_TAP_KEY_SIG) => "PSBT_IN_TAP_KEY_SIG",
         (FieldCategory::Input, PSBT_IN_TAP_SCRIPT_SIG) => "PSBT_IN_TAP_SCRIPT_SIG",
         (FieldCategory::Input, PSBT_IN_TAP_LEAF_SCRIPT) => "PSBT_IN_TAP_LEAF_SCRIPT",
@@ -142,6 +145,7 @@ pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str 
         (FieldCategory::Output, PSBT_OUT_PROPRIETARY) => "PSBT_OUT_PROPRIETARY",
         (FieldCategory::Output, PSBT_OUT_SP_V0_INFO) => "PSBT_OUT_SP_V0_INFO",
         (FieldCategory::Output, PSBT_OUT_SP_V0_LABEL) => "PSBT_OUT_SP_V0_LABEL",
+        (FieldCategory::Output, PSBT_OUT_DNSSEC_PROOF) => "PSBT_OUT_DNSSEC_PROOF",
 
         _ => "UNKNOWN_FIELD",
     }

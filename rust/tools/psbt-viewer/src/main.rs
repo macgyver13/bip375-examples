@@ -7,14 +7,18 @@ mod resources;
 mod test_vector_helper;
 
 use bip375_core::{constants::FieldCategory, SilentPaymentPsbt};
-use bip375_gui_common::{display_formatting, field_identifier::FieldIdentifier, psbt_analyzer, psbt_io};
+use bip375_gui_common::{
+    display_formatting, field_identifier::FieldIdentifier, psbt_analyzer, psbt_io,
+};
 use slint::Model;
 use test_vector_helper::TestVectorFile;
 
 slint::include_modules!();
 
 /// Convert PSBT fields to Slint-compatible format
-fn convert_fields_to_slint(psbt: &SilentPaymentPsbt) -> (Vec<PsbtField>, Vec<PsbtField>, Vec<PsbtField>) {
+fn convert_fields_to_slint(
+    psbt: &SilentPaymentPsbt,
+) -> (Vec<PsbtField>, Vec<PsbtField>, Vec<PsbtField>) {
     let mut global_fields = Vec::new();
     let mut input_fields = Vec::new();
     let mut output_fields = Vec::new();
@@ -24,20 +28,35 @@ fn convert_fields_to_slint(psbt: &SilentPaymentPsbt) -> (Vec<PsbtField>, Vec<Psb
 
     for identifier in identifiers {
         let (field_data, category, map_index) = match &identifier {
-            FieldIdentifier::Global { field_type, key_data } => {
-                let field = psbt.global_fields.iter()
+            FieldIdentifier::Global {
+                field_type,
+                key_data,
+            } => {
+                let field = psbt
+                    .global_fields
+                    .iter()
                     .find(|f| f.field_type == *field_type && f.key_data == *key_data)
                     .expect("Field should exist");
                 (field, FieldCategory::Global, -1)
             }
-            FieldIdentifier::Input { index, field_type, key_data } => {
-                let field = psbt.input_maps[*index].iter()
+            FieldIdentifier::Input {
+                index,
+                field_type,
+                key_data,
+            } => {
+                let field = psbt.input_maps[*index]
+                    .iter()
                     .find(|f| f.field_type == *field_type && f.key_data == *key_data)
                     .expect("Field should exist");
                 (field, FieldCategory::Input, *index as i32)
             }
-            FieldIdentifier::Output { index, field_type, key_data } => {
-                let field = psbt.output_maps[*index].iter()
+            FieldIdentifier::Output {
+                index,
+                field_type,
+                key_data,
+            } => {
+                let field = psbt.output_maps[*index]
+                    .iter()
                     .find(|f| f.field_type == *field_type && f.key_data == *key_data)
                     .expect("Field should exist");
                 (field, FieldCategory::Output, *index as i32)
@@ -104,7 +123,9 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         Err(_) => {
             // Silently fail if test vectors aren't available - user can still browse for them
-            window.set_test_vector_status("Click 'Load Vectors' or 'Browse...' to load test cases".into());
+            window.set_test_vector_status(
+                "Click 'Load Vectors' or 'Browse...' to load test cases".into(),
+            );
         }
     }
 
@@ -133,9 +154,15 @@ fn main() -> Result<(), slint::PlatformError> {
         window.set_status_message("".into());
         window.set_selected_test_vector_index(-1);
         window.set_test_vector_status("".into());
-        window.set_global_fields(slint::ModelRc::new(slint::VecModel::from(Vec::<PsbtField>::new())));
-        window.set_input_fields(slint::ModelRc::new(slint::VecModel::from(Vec::<PsbtField>::new())));
-        window.set_output_fields(slint::ModelRc::new(slint::VecModel::from(Vec::<PsbtField>::new())));
+        window.set_global_fields(slint::ModelRc::new(slint::VecModel::from(
+            Vec::<PsbtField>::new(),
+        )));
+        window.set_input_fields(slint::ModelRc::new(slint::VecModel::from(
+            Vec::<PsbtField>::new(),
+        )));
+        window.set_output_fields(slint::ModelRc::new(slint::VecModel::from(
+            Vec::<PsbtField>::new(),
+        )));
     });
 
     // Handle browse-test-vectors callback
@@ -148,8 +175,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 Ok(vectors) => {
                     let slint_vectors = vectors.to_slint_vectors();
                     let count = slint_vectors.len();
-                    window.set_test_vectors(slint::ModelRc::new(slint::VecModel::from(slint_vectors)));
-                    window.set_test_vector_status(format!("✅ Loaded {} test vectors from file", count).into());
+                    window.set_test_vectors(slint::ModelRc::new(slint::VecModel::from(
+                        slint_vectors,
+                    )));
+                    window.set_test_vector_status(
+                        format!("✅ Loaded {} test vectors from file", count).into(),
+                    );
                 }
                 Err(e) => {
                     window.set_test_vector_status(format!("❌ Parse error: {}", e).into());
@@ -170,6 +201,32 @@ fn main() -> Result<(), slint::PlatformError> {
                 window.set_import_text(vector.psbt_base64);
                 window.set_selected_test_vector_index(index);
                 window.set_test_vector_status(format!("Selected: {}", vector.description).into());
+            }
+        }
+    });
+
+    // Handle load-psbt-file callback
+    let window_weak = window.as_weak();
+    window.on_load_psbt_file(move || {
+        let window = window_weak.unwrap();
+
+        if let Some(path) = resources::browse_for_psbt_file() {
+            match bip375_io::file_io::load_psbt(&path) {
+                Ok((psbt, metadata)) => {
+                    display_psbt(&window, &psbt);
+                    let msg = if let Some(meta) = metadata {
+                        format!(
+                            "✅ Loaded PSBT from file ({})",
+                            meta.creator.unwrap_or_default()
+                        )
+                    } else {
+                        "✅ Loaded PSBT from file".to_string()
+                    };
+                    window.set_status_message(msg.into());
+                }
+                Err(e) => {
+                    window.set_status_message(format!("❌ Failed to load PSBT: {}", e).into());
+                }
             }
         }
     });
