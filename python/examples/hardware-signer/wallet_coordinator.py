@@ -23,6 +23,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from shared_hw_utils import (
     get_transaction_inputs, get_transaction_outputs, get_recipient_address,
+    get_hardware_wallet,
     print_transaction_details,
     save_psbt_to_transfer_file, load_psbt_from_transfer_file,
     prompt_for_transfer, wait_for_user_input, print_header, reset_demo, cleanup_transfer_file, TRANSFER_FILE
@@ -31,21 +32,25 @@ from shared_hw_utils import (
 # Add parent directories to path for PSBT imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from psbt_sp.psbt import SilentPaymentPSBT, PSBTFieldType
+from psbt_sp.crypto import Wallet
 
-def create_psbt():
+def create_psbt(wallet: Wallet, recipient_address):
     """
     Step 1: Create initial PSBT structure
 
     Roles: CREATOR + CONSTRUCTOR + UPDATER
+    
+    Args:
+        wallet: Wallet instance for the hardware wallet
+        recipient_address: SilentPaymentAddress for recipient
     """
     print_header(1, "Create PSBT Structure", "WALLET COORDINATOR (Online)")
 
     print("\n CREATOR + CONSTRUCTOR + UPDATER: Setting up transaction...")
 
     # Get transaction components
-    inputs = get_transaction_inputs()
-    outputs = get_transaction_outputs()
-    recipient_address = get_recipient_address()
+    inputs = get_transaction_inputs(wallet)
+    outputs = get_transaction_outputs(wallet, recipient_address)
 
     # Display transaction details for user validation
     print_transaction_details(inputs, outputs)
@@ -61,14 +66,12 @@ def create_psbt():
     # 1. Get xpub from hardware wallet during initial setup
     # 2. Derive public keys from xpub + path
     # 3. Match public keys to UTXOs being spent
-    from psbt_sp.crypto import Wallet
-    hw_wallet = Wallet(seed="hardware_wallet_coldcard_demo")  # Demo purposes only
 
     # Build derivation info for each input (privacy mode - no derivation path revealed)
     derivation_paths = []
     for i in range(len(inputs)):
         # Get public key for this input
-        _, pubkey = hw_wallet.input_key_pair(i)
+        _, pubkey = wallet.input_key_pair(i)
 
         # Privacy mode: only include public key, no derivation path
         # Hardware wallet will recognize its own keys internally
@@ -105,13 +108,15 @@ def create_psbt():
 
     return True  # Success
 
-def finalize_transaction(auto_read=False, auto_broadcast=False):
+def finalize_transaction(wallet: Wallet, recipient_address, auto_read=False, auto_broadcast=False):
     """
     Step 3: Verify and finalize transaction
 
     Roles: SIGNER (verification) + EXTRACTOR
 
     Args:
+        wallet: Wallet instance for the hardware wallet
+        recipient_address: SilentPaymentAddress for recipient
         auto_read: If True, automatically read from transfer file
         auto_broadcast: If True, skip broadcast confirmation
     """
@@ -196,7 +201,7 @@ def finalize_transaction(auto_read=False, auto_broadcast=False):
     print("=" * 70)
 
     validation_passed = True
-    inputs = get_transaction_inputs()
+    inputs = get_transaction_inputs(wallet)
 
     # 1. ECDH Coverage Check
     print("\n Checking ECDH coverage...")
@@ -213,15 +218,12 @@ def finalize_transaction(auto_read=False, auto_broadcast=False):
 
     # Collect all expected scan keys from transaction outputs
     # We need to validate DLEQ proofs for ALL scan keys in the transaction
-    from psbt_sp.crypto import Wallet
-    hw_wallet = Wallet(seed="hardware_wallet_coldcard_demo")  # Must match hw_device.py
-    recipient_address = get_recipient_address()
 
     # Expected scan keys:
     # 1. Change output (hardware wallet's scan key)
     # 2. Recipient output (recipient's scan key)
     expected_scan_keys = {
-        hw_wallet.scan_pub.bytes,
+        wallet.scan_pub.bytes,
         recipient_address.scan_key.bytes
     }
 
@@ -250,7 +252,7 @@ def finalize_transaction(auto_read=False, auto_broadcast=False):
         try:
             if psbt.verify_dleq_proofs(inputs):
                 print(f"   PASSED: All DLEQ proofs verified for {len(expected_scan_keys)} scan keys")
-                print(f"      Change scan key:    {hw_wallet.scan_pub.hex}")
+                print(f"      Change scan key:    {wallet.scan_pub.hex}")
                 print(f"      Recipient scan key: {recipient_address.scan_key.hex}")
             else:
                 print("   ❌ FAILED: DLEQ proof verification failed!")
@@ -300,7 +302,7 @@ def finalize_transaction(auto_read=False, auto_broadcast=False):
 
     # 6. Amount Validation
     print("\n  Validating transaction amounts...")
-    outputs = get_transaction_outputs()
+    outputs = get_transaction_outputs(wallet, recipient_address)
     total_input = sum(utxo.amount for utxo in inputs)
     total_output = sum(output["amount"] for output in outputs)
     fee = total_input - total_output
@@ -346,7 +348,6 @@ def finalize_transaction(auto_read=False, auto_broadcast=False):
 
         with open(tx_file, 'w') as f:
             f.write(transaction_hex)
-
         print(f"\n Saved transaction to: {tx_file}")
 
         # Display final transaction
@@ -414,7 +415,36 @@ def main():
                        help='Automatically read from transfer file when finalizing')
     parser.add_argument('--auto-broadcast', action='store_true',
                        help='Skip broadcast confirmation prompt')
+    parser.add_argument('--mnemonic', type=str,
+                       help='BIP39 mnemonic phrase (12 or 24 words)')
+    parser.add_argument('--seed', type=str,
+                       help='Simple seed string (for testing/demo)')
     args = parser.parse_args()
+    
+    # Handle mnemonic/seed input
+    mnemonic = None
+    seed = None
+    
+    if args.mnemonic:
+        # Validate mnemonic
+        try:
+            from mnemonic import Mnemonic
+            mnemo = Mnemonic("english")
+            if not mnemo.check(args.mnemonic):
+                print("\n❌ ERROR: Invalid BIP39 mnemonic phrase!")
+                print("   Please check your mnemonic and try again.")
+                sys.exit(1)
+            mnemonic = args.mnemonic
+        except ImportError:
+            print("\n❌ ERROR: 'mnemonic' library not installed!")
+            print("   Install with: pip install mnemonic")
+            sys.exit(1)
+    elif args.seed:
+        seed = args.seed
+    
+    # Create wallet instance once
+    hw_wallet = get_hardware_wallet(seed=seed, mnemonic=mnemonic)
+    recipient_address = get_recipient_address()  # Demo recipient (separate wallet)
 
     print("\n" + "═" * 70)
     print(" " * 15 + "WALLET COORDINATOR - Air-Gapped Demo" + " " * 16)
@@ -442,14 +472,14 @@ def main():
 
         print("\n No existing PSBT found. Starting new transaction...")
         reset_demo()  # Clean up any old files
-        success = create_psbt()
+        success = create_psbt(hw_wallet, recipient_address)
 
     elif metadata.get("step") == "created":
         # PSBT exists but not signed
         if action in ['create', 'new']:
             print("\n🧹 Starting fresh transaction...")
             reset_demo()
-            success = create_psbt()
+            success = create_psbt(hw_wallet, recipient_address)
         elif action in ['finalize', 'read']:
             print("\n⚠️  Found unsigned PSBT in transfer file")
             print(f"   Created by: {metadata.get('created_by', 'unknown')}")
@@ -470,7 +500,7 @@ def main():
             if choice == "new":
                 print("\n Starting fresh transaction...")
                 reset_demo()
-                success = create_psbt()
+                success = create_psbt(hw_wallet, recipient_address)
             else:
                 print("\n Waiting for hw_device.py to sign the PSBT.")
                 print("   Run hw_device.py, then run this script again to finalize.")
@@ -481,11 +511,12 @@ def main():
         if action in ['create', 'new']:
             print("\n Starting fresh transaction...")
             reset_demo()
-            success = create_psbt()
+            success = create_psbt(hw_wallet, recipient_address)
         else:
             print("\n Found signed PSBT from hardware device")
             print("\n Proceeding to finalization...")
-            success = finalize_transaction(auto_read=(args.auto_read or action == 'read'),
+            success = finalize_transaction(hw_wallet, recipient_address,
+                                          auto_read=(args.auto_read or action == 'read'),
                                           auto_broadcast=args.auto_broadcast)
 
             if success:

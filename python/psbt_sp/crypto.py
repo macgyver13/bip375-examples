@@ -145,32 +145,208 @@ class PublicKey(GE):
 
 
 class Wallet:
-    """Deterministic wallet for generating silent payment keys"""
+    """Deterministic wallet for generating silent payment keys
     
-    def __init__(self, seed: str = "bip375_complete_seed"):
+    Supports both simple seed-based derivation and BIP39 mnemonic
+    with BIP32 hierarchical deterministic derivation (for testing).
+    
+    BIP352 Silent Payments Derivation Paths:
+    - Scan key:  m/352'/0'/0'/1'/0
+    - Spend key: m/352'/0'/0'/0'/0
+    """
+    
+    def __init__(self, seed: str = "bip375_complete_seed", mnemonic: str = None, 
+                 account: int = 0, coin_type: int = 0):
+        """
+        Initialize wallet from seed or BIP39 mnemonic
+        
+        Args:
+            seed: Simple seed string (for testing/demo, backward compatibility)
+            mnemonic: BIP39 mnemonic phrase (12 or 24 words)
+            account: BIP32 account number (default: 0)
+            coin_type: BIP32 coin type (default: 0 for Bitcoin mainnet)
+        """
         self.seed = seed
-        self.scan_priv, self.scan_pub = self.create_key_pair("scan", 0)
-        self.spend_priv, self.spend_pub = self.create_key_pair("spend", 0)
+        self.mnemonic = mnemonic
+        self.account = account
+        self.coin_type = coin_type
+        self.bip39_seed = None
+        
+        if mnemonic:
+            # Use BIP39 to convert mnemonic to seed
+            try:
+                from mnemonic import Mnemonic
+                mnemo = Mnemonic("english")
+                
+                # Validate mnemonic
+                if not mnemo.check(mnemonic):
+                    raise ValueError("Invalid BIP39 mnemonic phrase")
+                
+                # Convert mnemonic to seed (512 bits / 64 bytes)
+                self.bip39_seed = mnemo.to_seed(mnemonic, passphrase="")
+                
+                # Derive scan and spend keys using BIP32 paths
+                self.scan_priv, self.scan_pub = self._derive_bip32_key(
+                    path=f"m/352'/{coin_type}'/{account}'/1'/0"  # Scan key path
+                )
+                self.spend_priv, self.spend_pub = self._derive_bip32_key(
+                    path=f"m/352'/{coin_type}'/{account}'/0'/0"  # Spend key path
+                )
+                
+            except ImportError:
+                raise ImportError(
+                    "BIP39 support requires 'mnemonic' library. "
+                    "Install with: pip install mnemonic"
+                )
+        else:
+            # Backward compatibility: use simple deterministic derivation
+            self.scan_priv, self.scan_pub = self.create_key_pair("scan", 0)
+            self.spend_priv, self.spend_pub = self.create_key_pair("spend", 0)
+        
         self.input_keys = []
 
+    def _derive_bip32_key(self, path: str) -> Tuple[PrivateKey, PublicKey]:
+        """
+        Derive a key pair using BIP32 hierarchical deterministic derivation
+        
+        Args:
+            path: BIP32 derivation path (e.g., "m/352'/0'/0'/1'/0")
+        
+        Returns:
+            Tuple of (private_key, public_key)
+        """
+        if self.bip39_seed is None:
+            raise ValueError("BIP32 derivation requires BIP39 seed")
+        
+        # Parse the path
+        if not path.startswith("m/"):
+            raise ValueError("Path must start with 'm/'")
+        
+        path_parts = path[2:].split("/")
+        
+        # Start with master key from seed
+        # BIP32 master key derivation: HMAC-SHA512(key="Bitcoin seed", data=seed)
+        import hmac
+        import hashlib
+        
+        hmac_result = hmac.new(
+            b"Bitcoin seed",
+            self.bip39_seed,
+            hashlib.sha512
+        ).digest()
+        
+        # Split into master private key (32 bytes) and chain code (32 bytes)
+        master_private_key = int.from_bytes(hmac_result[:32], 'big')
+        chain_code = hmac_result[32:]
+        
+        # Derive child keys along the path
+        private_key = master_private_key
+        current_chain_code = chain_code
+        
+        for part in path_parts:
+            if not part:
+                continue
+                
+            # Check if hardened derivation (ends with ')
+            if part.endswith("'"):
+                hardened = True
+                index = int(part[:-1])
+            else:
+                hardened = False
+                index = int(part)
+            
+            # Derive child key
+            private_key, current_chain_code = self._derive_child_key(
+                private_key, current_chain_code, index, hardened
+            )
+        
+        # Create public key from final private key
+        public_point = private_key * G
+        
+        return PrivateKey(private_key), PublicKey(public_point)
+    
+    def _derive_child_key(self, parent_key: int, chain_code: bytes, 
+                         index: int, hardened: bool) -> Tuple[int, bytes]:
+        """
+        Derive a child key using BIP32 CKD (Child Key Derivation)
+        
+        Args:
+            parent_key: Parent private key as integer
+            chain_code: Parent chain code (32 bytes)
+            index: Child index
+            hardened: Whether to use hardened derivation
+        
+        Returns:
+            Tuple of (child_private_key, child_chain_code)
+        """
+        import hmac
+        import hashlib
+        
+        if hardened:
+            # Hardened child: HMAC-SHA512(chain_code, 0x00 || parent_key || index)
+            index_with_flag = index + 0x80000000  # Set hardened bit
+            data = b'\x00' + parent_key.to_bytes(32, 'big') + index_with_flag.to_bytes(4, 'big')
+        else:
+            # Normal child: HMAC-SHA512(chain_code, parent_pubkey || index)
+            parent_pubkey = (parent_key * G).to_bytes_compressed()
+            data = parent_pubkey + index.to_bytes(4, 'big')
+        
+        hmac_result = hmac.new(chain_code, data, hashlib.sha512).digest()
+        
+        # Split result
+        tweak = int.from_bytes(hmac_result[:32], 'big')
+        child_chain_code = hmac_result[32:]
+        
+        # Child private key = (tweak + parent_key) mod n
+        child_private_key = (tweak + parent_key) % GE.ORDER
+        
+        if child_private_key == 0 or tweak >= GE.ORDER:
+            raise ValueError("Invalid child key derivation (try next index)")
+        
+        return child_private_key, child_chain_code
+
     def deterministic_private_key(self, purpose: str, index: int = 0) -> int:
-        """Generate deterministic private key from seed"""
+        """Generate deterministic private key from seed (simple mode only)"""
+        if self.bip39_seed is not None:
+            raise ValueError(
+                "Cannot use deterministic_private_key with BIP39 mnemonic. "
+                "Use BIP32 derivation paths instead."
+            )
+        
         data = f"{self.seed}_{purpose}_{index}".encode()
         hash_result = hashlib.sha256(data).digest()
         # Ensure it's in valid range for secp256k1
         return int.from_bytes(hash_result, 'big') % GE.ORDER
 
     def create_key_pair(self, purpose: str, index: int = 0) -> Tuple[PrivateKey, PublicKey]:
-        """Create deterministic key pair"""
+        """Create deterministic key pair (simple mode only)"""
         private_int = self.deterministic_private_key(purpose, index)
         public_point = private_int * G
         return PrivateKey(private_int), PublicKey(public_point)
     
     def input_key_pair(self, index: int = 0) -> Tuple[PrivateKey, PublicKey]:
-        """Generate input key pair for specific index"""
+        """
+        Generate input key pair for specific index
+        
+        For BIP39 wallets, derives from m/84'/0'/0'/0/index (BIP84 native segwit)
+        For simple seed wallets, uses deterministic derivation
+        """
         # Create all missing keys up to and including the requested index
         while len(self.input_keys) <= index:
-            self.input_keys.append(self.create_key_pair("input", len(self.input_keys)))
+            key_index = len(self.input_keys)
+            
+            if self.bip39_seed is not None:
+                # BIP84 path for native segwit: m/84'/coin_type'/account'/change/index
+                # Using change=0 (external addresses)
+                key_pair = self._derive_bip32_key(
+                    path=f"m/84'/{self.coin_type}'/{self.account}'/0/{key_index}"
+                )
+            else:
+                # Simple deterministic derivation
+                key_pair = self.create_key_pair("input", key_index)
+            
+            self.input_keys.append(key_pair)
+        
         return self.input_keys[index]
     
     @staticmethod

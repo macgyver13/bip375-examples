@@ -33,7 +33,8 @@ from shared_hw_utils import (
 # Add parent directories to path for PSBT imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from psbt_sp.psbt import SilentPaymentPSBT
-from psbt_sp.crypto import PublicKey
+from psbt_sp.constants import PSBTFieldType
+from psbt_sp.crypto import Wallet, PublicKey
 from secp256k1_374 import GE
 
 def receive_psbt(auto_read=False):
@@ -119,13 +120,15 @@ def receive_psbt(auto_read=False):
         print(f"\n❌ ERROR: Invalid choice '{choice}'. Please choose 'read' or 'paste'.")
         return None, None
 
-def verify_transaction_details(auto_approve=False, attack_mode=False):
+def verify_transaction_details(wallet: Wallet, recipient_address, auto_approve=False, attack=None):
     """
     Display transaction details on hardware device screen for user verification
 
     Args:
+        wallet: Wallet instance for the hardware wallet
+        recipient_address: SilentPaymentAddress for recipient
         auto_approve: If True, automatically approve without user prompt
-        attack_mode: If True, simulate attack mode
+        attack: If not None, simulate attack mode
 
     In a real hardware wallet, this would be shown on the device's secure display.
     """
@@ -133,9 +136,8 @@ def verify_transaction_details(auto_approve=False, attack_mode=False):
     print(" HARDWARE DEVICE DISPLAY (Secure Element)")
     print("=" * 70)
 
-    inputs = get_transaction_inputs()
-    outputs = get_transaction_outputs()
-
+    inputs = get_transaction_inputs(wallet)
+    outputs = get_transaction_outputs(wallet, recipient_address)
     print_transaction_details(inputs, outputs)
 
     print("\n⚠️  VERIFY TRANSACTION ON DEVICE SCREEN")
@@ -148,29 +150,30 @@ def verify_transaction_details(auto_approve=False, attack_mode=False):
 
     # User must confirm
     if auto_approve:
-        if attack_mode:
+        if attack:
             print("\n Auto-approve with ATTACK mode enabled")
-            return "attack"
+            return attack
         else:
             print("\n Transaction auto-approved")
-            return True
+            return ""
     else:
         print("\n SECURITY PROMPT:")
-        confirmation = wait_for_user_input("Type 'YES' to approve, 'ATTACK' to simulate attack, or anything else to reject:")
+        confirmation = wait_for_user_input("Type 'YES' to approve, 'ATTACK' to simulate attack, 'ATTACK-STRIP' to simulate attack removing BIP375 fields, or anything else to reject:")
 
-        if confirmation.upper() == "ATTACK":
+        if "ATTACK" in confirmation.upper():
             print("\n⚠️  ATTACK MODE ENABLED - Simulating malicious hardware!")
             print("   Hardware will compute ECDH shares with wrong scan key")
             print("   Coordinator should detect this via DLEQ proof verification")
-            return "attack"
+            return confirmation.lower()
         elif confirmation.upper() == "YES":
             print("Transaction APPROVED by user")
-            return True
+            return ""
         else:
             print("\n❌ Transaction REJECTED by user")
-            return False
+            return "reject"
 
-def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
+def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet, recipient_address,
+              attack=None):
     """
     Sign the PSBT with hardware wallet private keys
 
@@ -179,21 +182,21 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
     Args:
         psbt: The PSBT to sign
         metadata: Transaction metadata
-        attack_mode: If True, simulate malicious behavior with wrong scan key
+        wallet: Wallet instance for the hardware wallet
+        recipient_address: SilentPaymentAddress for recipient
+        attack: If not None, simulate attack mode
     """
     print("\n SIGNER: Processing transaction with hardware keys...")
 
     # Get private keys from hardware wallet's secure storage
-    hw_wallet = get_hardware_wallet()
-    inputs = get_transaction_inputs()
+    inputs = get_transaction_inputs(wallet)
 
     # Get all scan keys from outputs
     # We need scan keys for ALL silent payment outputs:
     # 1. Change output (hardware wallet's scan key)
     # 2. Recipient output (recipient's scan key)
-    recipient_address = get_recipient_address()
 
-    if attack_mode:
+    if attack:
         # ATTACK SIMULATION: Use attacker's scan key instead of legitimate recipient
         print("\n🚨 ATTACK MODE: Using malicious scan key!")
         print("   Real recipient scan key would be used in honest mode")
@@ -226,14 +229,14 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
                     b'',  # Empty key data
                     dummy_script
                 ))
-            return True
+            return True    
 
         # Temporarily replace the method
         psbt.compute_output_scripts = bypass_output_script_computation
 
         # Use malicious scan key for ECDH computation
         # Note: In attack mode, we only use malicious key (not realistic but for demo)
-        scan_keys = [malicious_scan_key, hw_wallet.scan_pub]
+        scan_keys = [malicious_scan_key, wallet.scan_pub]
     else:
         # Normal mode: Extract scan keys directly from PSBT output fields
         from psbt_sp.psbt_utils import extract_scan_keys_from_outputs
@@ -248,7 +251,7 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
         # In real hardware wallet, device wouldn't know which is change vs recipient
         # It just processes all scan keys found in PSBT
         if len(scan_keys) >= 2:
-            if scan_keys[0].bytes == hw_wallet.scan_pub.bytes:
+            if scan_keys[0].bytes == wallet.scan_pub.bytes:
                 print(f"     (Output 0 is change to hardware wallet)")
             if len(scan_keys) > 1:
                 print(f"     (Output 1 is payment to recipient)")
@@ -260,12 +263,12 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
 
     # Set private keys for hardware-controlled inputs
     for input_idx in hw_controlled_inputs:
-        private_key = hw_wallet.input_key_pair(input_idx)[0]
+        private_key = wallet.input_key_pair(input_idx)[0]
         inputs[input_idx].private_key = private_key
 
     print(f"   Set private keys for inputs {hw_controlled_inputs}")
 
-    if attack_mode:
+    if attack:
         print("\n   🚨 Computing ECDH shares with MALICIOUS scan key...")
         print("   🚨 Generating DLEQ proofs for WRONG scan key...")
         print("    Signing inputs with CORRECT private keys...")
@@ -279,7 +282,7 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
     # Prepare scan private keys for label computation
     # Hardware wallet knows its own scan private key (for change with label=0)
     scan_privkeys = {
-        hw_wallet.scan_pub.bytes: hw_wallet.scan_priv.bytes
+        wallet.scan_pub.bytes: wallet.scan_priv.bytes
     }
 
     # Perform signing role
@@ -291,7 +294,7 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
             print("\n❌ ERROR: Hardware signing failed!")
             return None
 
-        if attack_mode:
+        if attack:
             print("   🚨 ECDH shares computed with MALICIOUS scan key")
             print("   🚨 DLEQ proofs generated for WRONG scan key")
             print("    Inputs signed with correct private keys")
@@ -303,6 +306,9 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
 
         # Verify ECDH coverage
         is_complete, inputs_with_ecdh = psbt.check_ecdh_coverage()
+
+        if attack == "attack-strip":
+            strip_bip375_fields(psbt)  # Remove BIP375 fields
 
         print(f"\n   ECDH coverage: {len(inputs_with_ecdh)}/{len(inputs)} inputs ({'complete' if is_complete else 'incomplete'})")
 
@@ -317,6 +323,44 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, attack_mode=False):
         import traceback
         traceback.print_exc()
         return None
+
+
+def strip_bip375_fields(psbt):
+    """Remove BIP375 fields from PSBT"""
+    print("     🚨 ATTACK: Stripping BIP375 fields")
+    # Remove BIP375 fields from PSBT (only if they exist)
+    for output_map in psbt.output_maps:
+        # Find and remove fields by checking each field's type
+        fields_to_remove = []
+        for field in output_map:
+            if field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+                fields_to_remove.append(field)
+            elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_LABEL:
+                fields_to_remove.append(field)
+        for field in fields_to_remove:
+            output_map.remove(field)
+    
+    for input_map in psbt.input_maps:
+        # Find and remove fields by checking each field's type
+        fields_to_remove = []
+        for field in input_map:
+            if field.field_type == PSBTFieldType.PSBT_IN_SP_ECDH_SHARE:
+                fields_to_remove.append(field)
+            elif field.field_type == PSBTFieldType.PSBT_IN_SP_DLEQ:
+                fields_to_remove.append(field)
+        for field in fields_to_remove:
+            input_map.remove(field)
+    
+    # Remove global fields
+    fields_to_remove = []
+    for field in psbt.global_fields:
+        if field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE:
+            fields_to_remove.append(field)
+        elif field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_DLEQ:
+            fields_to_remove.append(field)
+    for field in fields_to_remove:
+        psbt.global_fields.remove(field)
+
 
 def main():
     """
@@ -337,9 +381,36 @@ def main():
                        help='Automatically read PSBT from transfer file')
     parser.add_argument('--auto-approve', action='store_true',
                        help='Automatically approve transaction without prompt')
-    parser.add_argument('--attack', action='store_true',
-                       help='Simulate malicious hardware (attack mode)')
+    parser.add_argument('--attack', type=str,
+                       help='Simulate malicious hardware [attack|attack-strip]')
+    parser.add_argument('--mnemonic', type=str,
+                       help='BIP39 mnemonic phrase (12 or 24 words)')
+    parser.add_argument('--seed', type=str,
+                       help='Simple seed string (for testing/demo)')
     args = parser.parse_args()
+    
+    # Handle mnemonic/seed input
+    mnemonic = None
+    seed = None
+    
+    if args.mnemonic:
+        # Validate mnemonic
+        try:
+            from mnemonic import Mnemonic
+            mnemo = Mnemonic("english")
+            if not mnemo.check(args.mnemonic):
+                print("\n❌ ERROR: Invalid BIP39 mnemonic phrase!")
+                print("   Please check your mnemonic and try again.")
+                sys.exit(1)
+            mnemonic = args.mnemonic
+            print("\n Using provided BIP39 mnemonic")
+        except ImportError:
+            print("\n❌ ERROR: 'mnemonic' library not installed!")
+            print("   Install with: pip install mnemonic")
+            sys.exit(1)
+    elif args.seed:
+        seed = args.seed
+        print(f"\n Using provided seed: {seed}")
 
     print("\n" + "═" * 70)
     print(" " * 17 + "HARDWARE DEVICE - Air-Gapped Demo")
@@ -355,23 +426,29 @@ def main():
         print("❌ FAILED TO RECEIVE PSBT")
         print("=" * 70)
         sys.exit(1)
+    
+    # Create wallet instance once
+    hw_wallet = get_hardware_wallet(seed=seed, mnemonic=mnemonic)
+    recipient_address = get_recipient_address()  # Demo recipient (separate wallet)
 
     # Step 2: Verify transaction details
     print_separator()
-    approval_result = verify_transaction_details(auto_approve=args.auto_approve, attack_mode=args.attack)
+    approval_result = verify_transaction_details(hw_wallet, recipient_address,
+                                                 auto_approve=args.auto_approve, 
+                                                  attack=args.attack)
 
-    if not approval_result:
+    if approval_result == "reject":
         print("\n" + "=" * 70)
         print("❌ TRANSACTION REJECTED BY USER")
         print("=" * 70)
         sys.exit(1)
 
     # Determine if we're in attack mode
-    attack_mode = (approval_result == "attack")
+    attack = approval_result if "attack" in approval_result else None
 
     # Step 3: Sign PSBT
     print_separator()
-    signed_psbt = sign_psbt(psbt, metadata, attack_mode)
+    signed_psbt = sign_psbt(psbt, metadata, hw_wallet, recipient_address, attack)
 
     if signed_psbt is None:
         print("\n" + "=" * 70)
@@ -379,7 +456,7 @@ def main():
         print("=" * 70)
         sys.exit(1)
 
-    if attack_mode:
+    if attack:
         print("\n🚨 MALICIOUS HARDWARE SIGNING COMPLETED!")
         print("\n⚠️  WARNING: This PSBT contains malicious ECDH shares!")
         print("   The coordinator should detect and reject this transaction.")
@@ -403,7 +480,7 @@ def main():
     prompt_for_transfer(signed_psbt, "to_coordinator")
 
     print("\n" + "=" * 70)
-    if attack_mode:
+    if attack:
         print("🚨 MALICIOUS PSBT READY FOR WALLET COORDINATOR")
         print("=" * 70)
         print("\n NEXT STEP: Transfer MALICIOUS signed PSBT to wallet coordinator")
