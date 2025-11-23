@@ -309,9 +309,7 @@ fn validate_ecdh_coverage(psbt: &SilentPaymentPsbt) -> Result<()> {
 
         // Cannot have both global and per-input for the same scan key
         if has_global && has_per_input {
-            return Err(Error::Other(format!(
-                "Cannot have both global and per-input ECDH shares for the same scan key"
-            )));
+            return Err(Error::Other("Cannot have both global and per-input ECDH shares for the same scan key".to_string()));
         }
 
         // Verify all inputs have ECDH shares for this scan key

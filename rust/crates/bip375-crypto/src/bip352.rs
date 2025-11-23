@@ -107,7 +107,7 @@ pub fn derive_silent_payment_output_pubkey(
 ///
 /// Returns: OP_0 <20-byte-hash>
 pub fn pubkey_to_p2wpkh_script(pubkey: &PublicKey) -> ScriptBuf {
-    let pubkey_hash = bitcoin::PublicKey::new(pubkey.clone())
+    let pubkey_hash = bitcoin::PublicKey::new(*pubkey)
         .wpubkey_hash()
         .expect("Compressed key");
 

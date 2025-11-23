@@ -147,7 +147,9 @@ fn extract_output(psbt: &SilentPaymentPsbt, output_idx: usize) -> Result<TxOut> 
             amount_field.value_data.len()
         )));
     }
-    let amount_bytes: [u8; 8] = amount_field.value_data[0..8].try_into().unwrap();
+    let amount_bytes: [u8; 8] = amount_field.value_data[0..8]
+        .try_into()
+        .expect("amount bytes did not convert to 8 bytes");
     let amount_sats = u64::from_le_bytes(amount_bytes);
     let amount = Amount::from_sat(amount_sats);
 

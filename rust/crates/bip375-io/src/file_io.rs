@@ -72,7 +72,8 @@ pub fn save_psbt<P: AsRef<Path>>(
 
     match path_ref.extension().and_then(|s| s.to_str()) {
         Some("json") => save_psbt_with_metadata(psbt, metadata, path),
-        Some("psbt") | _ => save_psbt_binary(psbt, path),
+        Some("psbt") => save_psbt_binary(psbt, path),
+        _ => Err(IoError::InvalidFormat(format!("Unsupported file extension: {}", path_ref.display()))),
     }
 }
 
@@ -98,9 +99,11 @@ fn base64_encode(data: &[u8]) -> String {
     let mut buf = Vec::new();
     {
         let mut encoder = base64::write::EncoderWriter::new(&mut buf, &base64::engine::general_purpose::STANDARD);
-        encoder.write_all(data).unwrap();
+        encoder.write_all(data)
+            .expect("writing to Vec<u8> should never fail");
     }
-    String::from_utf8(buf).unwrap()
+    String::from_utf8(buf)
+        .expect("base64 encoding always produces valid UTF-8")
 }
 
 /// Decode base64 to bytes

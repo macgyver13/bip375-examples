@@ -96,7 +96,9 @@ pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSumma
                 // - 8 bytes: amount (little-endian u64)
                 // - variable: scriptPubKey (compact size + script)
                 if field.value_data.len() >= 8 {
-                    let amount_bytes: [u8; 8] = field.value_data[0..8].try_into().unwrap();
+                    let amount_bytes: [u8; 8] = field.value_data[0..8]
+                        .try_into()
+                        .expect("slice is exactly 8 bytes as verified by length check");
                     let amount = u64::from_le_bytes(amount_bytes);
                     total_input += amount;
                 }
@@ -110,7 +112,9 @@ pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSumma
             if field.field_type == constants::PSBT_OUT_AMOUNT {
                 // PSBT_OUT_AMOUNT is a 64-bit signed little-endian integer per PSBT v2 spec
                 if field.value_data.len() == 8 {
-                    let amount_bytes: [u8; 8] = field.value_data[0..8].try_into().unwrap();
+                    let amount_bytes: [u8; 8] = field.value_data[0..8]
+                        .try_into()
+                        .expect("slice is exactly 8 bytes as verified by length check");
                     let amount = u64::from_le_bytes(amount_bytes);
                     total_output += amount;
                 }

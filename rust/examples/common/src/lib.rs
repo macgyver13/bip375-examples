@@ -12,7 +12,7 @@ pub const FINAL_TX_FILE: &str = "output/final_transaction.hex";
 
 thread_local! {
     // Thread-local memory storage for PSBT (GUI mode)
-    static PSBT_MEMORY: RefCell<Option<(SilentPaymentPsbt, Option<PsbtMetadata>)>> = RefCell::new(None);
+    static PSBT_MEMORY: RefCell<Option<(SilentPaymentPsbt, Option<PsbtMetadata>)>> = const { RefCell::new(None) };
 }
 
 /// Set whether to use in-memory storage (for GUI) or file-based storage (for CLI)
@@ -22,7 +22,7 @@ pub fn set_use_memory_storage(use_memory: bool) {
 
 thread_local! {
     // Thread-local flag to control storage mode
-    static USE_MEMORY_STORAGE: RefCell<bool> = RefCell::new(false);
+    static USE_MEMORY_STORAGE: RefCell<bool> = const { RefCell::new(false) };
 }
 
 /// Save PSBT wrapper - uses memory for GUI, files for CLI
@@ -69,7 +69,7 @@ pub fn load_psbt() -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), Box<dyn 
 pub fn save_txn(tx_bytes: &Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
     let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
     if !use_memory {
-        let tx_hex = hex::encode(&tx_bytes);
+        let tx_hex = hex::encode(tx_bytes);
         fs::write(FINAL_TX_FILE, tx_hex)?;
         println!("  Saved final transaction to: {}\n", FINAL_TX_FILE);
     }

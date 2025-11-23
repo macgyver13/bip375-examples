@@ -117,7 +117,7 @@ pub fn aggregate_ecdh_shares(psbt: &SilentPaymentPsbt) -> Result<AggregatedShare
         for share in shares {
             shares_by_scan_key
                 .entry(share.scan_key)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(share.share);
         }
     }

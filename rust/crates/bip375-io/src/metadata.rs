@@ -119,7 +119,7 @@ impl PsbtMetadata {
     pub fn update_timestamps(&mut self) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .expect("system time should be after Unix epoch (1970-01-01)")
             .as_secs();
 
         if self.created_at.is_none() {

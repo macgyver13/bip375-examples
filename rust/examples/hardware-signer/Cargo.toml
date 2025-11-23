@@ -44,3 +44,7 @@ slint-build = { version = "1.8", optional = true }
 name = "Hardware Signer Demo"
 identifier = "xyz.spmac.hardwaresigner"
 version = "0.1.0"
+
+[package.metadata.clippy]
+# Slint generates code with unwrap, allow it
+msrv = "1.70"

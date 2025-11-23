@@ -71,3 +71,11 @@ bip375-roles = { path = "crates/bip375-roles" }
 opt-level = 3
 lto = true
 codegen-units = 1
+
+[workspace.lints.clippy]
+unwrap_used = { level = "deny", priority = 1 }
+expect_used = "allow"
+
+# Allow unwrap in generated code
+[package.metadata.clippy]
+allow-unwrap-in-tests = true

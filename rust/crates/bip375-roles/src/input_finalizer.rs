@@ -48,7 +48,7 @@ pub fn finalize_inputs(
         // Get the aggregated share for this scan key
         let aggregated = aggregated_shares
             .get(&sp_address.scan_key)
-            .ok_or_else(|| Error::IncompleteEcdhCoverage(output_idx))?;
+            .ok_or(Error::IncompleteEcdhCoverage(output_idx))?;
 
         // Verify all inputs contributed shares (unless it's a global share)
         if !aggregated.is_global && aggregated.num_inputs != psbt.num_inputs() {

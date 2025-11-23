@@ -146,9 +146,7 @@ impl SilentPaymentPsbt {
     /// Get DLEQ proof for a specific ECDH share in an input
     /// BIP-375 field type 0x1e: key = 33-byte scan key, value = 64-byte DLEQ proof
     pub fn get_input_dleq_proof(&self, input_index: usize, scan_key: &PublicKey) -> Option<[u8; 64]> {
-        let Some(input_map) = self.input_maps.get(input_index) else {
-            return None;
-        };
+        let input_map = self.input_maps.get(input_index)?;
 
         for field in input_map {
             if field.field_type == PSBT_IN_SP_DLEQ {
@@ -184,9 +182,7 @@ impl SilentPaymentPsbt {
     /// Get silent payment address for an output
     /// BIP-375 field type 0x09: key = empty, value = 33-byte scan key + 33-byte spend key
     pub fn get_output_sp_address(&self, output_index: usize) -> Option<SilentPaymentAddress> {
-        let Some(output_map) = self.output_maps.get(output_index) else {
-            return None;
-        };
+        let output_map = self.output_maps.get(output_index)?;
 
         for field in output_map {
             if field.field_type == PSBT_OUT_SP_V0_INFO {
@@ -253,7 +249,7 @@ impl SilentPaymentPsbt {
         // Read and verify magic bytes
         let mut magic = [0u8; 5];
         cursor.read_exact(&mut magic)?;
-        if &magic != PSBT_MAGIC {
+        if magic != PSBT_MAGIC {
             return Err(Error::InvalidMagic);
         }
 

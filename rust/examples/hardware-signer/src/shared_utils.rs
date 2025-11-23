@@ -42,7 +42,7 @@ pub fn get_attacker_address() -> SilentPaymentAddress {
 /// 2 inputs controlled by the hardware wallet:
 /// - Input 0: 100,000 sats
 /// - Input 1: 200,000 sats
-/// Total: 300,000 sats
+/// - Total: 300,000 sats
 pub fn create_transaction_inputs() -> Vec<Utxo> {
     let hw_wallet = get_hardware_wallet();
 
@@ -82,7 +82,7 @@ pub fn create_transaction_inputs() -> Vec<Utxo> {
 /// 2 outputs:
 /// - Output 0: Change to hardware wallet (50,000 sats) with label=0
 /// - Output 1: Silent payment to recipient (245,000 sats)
-/// Fee: 5,000 sats (300,000 - 50,000 - 245,000)
+/// - Fee: 5,000 sats (300,000 - 50,000 - 245,000)
 ///
 /// Implementation Notes:
 ///

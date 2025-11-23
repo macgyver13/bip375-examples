@@ -20,3 +20,7 @@ name = "PSBT Viewer"
 identifier = "xyz.spmac.psbtviewer"
 version = "0.1.0"
 resources = ["../../../test_vectors.json"]
+
+[package.metadata.clippy]
+# Slint generates code with unwrap, allow it
+msrv = "1.70"
