@@ -23,7 +23,6 @@ import os
 # Add current directory to path for shared_utils import
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from shared_hw_utils import (
-    get_transaction_inputs, get_transaction_outputs, get_recipient_address,
     get_hardware_wallet, print_transaction_details,
     save_psbt_to_transfer_file, load_psbt_from_transfer_file,
     prompt_for_transfer, wait_for_user_input, print_header, print_separator,
@@ -120,24 +119,27 @@ def receive_psbt(auto_read=False):
         print(f"\n❌ ERROR: Invalid choice '{choice}'. Please choose 'read' or 'paste'.")
         return None, None
 
-def verify_transaction_details(wallet: Wallet, recipient_address, auto_approve=False, attack=None):
+def verify_transaction_details(psbt, wallet: Wallet, auto_approve=False, attack=None):
     """
     Display transaction details on hardware device screen for user verification
 
     Args:
-        wallet: Wallet instance for the hardware wallet
-        recipient_address: SilentPaymentAddress for recipient
+        psbt: SilentPaymentPSBT instance to extract transaction details from
+        wallet: Wallet instance for the hardware wallet (for setting private keys)
         auto_approve: If True, automatically approve without user prompt
         attack: If not None, simulate attack mode
 
     In a real hardware wallet, this would be shown on the device's secure display.
     """
+    from psbt_sp.psbt_utils import extract_inputs_from_psbt, extract_output_details_from_psbt
+    
     print("\n" + "=" * 70)
     print(" HARDWARE DEVICE DISPLAY (Secure Element)")
     print("=" * 70)
 
-    inputs = get_transaction_inputs(wallet)
-    outputs = get_transaction_outputs(wallet, recipient_address)
+    # Extract transaction details from PSBT (air-gap security model)
+    inputs = extract_inputs_from_psbt(psbt)
+    outputs = extract_output_details_from_psbt(psbt)
     print_transaction_details(inputs, outputs)
 
     print("\n⚠️  VERIFY TRANSACTION ON DEVICE SCREEN")
@@ -172,7 +174,7 @@ def verify_transaction_details(wallet: Wallet, recipient_address, auto_approve=F
             print("\n❌ Transaction REJECTED by user")
             return "reject"
 
-def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet, recipient_address,
+def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet,
               attack=None):
     """
     Sign the PSBT with hardware wallet private keys
@@ -183,13 +185,14 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet, recipient
         psbt: The PSBT to sign
         metadata: Transaction metadata
         wallet: Wallet instance for the hardware wallet
-        recipient_address: SilentPaymentAddress for recipient
         attack: If not None, simulate attack mode
     """
+    from psbt_sp.psbt_utils import extract_inputs_from_psbt
+    
     print("\n SIGNER: Processing transaction with hardware keys...")
 
-    # Get private keys from hardware wallet's secure storage
-    inputs = get_transaction_inputs(wallet)
+    # Extract inputs from PSBT (air-gap security model)
+    inputs = extract_inputs_from_psbt(psbt)
 
     # Get all scan keys from outputs
     # We need scan keys for ALL silent payment outputs:
@@ -261,9 +264,30 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet, recipient
 
     print(f"\n   Hardware wallet controls inputs: {hw_controlled_inputs}")
 
+    # Extract BIP32 derivation paths from PSBT
+    from psbt_sp.psbt_utils import extract_bip32_derivations_from_psbt
+    derivations = extract_bip32_derivations_from_psbt(psbt)
+
     # Set private keys for hardware-controlled inputs
     for input_idx in hw_controlled_inputs:
-        private_key = wallet.input_key_pair(input_idx)[0]
+        # Check if we have BIP32 derivation info for this input
+        if input_idx < len(derivations) and derivations[input_idx] and wallet.bip39_seed:
+            # Use the exact path from PSBT
+            path = derivations[input_idx]['path']
+            print(f"   Deriving key for input {input_idx} using path: {path}")
+            private_key, public_key = wallet._derive_bip32_key(path)
+            
+            # Verify public key matches PSBT
+            psbt_pubkey = derivations[input_idx]['public_key']
+            if public_key.bytes != psbt_pubkey:
+                print(f"⚠️  WARNING: Derived public key mismatch for input {input_idx}!")
+                print(f"     Expected: {psbt_pubkey.hex()}")
+                print(f"     Derived:  {public_key.bytes.hex()}")
+        else:
+            # Fallback for demo PSBTs or simple wallet mode
+            print(f"   Using default derivation for input {input_idx} (index-based)")
+            private_key = wallet.input_key_pair(input_idx)[0]
+            
         inputs[input_idx].private_key = private_key
 
     print(f"   Set private keys for inputs {hw_controlled_inputs}")
@@ -287,8 +311,9 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet, recipient
 
     # Perform signing role
     try:
-        # Use signer_role_partial for completeness but this could be full signer_role because all inputs are controlled by this hw_device
-        success = psbt.signer_role_partial(inputs, hw_controlled_inputs, scan_keys, scan_privkeys)
+        # Use full signer_role since hardware device controls all inputs
+        # This ensures TX_MODIFIABLE is set to 0x00 after computing output scripts (BIP 375 requirement)
+        success = psbt.signer_role(inputs, scan_keys, scan_privkeys)
 
         if not success:
             print("\n❌ ERROR: Hardware signing failed!")
@@ -429,11 +454,10 @@ def main():
     
     # Create wallet instance once
     hw_wallet = get_hardware_wallet(seed=seed, mnemonic=mnemonic)
-    recipient_address = get_recipient_address()  # Demo recipient (separate wallet)
 
     # Step 2: Verify transaction details
     print_separator()
-    approval_result = verify_transaction_details(hw_wallet, recipient_address,
+    approval_result = verify_transaction_details(psbt, hw_wallet,
                                                  auto_approve=args.auto_approve, 
                                                   attack=args.attack)
 
@@ -448,7 +472,7 @@ def main():
 
     # Step 3: Sign PSBT
     print_separator()
-    signed_psbt = sign_psbt(psbt, metadata, hw_wallet, recipient_address, attack)
+    signed_psbt = sign_psbt(psbt, metadata, hw_wallet, attack)
 
     if signed_psbt is None:
         print("\n" + "=" * 70)

@@ -625,34 +625,6 @@ class SilentPaymentPSBT:
     # region INPUT FINALIZER ROLE - Compute Output Scripts
     # ============================================================================
 
-    def set_inputs_outputs_non_modifiable(self) -> None:
-        """
-        Set PSBT_GLOBAL_TX_MODIFIABLE flags to 0x00 (neither inputs nor outputs modifiable)
-
-        This method implements the BIP 375 requirement:
-        "If the Signer sets any missing PSBT_OUT_SCRIPTs, it must set the
-        Inputs Modifiable and Outputs Modifiable flags to False."
-        """
-        # Find and update existing TX_MODIFIABLE field, or add if missing
-        tx_modifiable_updated = False
-
-        for field in self.global_fields:
-            if field.field_type == PSBTFieldType.PSBT_GLOBAL_TX_MODIFIABLE:
-                # Update existing field to 0x00 (neither inputs nor outputs modifiable)
-                field.value_data = struct.pack('<B', 0x00)
-                tx_modifiable_updated = True
-                print("Set TX_MODIFIABLE flags to 0x00 (inputs and outputs non-modifiable)")
-                break
-
-        if not tx_modifiable_updated:
-            # Add TX_MODIFIABLE field if it doesn't exist
-            self.global_fields.append(PSBTField(
-                PSBTFieldType.PSBT_GLOBAL_TX_MODIFIABLE,
-                b'',
-                struct.pack('<B', 0x00)
-            ))
-            print("Added TX_MODIFIABLE field set to 0x00 (inputs and outputs non-modifiable)")
-
     def _compute_label_tweak(self, scan_privkey_bytes: bytes, label: int) -> int:
         """
         Compute BIP 352 label tweak for modifying spend key
@@ -713,7 +685,7 @@ class SilentPaymentPSBT:
     # region COMPLETE ROLE WORKFLOWS - Multi-Step Operations
     # ============================================================================
 
-    def signer_role(self, inputs: List[UTXO], scan_keys: List[PublicKey] = None) -> bool:
+    def signer_role(self, inputs: List[UTXO], scan_keys: List[PublicKey] = None, scan_privkeys: dict = None) -> bool:
         """
         Complete BIP 375 SIGNER role implementation
 
@@ -731,6 +703,8 @@ class SilentPaymentPSBT:
         Args:
             inputs: List of UTXO objects with private keys for signing
             scan_keys: List of scan keys to compute ECDH shares for (auto-extracted if None)
+            scan_privkeys: Optional dict mapping scan_key_bytes -> scan_privkey_bytes
+                          (required for computing label tweaks for change outputs)
 
         Returns:
             True if SIGNER role completed successfully, False otherwise
@@ -793,7 +767,7 @@ class SilentPaymentPSBT:
 
         print("4.4. Computing silent payment output scripts...")
         try:
-            self.compute_output_scripts()
+            self.compute_output_scripts(scan_privkeys)
         except Exception as e:
             print(f"❌ Failed to compute output scripts: {e}")
             return False

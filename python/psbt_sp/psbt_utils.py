@@ -204,3 +204,246 @@ def extract_scan_keys_from_outputs(output_maps: List[List[PSBTField]]) -> List[b
                         scan_keys.append(scan_key_bytes)
 
     return scan_keys
+
+
+def extract_inputs_from_psbt(psbt) -> List[UTXO]:
+    """
+    Extract input details from PSBT fields and return as UTXO objects
+    
+    This function is designed for hardware wallets to independently verify
+    transaction details from the PSBT without relying on coordinator logic.
+    
+    Parses PSBT fields to extract:
+    - txid: from PSBT_IN_PREVIOUS_TXID
+    - vout: from PSBT_IN_OUTPUT_INDEX
+    - amount: from PSBT_IN_WITNESS_UTXO
+    - script_pubkey: from PSBT_IN_WITNESS_UTXO
+    - sequence: from PSBT_IN_SEQUENCE
+    
+    Args:
+        psbt: SilentPaymentPSBT instance
+    
+    Returns:
+        List of UTXO objects (without private_key set - hardware device will set these)
+    
+    Raises:
+        ValueError: If required PSBT fields are missing or malformed
+    """
+    import struct
+    
+    inputs = []
+    
+    for input_index, input_fields in enumerate(psbt.input_maps):
+        # Extract required fields
+        txid = None
+        vout = None
+        amount = None
+        script_pubkey = None
+        sequence = 0xfffffffe  # Default sequence
+        
+        for field in input_fields:
+            if field.field_type == PSBTFieldType.PSBT_IN_PREVIOUS_TXID:
+                if len(field.value_data) == 32:
+                    # Reverse for display (Bitcoin uses little-endian internally)
+                    txid = field.value_data[::-1].hex()
+            
+            elif field.field_type == PSBTFieldType.PSBT_IN_OUTPUT_INDEX:
+                if len(field.value_data) == 4:
+                    vout = struct.unpack('<I', field.value_data)[0]
+            
+            elif field.field_type == PSBTFieldType.PSBT_IN_WITNESS_UTXO:
+                # Format: 8-byte amount + compact_size script_len + script
+                if len(field.value_data) >= 9:
+                    amount = struct.unpack('<Q', field.value_data[:8])[0]
+                    script_len = field.value_data[8]
+                    if len(field.value_data) >= 9 + script_len:
+                        script_pubkey = field.value_data[9:9+script_len].hex()
+            
+            elif field.field_type == PSBTFieldType.PSBT_IN_SEQUENCE:
+                if len(field.value_data) == 4:
+                    sequence = struct.unpack('<I', field.value_data)[0]
+        
+        # Validate required fields
+        if txid is None:
+            raise ValueError(f"Input {input_index}: Missing PSBT_IN_PREVIOUS_TXID")
+        if vout is None:
+            raise ValueError(f"Input {input_index}: Missing PSBT_IN_OUTPUT_INDEX")
+        if amount is None:
+            raise ValueError(f"Input {input_index}: Missing PSBT_IN_WITNESS_UTXO")
+        if script_pubkey is None:
+            raise ValueError(f"Input {input_index}: Missing scriptPubKey in PSBT_IN_WITNESS_UTXO")
+        
+        # Create UTXO object (without private key - hardware device will set it)
+        utxo = UTXO(
+            txid=txid,
+            vout=vout,
+            amount=amount,
+            script_pubkey=script_pubkey,
+            private_key=None,  # Hardware device will set this
+            sequence=sequence
+        )
+        
+        inputs.append(utxo)
+    
+    return inputs
+
+
+def extract_output_details_from_psbt(psbt) -> List[dict]:
+    """
+    Extract output details from PSBT fields
+    
+    This function is designed for hardware wallets to independently verify
+    transaction details from the PSBT without relying on coordinator logic.
+    
+    Returns list of dicts with:
+    - amount: output amount (from PSBT_OUT_AMOUNT)
+    - address: SilentPaymentAddress (from PSBT_OUT_SP_V0_INFO) if present
+    - label: optional label (from PSBT_OUT_SP_V0_LABEL) if present
+    - script_pubkey: scriptPubKey hex (from PSBT_OUT_SCRIPT) for regular outputs
+    
+    Args:
+        psbt: SilentPaymentPSBT instance
+    
+    Returns:
+        List of output dicts matching the format expected by print_transaction_details()
+    
+    Raises:
+        ValueError: If required PSBT fields are missing or malformed
+    """
+    import struct
+    from .psbt import SilentPaymentAddress
+    from .crypto import PublicKey
+    from secp256k1_374 import GE
+    
+    outputs = []
+    
+    for output_index, output_fields in enumerate(psbt.output_maps):
+        # Extract fields
+        amount = None
+        sp_info = None
+        label = None
+        script_pubkey = None
+        
+        for field in output_fields:
+            if field.field_type == PSBTFieldType.PSBT_OUT_AMOUNT:
+                if len(field.value_data) == 8:
+                    amount = struct.unpack('<Q', field.value_data)[0]
+            
+            elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+                # Format: 33-byte scan key + 33-byte spend key
+                if len(field.value_data) == 66:
+                    scan_key_bytes = field.value_data[:33]
+                    spend_key_bytes = field.value_data[33:]
+                    
+                    scan_key = PublicKey(GE.from_bytes(scan_key_bytes))
+                    spend_key = PublicKey(GE.from_bytes(spend_key_bytes))
+                    
+                    sp_info = (scan_key, spend_key)
+            
+            elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_LABEL:
+                if len(field.value_data) == 4:
+                    label = struct.unpack('<I', field.value_data)[0]
+            
+            elif field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT:
+                script_pubkey = field.value_data.hex()
+        
+        # Validate required fields
+        if amount is None:
+            raise ValueError(f"Output {output_index}: Missing PSBT_OUT_AMOUNT")
+        
+        # Build output dict
+        output_dict = {"amount": amount}
+        
+        if sp_info:
+            # Silent payment output
+            scan_key, spend_key = sp_info
+            output_dict["address"] = SilentPaymentAddress(
+                scan_key=scan_key,
+                spend_key=spend_key,
+                label=label
+            )
+        elif script_pubkey:
+            # Regular output
+            output_dict["script_pubkey"] = script_pubkey
+        else:
+            # Output has neither SP info nor script - might be pending computation
+            # This is valid during PSBT construction, just note it
+            pass
+        
+        outputs.append(output_dict)
+    
+    return outputs
+
+
+def extract_bip32_derivations_from_psbt(psbt) -> List[Optional[dict]]:
+    """
+    Extract BIP32 derivation paths from PSBT inputs
+    
+    Parses PSBT_IN_BIP32_DERIVATION fields to get the exact derivation path
+    for each input. This allows the hardware device to derive the correct
+    private key regardless of whether the input uses external addresses,
+    change addresses, or any other BIP32 path.
+    
+    Args:
+        psbt: SilentPaymentPSBT object
+        
+    Returns:
+        List of dicts (one per input), each containing:
+        - 'public_key': bytes (33 bytes compressed public key)
+        - 'fingerprint': bytes (4 bytes master key fingerprint)
+        - 'path': str (e.g., "m/84'/0'/0'/1/1")
+        
+        Returns None for inputs without BIP32 derivation info
+    """
+    import struct
+    
+    derivations = []
+    
+    for input_idx, input_fields in enumerate(psbt.input_maps):
+        derivation_info = None
+        
+        # Look for PSBT_IN_BIP32_DERIVATION field
+        for field in input_fields:
+            if field.field_type == PSBTFieldType.PSBT_IN_BIP32_DERIVATION:
+                # Key data is the public key (33 bytes compressed)
+                public_key = field.key_data
+                
+                # Value data format: <master_fingerprint (4 bytes)> <path_indices (4 bytes each)>
+                if len(field.value_data) >= 4:
+                    fingerprint = field.value_data[:4]
+                    
+                    # Parse derivation path indices
+                    path_data = field.value_data[4:]
+                    path_indices = []
+                    
+                    for i in range(0, len(path_data), 4):
+                        if i + 4 <= len(path_data):
+                            # Each index is 4 bytes, little-endian
+                            index = struct.unpack('<I', path_data[i:i+4])[0]
+                            
+                            # Check if hardened (bit 31 set)
+                            if index >= 0x80000000:
+                                # Hardened derivation
+                                path_indices.append(f"{index - 0x80000000}'")
+                            else:
+                                # Normal derivation
+                                path_indices.append(str(index))
+                    
+                    # Construct path string
+                    if path_indices:
+                        path = "m/" + "/".join(path_indices)
+                    else:
+                        path = "m"
+                    
+                    derivation_info = {
+                        'public_key': public_key,
+                        'fingerprint': fingerprint,
+                        'path': path
+                    }
+                    
+                    # Only use the first BIP32 derivation found for this input
+                    break
+        
+        derivations.append(derivation_info)
+    
+    return derivations

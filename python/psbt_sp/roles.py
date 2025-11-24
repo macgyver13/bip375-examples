@@ -304,7 +304,7 @@ class PSBTSigner:
             # Global ECDH approach - single entity controls all inputs
             combined_private_key = 0
             for index, utxo in spendable_inputs:
-                combined_private_key += adjusted_privkeys[index]
+                combined_private_key = (combined_private_key + adjusted_privkeys[index]) % GE.ORDER
 
             for scan_key in scan_keys:
                 # Compute ECDH: combined_private_key * scan_key
