@@ -80,10 +80,35 @@ impl HardwareDevice {
         println!(" HARDWARE DEVICE SCREEN:");
         println!("{}\n", "=".repeat(60));
 
-        display_transaction_summary();
+        // Extract DNSSEC proofs from PSBT
+        let (psbt, _) = load_psbt().map_err(|e| format!("Failed to load PSBT: {}", e))?;
+        
+        let mut dnssec_proofs = std::collections::HashMap::new();
+        for (output_idx, output_fields) in psbt.output_maps.iter().enumerate() {
+            for field in output_fields {
+                if field.field_type == constants::PSBT_OUT_DNSSEC_PROOF {
+                    match decode_dnssec_proof(&field.value_data) {
+                        Ok((dns_name, _proof_data)) => {
+                            let proof_hex = hex::encode(&field.value_data);
+                            dnssec_proofs.insert(output_idx, (dns_name, proof_hex));
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to decode DNSSEC proof for output {}: {}", output_idx, e);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Display transaction summary with DNSSEC proofs inline
+        let has_dnssec = !dnssec_proofs.is_empty();
+        display_transaction_summary_with_dnssec(if has_dnssec { Some(dnssec_proofs) } else { None });
 
         println!("  Review transaction carefully!");
         println!("   • Check recipient addresses");
+        if has_dnssec {
+            println!("   • Verify DNS contact names");
+        }
         println!("   • Verify amounts");
         println!("   • Confirm fee is reasonable\n");
 

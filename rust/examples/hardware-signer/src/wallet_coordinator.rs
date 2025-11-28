@@ -52,6 +52,18 @@ impl WalletCoordinator {
             outputs.len()
         );
 
+        // Add DNSSEC proof to recipient output (Output 1)
+        let dns_name = "donate@example.com";
+        let dnssec_proof = create_dnssec_proof(dns_name);
+        
+        use bip375_core::PsbtField;
+        let dnssec_field = PsbtField::with_value(constants::PSBT_OUT_DNSSEC_PROOF, dnssec_proof.clone());
+        psbt.add_output_field(1, dnssec_field)?; // Recipient output (not change)
+        
+        println!("   Added DNSSEC proof for recipient output");
+        println!("   DNS Name: {}", dns_name);
+        println!("   Proof Size: {} bytes\n", dnssec_proof.len());
+
         // Note: BIP32 derivation fields would be added here in production
         // For this demo, hardware wallet will match by public key
         println!("  UPDATER: Privacy mode - no derivation paths");

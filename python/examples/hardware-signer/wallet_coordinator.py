@@ -85,6 +85,25 @@ def create_psbt(wallet: Wallet, recipient_address):
     print("   Using privacy mode (no derivation path revealed)")
     print("   Hardware wallet will match public keys internally")
 
+    # Add DNSSEC proof to recipient output (Output 1)
+    # This demonstrates BIP 353 DNS name verification for silent payment addresses
+    from shared_hw_utils import create_dnssec_proof
+    
+    dns_name = "donate@example.com"
+    dnssec_proof = create_dnssec_proof(dns_name)
+    
+    # Add PSBT_OUT_DNSSEC_PROOF to output 1 (recipient, not change)
+    psbt.add_output_field(
+        output_index=1,
+        field_type=PSBTFieldType.PSBT_OUT_DNSSEC_PROOF,
+        key_data=b'',  # Empty key data per BIP 353
+        value_data=dnssec_proof
+    )
+    
+    print(f"\n   Added DNSSEC proof for recipient output")
+    print(f"   DNS Name: {dns_name}")
+    print(f"   Proof Size: {len(dnssec_proof)} bytes")
+
     # Save to transfer file
     metadata = {
         "step": "created",
@@ -92,7 +111,8 @@ def create_psbt(wallet: Wallet, recipient_address):
         "hw_must_sign": [0, 1],  # Hardware wallet must sign both inputs
         "recipient_scan_key": recipient_address.scan_key.hex,
         "recipient_spend_key": recipient_address.spend_key.hex,
-        "updater_added_bip32": True
+        "updater_added_bip32": True,
+        "dnssec_name": dns_name  # Store DNS name in metadata for reference
     }
 
     save_psbt_to_transfer_file(psbt, metadata)

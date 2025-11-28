@@ -78,6 +78,7 @@ class PSBTFieldType:
     PSBT_OUT_TAP_INTERNAL_KEY = 0x05
     PSBT_OUT_TAP_TREE = 0x06
     PSBT_OUT_TAP_BIP32_DERIVATION = 0x07
+    PSBT_OUT_DNSSEC_PROOF = 0x35
     PSBT_OUT_PROPRIETARY = 0xfc
 
     # BIP 375 Silent Payment output fields

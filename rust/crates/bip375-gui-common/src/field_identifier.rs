@@ -44,4 +44,6 @@ pub struct TransactionSummary {
     pub fee: u64,
     pub num_inputs: usize,
     pub num_outputs: usize,
+    /// DNS contacts for outputs (output_index -> dns_name)
+    pub dnssec_contacts: std::collections::HashMap<usize, String>,
 }

@@ -247,7 +247,7 @@ def test_hardware_wallet_attack_detection():
         # Step 3: Hardware device signs with ATTACK mode
         print("\n  Step 3: Hardware device signs with ATTACK mode")
         if not run_command(
-            ["python3", "hw_device.py", "--auto-read", "--auto-approve", "--attack"],
+            ["python3", "hw_device.py", "--auto-read", "--auto-approve", "--attack", "attack"],
             cwd=hw_dir,
             description="Hardware wallet signs with malicious scan key"
         ):

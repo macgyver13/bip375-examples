@@ -86,12 +86,27 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
 
     // Update transaction summary
     if let Some(summary) = &state.transaction_summary {
+        // Format DNS contacts for display
+        let mut contacts_str = String::new();
+        if !summary.dnssec_contacts.is_empty() {
+            contacts_str.push_str("DNS Contacts: ");
+            let mut first = true;
+            for (idx, name) in &summary.dnssec_contacts {
+                if !first {
+                    contacts_str.push_str(", ");
+                }
+                contacts_str.push_str(&format!("[#{}] {}", idx, name));
+                first = false;
+            }
+        }
+
         window.set_tx_summary(TransactionSummary {
             total_input: summary.total_input as i32,
             total_output: summary.total_output as i32,
             fee: summary.fee as i32,
             num_inputs: summary.num_inputs as i32,
             num_outputs: summary.num_outputs as i32,
+            dns_contacts: contacts_str.into(),
         });
     }
 

@@ -111,7 +111,10 @@ pub fn create_transaction_outputs() -> Vec<Output> {
 }
 
 /// Display transaction summary for user review
-pub fn display_transaction_summary() {
+///
+/// # Arguments
+/// * `dnssec_proofs` - Optional map of output_index -> (dns_name, proof_hex) for inline display
+pub fn display_transaction_summary_with_dnssec(dnssec_proofs: Option<std::collections::HashMap<usize, (String, String)>>) {
     let inputs = create_transaction_inputs();
     let outputs = create_transaction_outputs();
 
@@ -162,6 +165,14 @@ pub fn display_transaction_summary() {
                     "      Spend Key: {}",
                     hex::encode(address.spend_key.serialize())
                 );
+                
+                // Display DNSSEC proof inline if available for this output
+                if let Some(ref proofs) = dnssec_proofs {
+                    if let Some((dns_name, proof_hex)) = proofs.get(&i) {
+                        println!("      Contact: {}", dns_name);
+                        println!("      DNS Proof: {}", proof_hex);
+                    }
+                }
             }
             OutputRecipient::Address(script_pubkey) => {
                 println!("   Output {}: {} sats", i, output.amount.to_sat());
@@ -174,6 +185,11 @@ pub fn display_transaction_summary() {
     let fee = total_input - total_output;
     println!("\n   Fee: {} sats", fee);
     println!();
+}
+
+/// Display transaction summary for user review (without DNSSEC proofs)
+pub fn display_transaction_summary() {
+    display_transaction_summary_with_dnssec(None);
 }
 
 /// Print a step header
@@ -208,4 +224,77 @@ pub fn display_air_gap_instructions(from: &str, to: &str, auto_continue: bool) {
     } else {
         println!("{}", "=".repeat(60));
     }
+}
+
+// =============================================================================
+// DNSSEC Proof Utilities (BIP 353)
+// =============================================================================
+
+/// Create a BIP 353 DNSSEC proof for a DNS name
+///
+/// Format: <1-byte-length-prefixed BIP 353 human-readable name without the ₿ prefix>
+///         <RFC 9102-formatted DNSSEC Proof>
+///
+/// # Arguments
+/// * `dns_name` - DNS name (e.g., "donate@example.com")
+///
+/// # Returns
+/// Encoded bytes ready for PSBT_OUT_DNSSEC_PROOF field
+///
+/// # Note
+/// For demo purposes, this creates a mock DNSSEC proof.
+/// In production, this would contain real RFC 9102 DNSSEC proof data.
+pub fn create_dnssec_proof(dns_name: &str) -> Vec<u8> {
+    use bitcoin::hashes::{sha256, Hash};
+    
+    let dns_name_bytes = dns_name.as_bytes();
+    if dns_name_bytes.len() > 255 {
+        panic!("DNS name too long: {} bytes (max 255)", dns_name_bytes.len());
+    }
+
+    // Create mock DNSSEC proof (RFC 9102 format would be used in production)
+    let mut mock_proof = b"DNSSEC_PROOF_MOCK_DATA_".to_vec();
+    let hash = sha256::Hash::hash(dns_name_bytes);
+    mock_proof.extend_from_slice(hash.as_byte_array());
+
+    // Combine: <1-byte-length><dns_name><proof_data>
+    let mut proof_bytes = Vec::new();
+    proof_bytes.push(dns_name_bytes.len() as u8);
+    proof_bytes.extend_from_slice(dns_name_bytes);
+    proof_bytes.extend_from_slice(&mock_proof);
+
+    proof_bytes
+}
+
+/// Decode a BIP 353 DNSSEC proof
+///
+/// # Arguments
+/// * `proof_bytes` - Encoded DNSSEC proof from PSBT_OUT_DNSSEC_PROOF field
+///
+/// # Returns
+/// Result containing (dns_name, proof_data) or error message
+pub fn decode_dnssec_proof(proof_bytes: &[u8]) -> Result<(String, Vec<u8>), String> {
+    if proof_bytes.is_empty() {
+        return Err("DNSSEC proof too short (missing length byte)".to_string());
+    }
+
+    // Extract DNS name length (first byte)
+    let dns_name_length = proof_bytes[0] as usize;
+
+    if proof_bytes.len() < 1 + dns_name_length {
+        return Err(format!(
+            "DNSSEC proof too short (expected {} bytes minimum)",
+            1 + dns_name_length
+        ));
+    }
+
+    // Extract DNS name
+    let dns_name_bytes = &proof_bytes[1..1 + dns_name_length];
+    let dns_name = String::from_utf8(dns_name_bytes.to_vec())
+        .map_err(|e| format!("Invalid UTF-8 in DNS name: {}", e))?;
+
+    // Extract proof data (remainder)
+    let proof_data = proof_bytes[1 + dns_name_length..].to_vec();
+
+    Ok((dns_name, proof_data))
 }

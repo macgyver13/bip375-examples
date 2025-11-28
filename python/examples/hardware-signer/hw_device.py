@@ -26,6 +26,7 @@ from shared_hw_utils import (
     get_hardware_wallet, print_transaction_details,
     save_psbt_to_transfer_file, load_psbt_from_transfer_file,
     prompt_for_transfer, wait_for_user_input, print_header, print_separator,
+    decode_dnssec_proof,
     TRANSFER_FILE
 )
 
@@ -34,6 +35,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from psbt_sp.psbt import SilentPaymentPSBT
 from psbt_sp.constants import PSBTFieldType
 from psbt_sp.crypto import Wallet, PublicKey
+from psbt_sp.psbt_utils import extract_inputs_from_psbt, extract_output_details_from_psbt, extract_dnssec_proofs_from_outputs
 from secp256k1_374 import GE
 
 def receive_psbt(auto_read=False):
@@ -140,7 +142,12 @@ def verify_transaction_details(psbt, wallet: Wallet, auto_approve=False, attack=
     # Extract transaction details from PSBT (air-gap security model)
     inputs = extract_inputs_from_psbt(psbt)
     outputs = extract_output_details_from_psbt(psbt)
-    print_transaction_details(inputs, outputs)
+    
+    # Extract DNSSEC proofs for inline display
+    dnssec_proofs = extract_dnssec_proofs_from_outputs(psbt.output_maps)
+    
+    # Print transaction details with DNS info inline
+    print_transaction_details(inputs, outputs, dnssec_proofs)
 
     print("\n⚠️  VERIFY TRANSACTION ON DEVICE SCREEN")
     print("─" * 70)
@@ -148,6 +155,8 @@ def verify_transaction_details(psbt, wallet: Wallet, auto_approve=False, attack=
     print("  • Total amount being spent")
     print("  • Change amount returning to you")
     print("  • Silent payment recipient address")
+    if dnssec_proofs:
+        print("  • DNS contact name for recipient")
     print("  • Transaction fee")
 
     # User must confirm
@@ -187,12 +196,28 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet,
         wallet: Wallet instance for the hardware wallet
         attack: If not None, simulate attack mode
     """
-    from psbt_sp.psbt_utils import extract_inputs_from_psbt
+    from psbt_sp.psbt_utils import extract_inputs_from_psbt, extract_scan_keys_from_outputs
     
     print("\n SIGNER: Processing transaction with hardware keys...")
 
     # Extract inputs from PSBT (air-gap security model)
     inputs = extract_inputs_from_psbt(psbt)
+
+    scan_key_bytes_list = extract_scan_keys_from_outputs(psbt.output_maps)
+    scan_keys = [PublicKey(GE.from_bytes(sk_bytes)) for sk_bytes in scan_key_bytes_list]
+    
+    print(f"Extracted {len(scan_keys)} scan key(s) from PSBT outputs:")
+    for i, sk in enumerate(scan_keys):
+        print(f"     Scan key {i}: {sk.bytes.hex()}")
+
+    # For demo verification only - show which is which
+    # In real hardware wallet, device wouldn't know which is change vs recipient
+    # It just processes all scan keys found in PSBT
+    if len(scan_keys) >= 2:
+        if scan_keys[0].bytes == wallet.scan_pub.bytes:
+            print(f"     (Output 0 is change to hardware wallet)")
+        if len(scan_keys) > 1:
+            print(f"     (Output 1 is payment to recipient)")
 
     # Get all scan keys from outputs
     # We need scan keys for ALL silent payment outputs:
@@ -209,7 +234,6 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet,
         attacker_wallet = Wallet(seed="attacker_malicious_scan_key")
         malicious_scan_key = attacker_wallet.scan_pub
 
-        print(f"   Legitimate scan key:  {recipient_address.scan_key.hex}")
         print(f"   Malicious scan key:   {malicious_scan_key.hex}")
         print("   ⚠️  Funds would go to attacker if this succeeds!")
 
@@ -240,24 +264,6 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet,
         # Use malicious scan key for ECDH computation
         # Note: In attack mode, we only use malicious key (not realistic but for demo)
         scan_keys = [malicious_scan_key, wallet.scan_pub]
-    else:
-        # Normal mode: Extract scan keys directly from PSBT output fields
-        from psbt_sp.psbt_utils import extract_scan_keys_from_outputs
-        scan_key_bytes_list = extract_scan_keys_from_outputs(psbt.output_maps)
-        scan_keys = [PublicKey(GE.from_bytes(sk_bytes)) for sk_bytes in scan_key_bytes_list]
-
-        print(f"   Extracted {len(scan_keys)} scan key(s) from PSBT outputs:")
-        for i, sk in enumerate(scan_keys):
-            print(f"     Scan key {i}: {sk.bytes.hex()}")
-
-        # For demo verification only - show which is which
-        # In real hardware wallet, device wouldn't know which is change vs recipient
-        # It just processes all scan keys found in PSBT
-        if len(scan_keys) >= 2:
-            if scan_keys[0].bytes == wallet.scan_pub.bytes:
-                print(f"     (Output 0 is change to hardware wallet)")
-            if len(scan_keys) > 1:
-                print(f"     (Output 1 is payment to recipient)")
 
     # Hardware wallet controls both inputs
     hw_controlled_inputs = metadata.get("hw_must_sign", [0, 1])

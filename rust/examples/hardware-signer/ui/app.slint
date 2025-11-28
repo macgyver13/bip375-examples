@@ -14,13 +14,14 @@ export struct PsbtField {
     map-index: int,  // -1 for global fields, >= 0 for input/output index
 }
 
-export struct TransactionSummary {
-    total-input: int,
-    total-output: int,
-    fee: int,
-    num-inputs: int,
-    num-outputs: int,
-}
+    export struct TransactionSummary {
+        total-input: int,
+        total-output: int,
+        fee: int,
+        num-inputs: int,
+        num-outputs: int,
+        dns-contacts: string,
+    }
 
 export struct ValidationResults {
     ecdh-complete: bool,
@@ -416,6 +417,14 @@ export component AppWindow inherits Window {
                     Text {
                         text: "Fee: " + tx-summary.fee + " sats";
                         color: tx-summary.fee > 100000 ? #e6b300 : #33cc33;
+                    }
+
+                    if tx-summary.dns-contacts != "": Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    if tx-summary.dns-contacts != "": Text {
+                        text: tx-summary.dns-contacts;
+                        color: #3399e6;
+                        font-weight: 700;
                     }
                 }
 

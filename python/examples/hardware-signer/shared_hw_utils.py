@@ -166,11 +166,16 @@ def get_transaction_outputs(wallet: Wallet, recipient_address):
 
     return outputs
 
-def print_transaction_details(inputs, outputs):
+def print_transaction_details(inputs, outputs, dnssec_proofs=None):
     """
     Print transaction details for manual validation
 
     User can verify these details match on both coordinator and hardware device.
+    
+    Args:
+        inputs: List of UTXO objects
+        outputs: List of output dictionaries
+        dnssec_proofs: Optional dict mapping output_index -> proof_bytes (for DNS name display)
     """
     print("\n TRANSACTION DETAILS (Verify these match on both sides)")
     print("─" * 70)
@@ -210,6 +215,17 @@ def print_transaction_details(inputs, outputs):
                 print(f"    Spend Key:  {sp_address.spend_key.hex}")
                 if hasattr(sp_address, 'label') and sp_address.label is not None:
                     print(f"    Label:      {sp_address.label}")
+                
+                # Display DNS contact info inline if available
+                if dnssec_proofs and i in dnssec_proofs:
+                    try:
+                        dns_name, proof_data = decode_dnssec_proof(dnssec_proofs[i])
+                        print(f"    Contact:    {dns_name}")
+                        # Display proof bytes for verification
+                        proof_hex = dnssec_proofs[i].hex()
+                        print(f"    DNS Proof:  {proof_hex}")
+                    except Exception:
+                        print("    WARNING: DNSSEC proof decoding failed")
         else:
             print("    Type:       Regular Output (P2WPKH)")
             print(f"    ScriptPub:  {output['script_pubkey']}")
@@ -307,3 +323,84 @@ def reset_demo():
     final_tx_file = os.path.join(output_dir, "final_transaction.hex")
     if os.path.exists(final_tx_file):
         os.remove(final_tx_file)
+
+# =============================================================================
+# DNSSEC Proof Utilities (BIP 353)
+# =============================================================================
+
+def create_dnssec_proof(dns_name: str) -> bytes:
+    """
+    Create a BIP 353 DNSSEC proof for a DNS name
+    
+    Format: <1-byte-length-prefixed BIP 353 human-readable name without the ₿ prefix>
+            <RFC 9102-formatted DNSSEC Proof>
+    
+    Args:
+        dns_name: DNS name (e.g., "donate@example.com")
+    
+    Returns:
+        Encoded bytes ready for PSBT_OUT_DNSSEC_PROOF field
+        
+    Note:
+        For demo purposes, this creates a mock DNSSEC proof.
+        In production, this would contain real RFC 9102 DNSSEC proof data.
+    """
+    # Encode DNS name with 1-byte length prefix (BIP 353)
+    dns_name_bytes = dns_name.encode('utf-8')
+    if len(dns_name_bytes) > 255:
+        raise ValueError(f"DNS name too long: {len(dns_name_bytes)} bytes (max 255)")
+    
+    # Create mock DNSSEC proof (RFC 9102 format would be used in production)
+    # For demo, we'll create a simple mock proof with recognizable structure
+    mock_proof = b'DNSSEC_PROOF_MOCK_DATA_' + hashlib.sha256(dns_name_bytes).digest()
+    
+    # Combine: <1-byte-length><dns_name><proof_data>
+    proof_bytes = bytes([len(dns_name_bytes)]) + dns_name_bytes + mock_proof
+    
+    return proof_bytes
+
+def decode_dnssec_proof(proof_bytes: bytes) -> tuple:
+    """
+    Decode a BIP 353 DNSSEC proof
+    
+    Args:
+        proof_bytes: Encoded DNSSEC proof from PSBT_OUT_DNSSEC_PROOF field
+    
+    Returns:
+        Tuple of (dns_name: str, proof_data: bytes)
+        
+    Raises:
+        ValueError: If proof_bytes is malformed
+    """
+    if len(proof_bytes) < 1:
+        raise ValueError("DNSSEC proof too short (missing length byte)")
+    
+    # Extract DNS name length (first byte)
+    dns_name_length = proof_bytes[0]
+    
+    if len(proof_bytes) < 1 + dns_name_length:
+        raise ValueError(f"DNSSEC proof too short (expected {1 + dns_name_length} bytes minimum)")
+    
+    # Extract DNS name
+    dns_name_bytes = proof_bytes[1:1 + dns_name_length]
+    dns_name = dns_name_bytes.decode('utf-8')
+    
+    # Extract proof data (remainder)
+    proof_data = proof_bytes[1 + dns_name_length:]
+    
+    return dns_name, proof_data
+
+def print_dnssec_info(dns_name: str, proof_data: bytes):
+    """
+    Pretty-print DNSSEC information for user display
+    
+    Args:
+        dns_name: Decoded DNS name
+        proof_data: DNSSEC proof data
+    """
+    print(f"    DNS Name:   {dns_name}")
+    print(f"    Proof Size: {len(proof_data)} bytes")
+    if len(proof_data) > 0:
+        # Show first few bytes of proof for verification
+        proof_preview = proof_data[:32].hex() if len(proof_data) >= 32 else proof_data.hex()
+        print(f"    Proof:      {proof_preview}{'...' if len(proof_data) > 32 else ''}")

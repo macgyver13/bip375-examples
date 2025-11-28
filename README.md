@@ -58,7 +58,7 @@ Alice, Bob and Charlie create, sign, finalize a silent payments spending transac
   - PSBT Viewer - rust/tools/psbt-viewer
 
 ### Testing Python Examples
-  **`tests/validate_tests_examples.py`** - Validate python examples
+  **`python/tests/validate_tests_examples.py`** - Validate python examples
 
 ## **BIP-0375 Reference**
 

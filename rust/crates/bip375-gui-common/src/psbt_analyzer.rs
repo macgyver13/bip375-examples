@@ -82,11 +82,13 @@ pub fn is_sp_field(field_type: u8) -> bool {
 ///
 /// Extracts input amounts from PSBT_IN_WITNESS_UTXO fields and output amounts
 /// from PSBT_OUT_AMOUNT fields to compute totals and fees.
+/// Also extracts DNSSEC proofs for DNS contact display.
 pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSummary {
     let mut total_input = 0u64;
     let mut total_output = 0u64;
     let num_inputs = psbt.input_maps.len();
     let num_outputs = psbt.output_maps.len();
+    let mut dnssec_contacts = std::collections::HashMap::new();
 
     // Extract input amounts from PSBT_IN_WITNESS_UTXO fields
     for input_map in &psbt.input_maps {
@@ -106,8 +108,8 @@ pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSumma
         }
     }
 
-    // Extract output amounts from PSBT_OUT_AMOUNT fields
-    for output_map in &psbt.output_maps {
+    // Extract output amounts and DNSSEC proofs
+    for (output_idx, output_map) in psbt.output_maps.iter().enumerate() {
         for field in output_map {
             if field.field_type == constants::PSBT_OUT_AMOUNT {
                 // PSBT_OUT_AMOUNT is a 64-bit signed little-endian integer per PSBT v2 spec
@@ -117,6 +119,11 @@ pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSumma
                         .expect("slice is exactly 8 bytes as verified by length check");
                     let amount = u64::from_le_bytes(amount_bytes);
                     total_output += amount;
+                }
+            } else if field.field_type == constants::PSBT_OUT_DNSSEC_PROOF {
+                // Decode DNSSEC proof to extract DNS name
+                if let Ok(dns_name) = decode_dnssec_proof(&field.value_data) {
+                    dnssec_contacts.insert(output_idx, dns_name);
                 }
             }
         }
@@ -131,5 +138,28 @@ pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSumma
         fee,
         num_inputs,
         num_outputs,
+        dnssec_contacts,
     }
+}
+
+/// Decode DNSSEC proof to extract DNS name (BIP 353 format)
+///
+/// Format: <1-byte-length><dns_name><proof_data>
+fn decode_dnssec_proof(proof_bytes: &[u8]) -> Result<String, String> {
+    if proof_bytes.is_empty() {
+        return Err("DNSSEC proof too short (missing length byte)".to_string());
+    }
+
+    let dns_name_length = proof_bytes[0] as usize;
+
+    if proof_bytes.len() < 1 + dns_name_length {
+        return Err(format!(
+            "DNSSEC proof too short (expected {} bytes minimum)",
+            1 + dns_name_length
+        ));
+    }
+
+    let dns_name_bytes = &proof_bytes[1..1 + dns_name_length];
+    String::from_utf8(dns_name_bytes.to_vec())
+        .map_err(|e| format!("Invalid UTF-8 in DNS name: {}", e))
 }

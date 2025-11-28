@@ -447,3 +447,36 @@ def extract_bip32_derivations_from_psbt(psbt) -> List[Optional[dict]]:
         derivations.append(derivation_info)
     
     return derivations
+
+
+def extract_dnssec_proofs_from_outputs(output_maps: List[List[PSBTField]]) -> dict:
+    """
+    Extract DNSSEC proofs from PSBT outputs
+    
+    Parses PSBT_OUT_DNSSEC_PROOF fields to get DNS name verification data
+    for outputs that have associated DNS names (BIP 353).
+    
+    Args:
+        output_maps: List of output field lists from PSBT
+        
+    Returns:
+        Dict mapping output_index -> proof_bytes
+        
+    Example:
+        proofs = extract_dnssec_proofs_from_outputs(psbt.output_maps)
+        if 1 in proofs:
+            dns_name, proof_data = decode_dnssec_proof(proofs[1])
+            print(f"Output 1 pays to: {dns_name}")
+    """
+    dnssec_proofs = {}
+    
+    for output_index, output_fields in enumerate(output_maps):
+        for field in output_fields:
+            if field.field_type == PSBTFieldType.PSBT_OUT_DNSSEC_PROOF:
+                # Store the proof bytes for this output
+                dnssec_proofs[output_index] = field.value_data
+                # Only take the first DNSSEC proof per output
+                break
+    
+    return dnssec_proofs
+
