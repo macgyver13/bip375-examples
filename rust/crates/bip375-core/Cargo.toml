@@ -12,6 +12,7 @@ secp256k1.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 hex.workspace = true
+psbt-v2.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

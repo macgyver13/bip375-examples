@@ -13,32 +13,32 @@ use std::collections::HashSet;
 pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldIdentifier> {
     let mut fields = HashSet::new();
 
-    // Global fields
-    for field in &psbt.global_fields {
+    // Global unknown fields (custom/proprietary fields stored in unknowns map)
+    for (key, _value) in &psbt.global.unknowns {
         fields.insert(FieldIdentifier::Global {
-            field_type: field.field_type,
-            key_data: field.key_data.clone(),
+            field_type: key.type_value,
+            key_data: key.key.clone(),
         });
     }
 
-    // Input fields
-    for (index, input_map) in psbt.input_maps.iter().enumerate() {
-        for field in input_map {
+    // Input unknown fields
+    for (index, input) in psbt.inputs.iter().enumerate() {
+        for (key, _value) in &input.unknowns {
             fields.insert(FieldIdentifier::Input {
                 index,
-                field_type: field.field_type,
-                key_data: field.key_data.clone(),
+                field_type: key.type_value,
+                key_data: key.key.clone(),
             });
         }
     }
 
-    // Output fields
-    for (index, output_map) in psbt.output_maps.iter().enumerate() {
-        for field in output_map {
+    // Output unknown fields
+    for (index, output) in psbt.outputs.iter().enumerate() {
+        for (key, _value) in &output.unknowns {
             fields.insert(FieldIdentifier::Output {
                 index,
-                field_type: field.field_type,
-                key_data: field.key_data.clone(),
+                field_type: key.type_value,
+                key_data: key.key.clone(),
             });
         }
     }
@@ -69,9 +69,7 @@ pub fn compute_field_diff(
 pub fn is_sp_field(field_type: u8) -> bool {
     matches!(
         field_type,
-        constants::PSBT_GLOBAL_SP_ECDH_SHARE
-            | constants::PSBT_GLOBAL_SP_DLEQ
-            | constants::PSBT_IN_SP_ECDH_SHARE
+        constants::PSBT_IN_SP_ECDH_SHARE
             | constants::PSBT_IN_SP_DLEQ
             | constants::PSBT_OUT_SP_V0_INFO
             | constants::PSBT_OUT_SP_V0_LABEL
@@ -80,49 +78,34 @@ pub fn is_sp_field(field_type: u8) -> bool {
 
 /// Compute transaction summary from PSBT
 ///
-/// Extracts input amounts from PSBT_IN_WITNESS_UTXO fields and output amounts
-/// from PSBT_OUT_AMOUNT fields to compute totals and fees.
+/// Extracts input amounts from witness_utxo fields and output amounts
+/// from the amount field to compute totals and fees.
 /// Also extracts DNSSEC proofs for DNS contact display.
 pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSummary {
     let mut total_input = 0u64;
     let mut total_output = 0u64;
-    let num_inputs = psbt.input_maps.len();
-    let num_outputs = psbt.output_maps.len();
+    let num_inputs = psbt.inputs.len();
+    let num_outputs = psbt.outputs.len();
     let mut dnssec_contacts = std::collections::HashMap::new();
 
-    // Extract input amounts from PSBT_IN_WITNESS_UTXO fields
-    for input_map in &psbt.input_maps {
-        for field in input_map {
-            if field.field_type == constants::PSBT_IN_WITNESS_UTXO {
-                // PSBT_IN_WITNESS_UTXO contains a TxOut structure:
-                // - 8 bytes: amount (little-endian u64)
-                // - variable: scriptPubKey (compact size + script)
-                if field.value_data.len() >= 8 {
-                    let amount_bytes: [u8; 8] = field.value_data[0..8]
-                        .try_into()
-                        .expect("slice is exactly 8 bytes as verified by length check");
-                    let amount = u64::from_le_bytes(amount_bytes);
-                    total_input += amount;
-                }
-            }
+    // Extract input amounts from witness_utxo fields
+    // In rust-psbt, witness_utxo is a structured field, not raw bytes
+    for input in &psbt.inputs {
+        if let Some(witness_utxo) = &input.witness_utxo {
+            total_input += witness_utxo.value.to_sat();
         }
     }
 
     // Extract output amounts and DNSSEC proofs
-    for (output_idx, output_map) in psbt.output_maps.iter().enumerate() {
-        for field in output_map {
-            if field.field_type == constants::PSBT_OUT_AMOUNT {
-                // PSBT_OUT_AMOUNT is a 64-bit signed little-endian integer per PSBT v2 spec
-                if field.value_data.len() == 8 {
-                    let amount_bytes: [u8; 8] = field.value_data[0..8]
-                        .try_into()
-                        .expect("slice is exactly 8 bytes as verified by length check");
-                    let amount = u64::from_le_bytes(amount_bytes);
-                    total_output += amount;
-                }
-            } else if field.field_type == constants::PSBT_OUT_DNSSEC_PROOF {
+    for (output_idx, output) in psbt.outputs.iter().enumerate() {
+        // In rust-psbt, amount is a structured field
+        total_output += output.amount.to_sat();
+
+        // Check for DNSSEC proofs in unknown fields
+        for (key, value) in &output.unknowns {
+            if key.type_value == constants::PSBT_OUT_DNSSEC_PROOF {
                 // Decode DNSSEC proof to extract DNS name
-                if let Ok(dns_name) = decode_dnssec_proof(&field.value_data) {
+                if let Ok(dns_name) = decode_dnssec_proof(value) {
                     dnssec_contacts.insert(output_idx, dns_name);
                 }
             }

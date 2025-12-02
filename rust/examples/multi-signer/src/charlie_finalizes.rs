@@ -21,7 +21,7 @@
 //! - Output scripts:   Computed
 //! - Transaction:   Complete
 
-use bip375_core::Result;
+use bip375_core::{Bip375PsbtExt, Result};
 use bip375_io::{PsbtMetadata};
 use bip375_roles::{
     extractor::extract_transaction,

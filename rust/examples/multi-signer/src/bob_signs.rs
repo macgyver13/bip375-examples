@@ -15,7 +15,7 @@
 //! - Input 1:   Bob (ECDH + signature)
 //! - Input 2:   Waiting for Charlie
 
-use bip375_core::Result;
+use bip375_core::{Bip375PsbtExt, Result};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     signer::{add_ecdh_shares_partial, sign_inputs},

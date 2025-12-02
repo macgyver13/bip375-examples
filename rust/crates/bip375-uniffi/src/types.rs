@@ -2,6 +2,7 @@
 
 use crate::errors::Bip375Error;
 use bip375_core as core;
+use bip375_core::Bip375PsbtExt;
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -232,25 +233,47 @@ impl AggregatedShare {
 // ============================================================================
 
 pub struct SilentPaymentPsbt {
-    inner: Arc<Mutex<core::psbt::SilentPaymentPsbt>>,
+    inner: Arc<Mutex<bip375_core::SilentPaymentPsbt>>,
 }
 
 impl SilentPaymentPsbt {
     pub fn new() -> Self {
+        use bitcoin::transaction::Version;
+        use psbt_v2::v2::Global;
+
+        let psbt = bip375_core::SilentPaymentPsbt {
+            global: Global {
+                version: psbt_v2::V2,
+                tx_version: Version(2),
+                fallback_lock_time: None,
+                input_count: 0,
+                output_count: 0,
+                tx_modifiable_flags: 0,
+                sp_dleq_proofs: std::collections::BTreeMap::new(),
+                sp_ecdh_shares: std::collections::BTreeMap::new(),
+                unknowns: std::collections::BTreeMap::new(),
+                xpubs: std::collections::BTreeMap::new(),
+                proprietaries: std::collections::BTreeMap::new(),
+            },
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+        };
+
         Self {
-            inner: Arc::new(Mutex::new(core::psbt::SilentPaymentPsbt::new())),
+            inner: Arc::new(Mutex::new(psbt)),
         }
     }
 
     // Internal constructor for wrapping a core PSBT
-    pub(crate) fn from_core(psbt: core::psbt::SilentPaymentPsbt) -> Self {
+    pub(crate) fn from_core(psbt: bip375_core::SilentPaymentPsbt) -> Self {
         Self {
             inner: Arc::new(Mutex::new(psbt)),
         }
     }
 
     pub fn deserialize(data: Vec<u8>) -> Result<Self, Bip375Error> {
-        let psbt = core::psbt::SilentPaymentPsbt::deserialize(&data)?;
+        let psbt = bip375_core::SilentPaymentPsbt::deserialize(&data)
+            .map_err(|_| Bip375Error::SerializationError)?;
         Ok(Self {
             inner: Arc::new(Mutex::new(psbt)),
         })
@@ -258,7 +281,7 @@ impl SilentPaymentPsbt {
 
     pub fn serialize(&self) -> Result<Vec<u8>, Bip375Error> {
         let psbt = self.inner.lock().unwrap();
-        Ok(psbt.serialize()?)
+        Ok(psbt.serialize())
     }
 
     pub fn num_inputs(&self) -> u32 {
@@ -325,7 +348,7 @@ impl SilentPaymentPsbt {
     // Internal access for other modules
     pub(crate) fn with_inner<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&mut core::psbt::SilentPaymentPsbt) -> R,
+        F: FnOnce(&mut bip375_core::SilentPaymentPsbt) -> R,
     {
         let mut psbt = self.inner.lock().unwrap();
         f(&mut psbt)

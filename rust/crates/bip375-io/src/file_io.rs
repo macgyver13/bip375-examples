@@ -8,7 +8,7 @@ use std::path::Path;
 
 /// Save a PSBT to a file (binary format)
 pub fn save_psbt_binary<P: AsRef<Path>>(psbt: &SilentPaymentPsbt, path: P) -> Result<()> {
-    let bytes = psbt.serialize()?;
+    let bytes = psbt.serialize();
     fs::write(path, bytes)?;
     Ok(())
 }
@@ -16,7 +16,8 @@ pub fn save_psbt_binary<P: AsRef<Path>>(psbt: &SilentPaymentPsbt, path: P) -> Re
 /// Load a PSBT from a file (binary format)
 pub fn load_psbt_binary<P: AsRef<Path>>(path: P) -> Result<SilentPaymentPsbt> {
     let bytes = fs::read(path)?;
-    let psbt = SilentPaymentPsbt::deserialize(&bytes)?;
+    let psbt = SilentPaymentPsbt::deserialize(&bytes)
+        .map_err(|e| IoError::Other(format!("PSBT deserialization error: {:?}", e)))?;
     Ok(psbt)
 }
 
@@ -27,7 +28,7 @@ pub fn save_psbt_with_metadata<P: AsRef<Path>>(
     path: P,
 ) -> Result<()> {
     // Serialize PSBT to base64
-    let psbt_bytes = psbt.serialize()?;
+    let psbt_bytes = psbt.serialize();
     let psbt_base64 = base64_encode(&psbt_bytes);
 
     // Create PSBT file structure
@@ -54,7 +55,8 @@ pub fn load_psbt_with_metadata<P: AsRef<Path>>(
 
     // Decode base64 PSBT
     let psbt_bytes = base64_decode(&psbt_file.psbt)?;
-    let psbt = SilentPaymentPsbt::deserialize(&psbt_bytes)?;
+    let psbt = SilentPaymentPsbt::deserialize(&psbt_bytes)
+        .map_err(|e| IoError::Other(format!("PSBT deserialization error: {:?}", e)))?;
 
     Ok((psbt, psbt_file.metadata))
 }
@@ -117,30 +119,30 @@ fn base64_decode(data: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bip375_core::Bip375PsbtExt;
     use tempfile::TempDir;
 
     fn create_test_psbt() -> SilentPaymentPsbt {
-        use bip375_core::{PsbtField, PSBT_GLOBAL_VERSION, PSBT_GLOBAL_INPUT_COUNT, PSBT_GLOBAL_OUTPUT_COUNT, PSBT_V2_VERSION};
+        use bitcoin::transaction::Version;
+        use psbt_v2::v2::Global;
 
-        let mut psbt = SilentPaymentPsbt::new();
-
-        // Add required global fields for PSBT v2
-        psbt.add_global_field(PsbtField::with_value(
-            PSBT_GLOBAL_VERSION,
-            PSBT_V2_VERSION.to_le_bytes().to_vec(),
-        ));
-
-        psbt.add_global_field(PsbtField::with_value(
-            PSBT_GLOBAL_INPUT_COUNT,
-            vec![0], // 0 inputs (compact size)
-        ));
-
-        psbt.add_global_field(PsbtField::with_value(
-            PSBT_GLOBAL_OUTPUT_COUNT,
-            vec![0], // 0 outputs (compact size)
-        ));
-
-        psbt
+        SilentPaymentPsbt {
+            global: Global {
+                version: psbt_v2::V2,
+                tx_version: Version(2),
+                fallback_lock_time: None,
+                input_count: 0,
+                output_count: 0,
+                tx_modifiable_flags: 0,
+                sp_dleq_proofs: std::collections::BTreeMap::new(),
+                sp_ecdh_shares: std::collections::BTreeMap::new(),
+                unknowns: std::collections::BTreeMap::new(),
+                xpubs: std::collections::BTreeMap::new(),
+                proprietaries: std::collections::BTreeMap::new(),
+            },
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+        }
     }
 
     #[test]

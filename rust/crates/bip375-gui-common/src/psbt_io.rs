@@ -21,16 +21,12 @@ pub fn import_from_base64(base64_str: &str) -> Result<SilentPaymentPsbt, String>
 
     // Parse PSBT
     SilentPaymentPsbt::deserialize(&bytes)
-        .map_err(|e| format!("PSBT parse error: {}", e))
+        .map_err(|e| format!("PSBT parse error: {:?}", e))
 }
 
 /// Export a PSBT to a base64-encoded string
-///
-/// # Errors
-/// Returns an error if the PSBT serialization fails.
 pub fn export_to_base64(psbt: &SilentPaymentPsbt) -> Result<String, String> {
-    let bytes = psbt.serialize()
-        .map_err(|e| format!("PSBT serialize error: {}", e))?;
+    let bytes = psbt.serialize();
 
     use base64::Engine;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))

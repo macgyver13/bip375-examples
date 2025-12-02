@@ -15,8 +15,9 @@ bip375-io = { path = "../bip375-io" }
 bip375-roles = { path = "../bip375-roles" }
 
 # Bitcoin
-bitcoin = "0.31"
-secp256k1 = { version = "0.28", features = ["global-context"] }
+bitcoin.workspace = true
+secp256k1.workspace = true
+psbt-v2.workspace = true
 
 # UniFFI
 uniffi = { version = "0.28", features = ["build"] }

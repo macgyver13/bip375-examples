@@ -27,50 +27,52 @@ fn convert_fields_to_slint(
     let identifiers = psbt_analyzer::extract_all_field_identifiers(psbt);
 
     for identifier in identifiers {
-        let (field_data, category, map_index) = match &identifier {
+        let (field_type, key_data, value_data, category, map_index) = match &identifier {
             FieldIdentifier::Global {
                 field_type,
                 key_data,
             } => {
-                let field = psbt
-                    .global_fields
+                let value = psbt.global.unknowns
                     .iter()
-                    .find(|f| f.field_type == *field_type && f.key_data == *key_data)
+                    .find(|(key, _value)| key.type_value == *field_type && &key.key == key_data)
+                    .map(|(_key, value)| value)
                     .expect("Field should exist");
-                (field, FieldCategory::Global, -1)
+                (*field_type, key_data.clone(), value.clone(), FieldCategory::Global, -1)
             }
             FieldIdentifier::Input {
                 index,
                 field_type,
                 key_data,
             } => {
-                let field = psbt.input_maps[*index]
+                let value = psbt.inputs[*index].unknowns
                     .iter()
-                    .find(|f| f.field_type == *field_type && f.key_data == *key_data)
+                    .find(|(key, _value)| key.type_value == *field_type && &key.key == key_data)
+                    .map(|(_key, value)| value)
                     .expect("Field should exist");
-                (field, FieldCategory::Input, *index as i32)
+                (*field_type, key_data.clone(), value.clone(), FieldCategory::Input, *index as i32)
             }
             FieldIdentifier::Output {
                 index,
                 field_type,
                 key_data,
             } => {
-                let field = psbt.output_maps[*index]
+                let value = psbt.outputs[*index].unknowns
                     .iter()
-                    .find(|f| f.field_type == *field_type && f.key_data == *key_data)
+                    .find(|(key, _value)| key.type_value == *field_type && &key.key == key_data)
+                    .map(|(_key, value)| value)
                     .expect("Field should exist");
-                (field, FieldCategory::Output, *index as i32)
+                (*field_type, key_data.clone(), value.clone(), FieldCategory::Output, *index as i32)
             }
         };
 
-        let field_name = display_formatting::format_field_name(category, field_data.field_type);
-        let is_sp_field = psbt_analyzer::is_sp_field(field_data.field_type);
-        let key_preview = display_formatting::format_value_preview(&field_data.key_data);
-        let value_preview = display_formatting::format_value_preview(&field_data.value_data);
+        let field_name = display_formatting::format_field_name(category, field_type);
+        let is_sp_field = psbt_analyzer::is_sp_field(field_type);
+        let key_preview = display_formatting::format_value_preview(&key_data);
+        let value_preview = display_formatting::format_value_preview(&value_data);
 
         let slint_field = PsbtField {
             field_name: field_name.into(),
-            field_type: format!("0x{:02x}", field_data.field_type).into(),
+            field_type: format!("0x{:02x}", field_type).into(),
             key_preview: key_preview.into(),
             value_preview: value_preview.into(),
             is_sp_field,

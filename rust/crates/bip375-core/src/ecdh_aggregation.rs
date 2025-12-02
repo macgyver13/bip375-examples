@@ -16,7 +16,7 @@
 //!
 //! This module automatically detects which mode is being used and aggregates accordingly.
 
-use crate::{Error, Result, SilentPaymentPsbt};
+use crate::{Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
 use secp256k1::PublicKey;
 use std::collections::HashMap;
 

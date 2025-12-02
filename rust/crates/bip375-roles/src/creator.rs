@@ -2,61 +2,87 @@
 //!
 //! Creates the initial PSBT structure.
 
-use bip375_core::{PsbtField, Result, SilentPaymentPsbt};
-use bip375_core::constants::*;
+use bip375_core::{Result, SilentPaymentPsbt};
+use bitcoin::transaction::Version;
+use bitcoin::hashes::Hash;
+use bitcoin::Txid;
+use psbt_v2::v2::{Psbt as PsbtV2, Global};
 
-/// Create a new PSBT v2 with the specified number of inputs and outputs
+/// Create a new PSBT with specified number of inputs and outputs
 pub fn create_psbt(num_inputs: usize, num_outputs: usize) -> Result<SilentPaymentPsbt> {
-    let mut psbt = SilentPaymentPsbt::new();
-
-    // Add PSBT version (required for v2)
-    psbt.add_global_field(PsbtField::with_value(
-        PSBT_GLOBAL_VERSION,
-        PSBT_V2_VERSION.to_le_bytes().to_vec(),
-    ));
-
-    // Add transaction version (default to 2)
-    psbt.add_global_field(PsbtField::with_value(
-        PSBT_GLOBAL_TX_VERSION,
-        2u32.to_le_bytes().to_vec(),
-    ));
-
-    // Add input count
-    let mut input_count_bytes = Vec::new();
-    PsbtField::write_compact_size(&mut input_count_bytes, num_inputs as u64)?;
-    psbt.add_global_field(PsbtField::with_value(
-        PSBT_GLOBAL_INPUT_COUNT,
-        input_count_bytes,
-    ));
-
-    // Add output count
-    let mut output_count_bytes = Vec::new();
-    PsbtField::write_compact_size(&mut output_count_bytes, num_outputs as u64)?;
-    psbt.add_global_field(PsbtField::with_value(
-        PSBT_GLOBAL_OUTPUT_COUNT,
-        output_count_bytes,
-    ));
-
-    // Add TX modifiable flag (allow signer to modify inputs/outputs)
-    psbt.add_global_field(PsbtField::with_value(
-        PSBT_GLOBAL_TX_MODIFIABLE,
-        vec![TX_MODIFIABLE_INPUTS | TX_MODIFIABLE_OUTPUTS],
-    ));
-
-    // Initialize empty input and output maps
+    // Create inputs
+    let mut inputs = Vec::with_capacity(num_inputs);
     for _ in 0..num_inputs {
-        psbt.input_maps.push(Vec::new());
-    }
-    for _ in 0..num_outputs {
-        psbt.output_maps.push(Vec::new());
+        inputs.push(psbt_v2::v2::Input {
+            previous_txid: Txid::all_zeros(),
+            spent_output_index: 0,
+            sequence: None,
+            witness_utxo: None,
+            partial_sigs: std::collections::BTreeMap::new(),
+            sighash_type: None,
+            redeem_script: None,
+            witness_script: None,
+            bip32_derivations: std::collections::BTreeMap::new(),
+            final_script_sig: None,
+            final_script_witness: None,
+            ripemd160_preimages: std::collections::BTreeMap::new(),
+            sha256_preimages: std::collections::BTreeMap::new(),
+            hash160_preimages: std::collections::BTreeMap::new(),
+            hash256_preimages: std::collections::BTreeMap::new(),
+            tap_key_sig: None,
+            tap_script_sigs: std::collections::BTreeMap::new(),
+            tap_internal_key: None,
+            tap_merkle_root: None,
+            unknowns: std::collections::BTreeMap::new(),
+            min_time: None,
+            min_height: None,
+            non_witness_utxo: None,
+            tap_scripts: std::collections::BTreeMap::new(),
+            tap_key_origins: std::collections::BTreeMap::new(),
+            proprietaries: std::collections::BTreeMap::new(),
+        });
     }
 
-    Ok(psbt)
+    // Create outputs
+    let mut outputs = Vec::with_capacity(num_outputs);
+    for _ in 0..num_outputs {
+        outputs.push(psbt_v2::v2::Output {
+            amount: bitcoin::Amount::ZERO,
+            script_pubkey: bitcoin::ScriptBuf::new(),
+            redeem_script: None,
+            witness_script: None,
+            bip32_derivations: std::collections::BTreeMap::new(),
+            tap_internal_key: None,
+            tap_tree: None,
+            tap_key_origins: std::collections::BTreeMap::new(),
+            unknowns: std::collections::BTreeMap::new(),
+            proprietaries: std::collections::BTreeMap::new(),
+        });
+    }
+
+    Ok(PsbtV2 {
+        global: Global {
+            version: psbt_v2::V2,
+            tx_version: Version(2),
+            fallback_lock_time: None,
+            input_count: num_inputs,
+            output_count: num_outputs,
+            tx_modifiable_flags: 0,
+            sp_dleq_proofs: std::collections::BTreeMap::new(),
+            sp_ecdh_shares: std::collections::BTreeMap::new(),
+            unknowns: std::collections::BTreeMap::new(),
+            xpubs: std::collections::BTreeMap::new(),
+            proprietaries: std::collections::BTreeMap::new(),
+        },
+        inputs,
+        outputs,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bip375_core::Bip375PsbtExt;
 
     #[test]
     fn test_create_psbt() {
@@ -66,7 +92,6 @@ mod tests {
         assert_eq!(psbt.num_outputs(), 3);
 
         // Check version field
-        let version = psbt.get_global_field(PSBT_GLOBAL_VERSION).unwrap();
-        assert_eq!(version.value_data, PSBT_V2_VERSION.to_le_bytes());
+        assert_eq!(psbt.global.version, psbt_v2::V2);
     }
 }

@@ -8,7 +8,7 @@
 //! - Finalizes and extracts transactions
 
 use crate::shared_utils::{*};
-use bip375_core::constants;
+use bip375_core::{Bip375PsbtExt, constants};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     constructor::{add_inputs, add_outputs},
@@ -17,7 +17,7 @@ use bip375_roles::{
     input_finalizer::finalize_inputs,
     validation::{validate_psbt, ValidationLevel},
 };
-use secp256k1::Secp256k1;
+use secp256k1::{PublicKey,Secp256k1};
 use std::collections::HashSet;
 use common::*;
 
@@ -136,16 +136,14 @@ impl WalletCoordinator {
         }
 
         // Verify PSBT is actually signed
-        let has_ecdh_shares = psbt.input_maps.iter().any(|input_fields| {
-            input_fields
-                .iter()
-                .any(|field| field.field_type == constants::PSBT_IN_SP_ECDH_SHARE)
+        let has_ecdh_shares = psbt.inputs.iter().any(|input| {
+            input.unknowns.iter().any(|(key, _value)| {
+                key.type_value == constants::PSBT_IN_SP_ECDH_SHARE
+            })
         });
 
-        let has_signatures = psbt.input_maps.iter().any(|input_fields| {
-            input_fields
-                .iter()
-                .any(|field| field.field_type == constants::PSBT_IN_PARTIAL_SIG)
+        let has_signatures = psbt.inputs.iter().any(|input| {
+            !input.partial_sigs.is_empty()
         });
 
         if !has_ecdh_shares || !has_signatures {
@@ -178,17 +176,19 @@ impl WalletCoordinator {
         // Collect all scan keys found in DLEQ proofs
         let mut found_scan_keys: HashSet<Vec<u8>> = HashSet::new();
 
-        for input_fields in &psbt.input_maps {
-            for field in input_fields {
-                if field.field_type == constants::PSBT_IN_SP_DLEQ {
-                    found_scan_keys.insert(field.key_data.clone());
+        // Collect scan keys from input DLEQ proofs
+        for input in &psbt.inputs {
+            for (key, _value) in &input.unknowns {
+                if key.type_value == constants::PSBT_IN_SP_DLEQ {
+                    found_scan_keys.insert(key.key.clone());
                 }
             }
         }
 
-        for field in &psbt.global_fields {
-            if field.field_type == constants::PSBT_GLOBAL_SP_DLEQ {
-                found_scan_keys.insert(field.key_data.clone());
+        // Collect scan keys from global DLEQ proofs
+        for (scan_key_bytes, _) in &psbt.global.sp_dleq_proofs {
+            if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes) {
+                found_scan_keys.insert(scan_key.serialize().to_vec());
             }
         }
 
@@ -261,6 +261,18 @@ impl WalletCoordinator {
         finalize_inputs(&secp, &mut psbt, Some(&scan_privkeys))?;
         println!("     Silent payment output scripts computed\n");
 
+        // Save the finalized PSBT (with output scripts computed)
+        let finalized_metadata = PsbtMetadata {
+            description: Some("Finalized PSBT with computed output scripts".to_string()),
+            creator: Some("wallet_coordinator".to_string()),
+            modified_at: Some(std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()),
+            ..Default::default()
+        };
+        save_psbt(&psbt, Some(finalized_metadata))?;
+
         // Extract transaction
         println!("  EXTRACTOR: Extracting final transaction...");
 
@@ -268,7 +280,7 @@ impl WalletCoordinator {
         let tx_bytes = bitcoin::consensus::serialize(&final_tx);
 
         println!("     Transaction extracted successfully");
-        println!("   TxID: {}", final_tx.txid());
+        println!("   TxID: {}", final_tx.compute_txid());
         println!("   Size: {} bytes", tx_bytes.len());
         println!("   Weight: {} WU\n", final_tx.weight().to_wu());
 

@@ -8,7 +8,7 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{constants, OutputRecipient, SilentPaymentPsbt};
+use bip375_core::{Bip375PsbtExt, {constants, OutputRecipient, SilentPaymentPsbt}};
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use common::{save_psbt,load_psbt};
@@ -37,7 +37,7 @@ impl HardwareDevice {
         }
 
         let (psbt, metadata) = load_psbt()  // Use CLI path (persistent)
-            .map_err(|e| format!("Failed to load PSBT: {}", e))?;
+            .map_err(|e| format!("Error loading PSBT: {}", e))?;
 
         if let Some(meta) = &metadata {
             if let Some(creator) = &meta.creator {
@@ -49,10 +49,8 @@ impl HardwareDevice {
         }
 
         // Verify PSBT is unsigned
-        let has_signatures = psbt.input_maps.iter().any(|input_fields| {
-            input_fields
-                .iter()
-                .any(|field| field.field_type == constants::PSBT_IN_PARTIAL_SIG)
+        let has_signatures = psbt.inputs.iter().any(|input| {
+            !input.partial_sigs.is_empty()
         });
 
         if has_signatures {
@@ -84,12 +82,12 @@ impl HardwareDevice {
         let (psbt, _) = load_psbt().map_err(|e| format!("Failed to load PSBT: {}", e))?;
         
         let mut dnssec_proofs = std::collections::HashMap::new();
-        for (output_idx, output_fields) in psbt.output_maps.iter().enumerate() {
-            for field in output_fields {
-                if field.field_type == constants::PSBT_OUT_DNSSEC_PROOF {
-                    match decode_dnssec_proof(&field.value_data) {
+        for (output_idx, output) in psbt.outputs.iter().enumerate() {
+            for (key, value) in &output.unknowns {
+                if key.type_value == constants::PSBT_OUT_DNSSEC_PROOF {
+                    match decode_dnssec_proof(value) {
                         Ok((dns_name, _proof_data)) => {
-                            let proof_hex = hex::encode(&field.value_data);
+                            let proof_hex = hex::encode(value);
                             dnssec_proofs.insert(output_idx, (dns_name, proof_hex));
                         }
                         Err(e) => {

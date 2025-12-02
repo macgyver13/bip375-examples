@@ -6,7 +6,7 @@ use super::app_state::*;
 use crate::alice_creates::alice_creates;
 use crate::bob_signs::bob_signs;
 use crate::charlie_finalizes::charlie_finalizes;
-use bip375_core::{constants, SilentPaymentPsbt};
+use bip375_core::{Bip375PsbtExt, {constants, SilentPaymentPsbt}};
 use bip375_gui_common::psbt_analyzer;
 use common::load_psbt;
 
@@ -84,12 +84,12 @@ impl WorkflowOrchestrator {
         let mut inputs_with_ecdh = 0;
 
         // Count inputs that have ECDH shares
-        for input_map in &psbt.input_maps {
-            for field in input_map {
-                if field.field_type == constants::PSBT_IN_SP_ECDH_SHARE {
-                    inputs_with_ecdh += 1;
-                    break; // Only count once per input
-                }
+        for input in &psbt.inputs {
+            let has_ecdh = input.unknowns.iter().any(|(key, _value)| {
+                key.type_value == constants::PSBT_IN_SP_ECDH_SHARE
+            });
+            if has_ecdh {
+                inputs_with_ecdh += 1;
             }
         }
 
@@ -100,17 +100,17 @@ impl WorkflowOrchestrator {
     pub fn compute_input_states(psbt: &SilentPaymentPsbt) -> Vec<InputState> {
         let mut states = Vec::new();
 
-        for (index, input_map) in psbt.input_maps.iter().enumerate() {
+        for (index, input) in psbt.inputs.iter().enumerate() {
             let mut state = InputState::new(index);
 
             // Check for ECDH share
-            state.has_ecdh_share = input_map.iter().any(|f| f.field_type == constants::PSBT_IN_SP_ECDH_SHARE);
+            state.has_ecdh_share = input.unknowns.iter().any(|(key, _)| key.type_value == constants::PSBT_IN_SP_ECDH_SHARE);
 
             // Check for DLEQ proof
-            state.has_dleq_proof = input_map.iter().any(|f| f.field_type == constants::PSBT_IN_SP_DLEQ);
+            state.has_dleq_proof = input.unknowns.iter().any(|(key, _)| key.type_value == constants::PSBT_IN_SP_DLEQ);
 
-            // Check for signature (partial_sig field)
-            state.has_signature = input_map.iter().any(|f| f.field_type == constants::PSBT_IN_PARTIAL_SIG);
+            // Check for signature (partial_sig in structured field)
+            state.has_signature = !input.partial_sigs.is_empty();
 
             // Determine signer based on index (Alice=0, Bob=1, Charlie=2)
             if state.has_signature {
@@ -133,18 +133,13 @@ impl WorkflowOrchestrator {
         // Check if all DLEQ proofs are present (simplified - not verifying validity here)
         let dleq_proofs_valid = input_states.iter().all(|s| s.has_dleq_proof);
 
-        // Check if output scripts have been computed
-        let output_scripts_computed = psbt.output_maps.iter().any(|output_map| {
-            output_map.iter().any(|field| {
-                field.field_type == constants::PSBT_OUT_SCRIPT
-            })
+        // Check if output scripts have been computed (outputs have script_pubkey set)
+        let output_scripts_computed = psbt.outputs.iter().any(|output| {
+            !output.script_pubkey.is_empty()
         });
 
-        // Check if transaction has been extracted (TX_MODIFIABLE flag)
-        let transaction_extracted = psbt.global_fields.iter().any(|field| {
-            field.field_type == constants::PSBT_GLOBAL_TX_MODIFIABLE
-                && field.value_data == vec![0x00]
-        });
+        // Check if transaction has been extracted (TX_MODIFIABLE flag in global)
+        let transaction_extracted = psbt.global.tx_modifiable_flags == 0;
 
         ValidationSummary {
             dleq_proofs_valid,

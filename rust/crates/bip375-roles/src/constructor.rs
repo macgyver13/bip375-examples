@@ -3,9 +3,9 @@
 //! Adds inputs and outputs to the PSBT.
 
 use bip375_core::{
-    constants::*, Error, Output, OutputRecipient, PsbtField, Result, SilentPaymentPsbt, Utxo,
+    Error, Output, OutputRecipient, Result, SilentPaymentPsbt, Utxo,
+    Bip375PsbtExt,
 };
-use bitcoin::hashes::Hash;
 
 /// Add inputs to the PSBT
 pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
@@ -18,40 +18,21 @@ pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
     }
 
     for (i, utxo) in inputs.iter().enumerate() {
-        // Add PSBT_IN_PREVIOUS_TXID
-        psbt.add_input_field(
-            i,
-            PsbtField::with_value(PSBT_IN_PREVIOUS_TXID, utxo.txid.to_byte_array().to_vec()),
-        )?;
-
-        // Add PSBT_IN_OUTPUT_INDEX
-        psbt.add_input_field(
-            i,
-            PsbtField::with_value(PSBT_IN_OUTPUT_INDEX, utxo.vout.to_le_bytes().to_vec()),
-        )?;
-
-        // Add PSBT_IN_SEQUENCE
-        psbt.add_input_field(
-            i,
-            PsbtField::with_value(
-                PSBT_IN_SEQUENCE,
-                utxo.sequence.to_consensus_u32().to_le_bytes().to_vec(),
-            ),
-        )?;
-
+        let input = &mut psbt.inputs[i];
+        let psbt_input = &mut psbt.inputs[i];
+        
+        psbt_input.previous_txid = utxo.txid;
+        psbt_input.spent_output_index = utxo.vout;
+        psbt_input.sequence = Some(utxo.sequence);
+        
         // Add PSBT_IN_WITNESS_UTXO (required for SegWit inputs)
-        let mut witness_utxo_bytes = Vec::new();
-        // Amount (8 bytes little-endian)
-        witness_utxo_bytes.extend_from_slice(&utxo.amount.to_sat().to_le_bytes());
-        // Script length (compact size)
-        PsbtField::write_compact_size(&mut witness_utxo_bytes, utxo.script_pubkey.len() as u64)?;
-        // Script
-        witness_utxo_bytes.extend_from_slice(utxo.script_pubkey.as_bytes());
+        let witness_utxo = psbt_v2::bitcoin::TxOut {
+            value: psbt_v2::bitcoin::Amount::from_sat(utxo.amount.to_sat()),
+            script_pubkey: psbt_v2::bitcoin::ScriptBuf::from(utxo.script_pubkey.to_bytes()),
+        };
 
-        psbt.add_input_field(
-            i,
-            PsbtField::with_value(PSBT_IN_WITNESS_UTXO, witness_utxo_bytes),
-        )?;
+        psbt_input.witness_utxo = Some(witness_utxo);
+        psbt_input.final_script_witness = None; // Clear any existing witness
     }
 
     Ok(())
@@ -68,36 +49,27 @@ pub fn add_outputs(psbt: &mut SilentPaymentPsbt, outputs: &[Output]) -> Result<(
     }
 
     for (i, output) in outputs.iter().enumerate() {
-        // Add PSBT_OUT_AMOUNT (64-bit signed little-endian per PSBT v2 spec)
-        let amount_bytes = output.amount.to_sat().to_le_bytes().to_vec();
-        psbt.add_output_field(i, PsbtField::with_value(PSBT_OUT_AMOUNT, amount_bytes))?;
+        // Set standard fields
+        {
+            let psbt_output = &mut psbt.outputs[i];
+            // Convert between potentially different bitcoin::Amount types
+            psbt_output.amount = psbt_v2::bitcoin::Amount::from_sat(output.amount.to_sat());
 
-        match &output.recipient {
-            OutputRecipient::Address(script_pubkey) => {
-                // Regular output - add script directly
-                psbt.add_output_field(
-                    i,
-                    PsbtField::with_value(PSBT_OUT_SCRIPT, script_pubkey.to_bytes()),
-                )?;
+            // Only set script_pubkey for regular address outputs
+            // For SilentPayment outputs, script_pubkey is computed during finalization
+            if let OutputRecipient::Address(script) = &output.recipient {
+                psbt_output.script_pubkey = script.clone();
             }
-            OutputRecipient::SilentPayment(sp_address) => {
-                // Silent payment output - add SP address (BIP-375 field type 0x09)
-                // PSBT_OUT_SP_V0_INFO: 33-byte scan key + 33-byte spend key (66 bytes total)
-                let mut sp_info = Vec::with_capacity(66);
-                sp_info.extend_from_slice(&sp_address.scan_key.serialize());
-                sp_info.extend_from_slice(&sp_address.spend_key.serialize());
+            // Note: SilentPayment outputs will have empty script_pubkey here,
+            // which is handled by BIP-375 compatible deserialization
+        }
 
-                psbt.add_output_field(i, PsbtField::with_value(PSBT_OUT_SP_V0_INFO, sp_info))?;
+        // Set BIP-375 fields
+        if let OutputRecipient::SilentPayment(sp_addr) = &output.recipient {
+            psbt.set_output_sp_address(i, sp_addr)?;
 
-                // Add PSBT_OUT_SP_V0_LABEL if present (separate field per BIP-375)
-                if let Some(label) = sp_address.label {
-                    psbt.add_output_field(
-                        i,
-                        PsbtField::with_value(PSBT_OUT_SP_V0_LABEL, label.to_le_bytes().to_vec()),
-                    )?;
-                }
-
-                // Note: Output script will be computed by Input Finalizer after ECDH is complete
+            if let Some(label) = sp_addr.label {
+                psbt.set_output_sp_label(i, label)?;
             }
         }
     }
@@ -121,6 +93,7 @@ mod tests {
     use super::*;
     use crate::creator::create_psbt;
     use bitcoin::{hashes::Hash, Amount, ScriptBuf, Sequence, Txid};
+    use bip375_core::constants::*;
 
     #[test]
     fn test_add_inputs() {
@@ -148,9 +121,9 @@ mod tests {
         add_inputs(&mut psbt, &inputs).unwrap();
 
         // Verify inputs were added
-        assert!(psbt.get_input_field(0, PSBT_IN_PREVIOUS_TXID).is_some());
-        assert!(psbt.get_input_field(0, PSBT_IN_OUTPUT_INDEX).is_some());
-        assert!(psbt.get_input_field(1, PSBT_IN_PREVIOUS_TXID).is_some());
+        assert_eq!(psbt.inputs[0].previous_txid, inputs[0].txid);
+        assert_eq!(psbt.inputs[0].spent_output_index, inputs[0].vout);
+        assert_eq!(psbt.inputs[1].previous_txid, inputs[1].txid);
     }
 
     #[test]
@@ -165,9 +138,9 @@ mod tests {
         add_outputs(&mut psbt, &outputs).unwrap();
 
         // Verify outputs were added
-        assert!(psbt.get_output_field(0, PSBT_OUT_AMOUNT).is_some());
-        assert!(psbt.get_output_field(0, PSBT_OUT_SCRIPT).is_some());
-        assert!(psbt.get_output_field(1, PSBT_OUT_AMOUNT).is_some());
+        assert_eq!(psbt.outputs[0].amount, Amount::from_sat(40000));
+        assert!(psbt.outputs[0].script_pubkey.len() == 0); // Empty script in test
+        assert_eq!(psbt.outputs[1].amount, Amount::from_sat(10000));
     }
 
     #[test]
@@ -188,7 +161,7 @@ mod tests {
         construct_psbt(&mut psbt, &inputs, &outputs).unwrap();
 
         // Verify both inputs and outputs were added
-        assert!(psbt.get_input_field(0, PSBT_IN_PREVIOUS_TXID).is_some());
-        assert!(psbt.get_output_field(0, PSBT_OUT_AMOUNT).is_some());
+        assert_eq!(psbt.inputs[0].previous_txid, inputs[0].txid);
+        assert_eq!(psbt.outputs[0].amount, Amount::from_sat(49000));
     }
 }

@@ -9,6 +9,7 @@ pub mod workflow_orchestrator;
 use app_state::*;
 use workflow_orchestrator::WorkflowOrchestrator;
 use std::rc::Rc;
+use bip375_core::GlobalFieldsExt;
 
 slint::include_modules!();
 
@@ -31,32 +32,40 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
     if let Some(psbt) = &state.current_psbt {
         window.set_has_psbt(true);
 
-        // Convert global fields
-        let global_fields: Vec<PsbtField> = psbt
-            .global_fields
-            .iter()
-            .map(|field| {
-                let identifier = FieldIdentifier::Global {
-                    field_type: field.field_type,
-                    key_data: field.key_data.clone(),
-                };
-                convert_field_to_slint(&identifier, field, &state.highlighted_fields)
-            })
-            .collect();
+        // Convert global fields using the GlobalFieldsExt trait
+        let mut global_fields: Vec<PsbtField> = Vec::new();
+
+        // Iterate over all global fields (standard + BIP-375 + unknowns)
+        for (field_type, key_data, value_data) in psbt.global.iter_global_fields() {
+            let identifier = FieldIdentifier::Global {
+                field_type,
+                key_data: key_data.clone(),
+            };
+            global_fields.push(convert_field_to_slint(
+                &identifier,
+                field_type,
+                &key_data,
+                &value_data,
+                &state.highlighted_fields,
+            ));
+        }
+
         window.set_global_fields(slint::ModelRc::new(slint::VecModel::from(global_fields)));
 
         // Convert input fields (flatten all inputs)
         let mut input_fields = Vec::new();
-        for (idx, input_map) in psbt.input_maps.iter().enumerate() {
-            for field in input_map {
+        for (idx, input) in psbt.inputs.iter().enumerate() {
+            for (key, value) in &input.unknowns {
                 let identifier = FieldIdentifier::Input {
                     index: idx,
-                    field_type: field.field_type,
-                    key_data: field.key_data.clone(),
+                    field_type: key.type_value,
+                    key_data: key.key.clone(),
                 };
                 input_fields.push(convert_field_to_slint(
                     &identifier,
-                    field,
+                    key.type_value,
+                    &key.key,
+                    value,
                     &state.highlighted_fields,
                 ));
             }
@@ -65,16 +74,18 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
 
         // Convert output fields (flatten all outputs)
         let mut output_fields = Vec::new();
-        for (idx, output_map) in psbt.output_maps.iter().enumerate() {
-            for field in output_map {
+        for (idx, output) in psbt.outputs.iter().enumerate() {
+            for (key, value) in &output.unknowns {
                 let identifier = FieldIdentifier::Output {
                     index: idx,
-                    field_type: field.field_type,
-                    key_data: field.key_data.clone(),
+                    field_type: key.type_value,
+                    key_data: key.key.clone(),
                 };
                 output_fields.push(convert_field_to_slint(
                     &identifier,
-                    field,
+                    key.type_value,
+                    &key.key,
+                    value,
                     &state.highlighted_fields,
                 ));
             }
@@ -126,14 +137,16 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
 
 fn convert_field_to_slint(
     identifier: &FieldIdentifier,
-    field: &bip375_core::field::PsbtField,
+    field_type: u8,
+    key_data: &[u8],
+    value_data: &[u8],
     highlighted: &std::collections::HashSet<FieldIdentifier>,
 ) -> PsbtField {
     use bip375_core::constants::FieldCategory;
     use bip375_gui_common::{display_formatting, psbt_analyzer};
 
     let is_highlighted = highlighted.contains(identifier);
-    let is_sp_field = psbt_analyzer::is_sp_field(field.field_type);
+    let is_sp_field = psbt_analyzer::is_sp_field(field_type);
 
     // Extract the map index and category from the identifier
     let (map_index, category) = match identifier {
@@ -142,14 +155,14 @@ fn convert_field_to_slint(
         FieldIdentifier::Output { index, .. } => (*index as i32, FieldCategory::Output),
     };
 
-    let field_name = display_formatting::format_field_name(category, field.field_type);
-    let field_type = format!("0x{:02x}", field.field_type);
-    let key_preview = display_formatting::format_value_preview(&field.key_data);
-    let value_preview = display_formatting::format_value_preview(&field.value_data);
+    let field_name = display_formatting::format_field_name(category, field_type);
+    let field_type_str = format!("0x{:02x}", field_type);
+    let key_preview = display_formatting::format_value_preview(key_data);
+    let value_preview = display_formatting::format_value_preview(value_data);
 
     PsbtField {
         field_name: field_name.into(),
-        field_type: field_type.into(),
+        field_type: field_type_str.into(),
         key_preview: key_preview.into(),
         value_preview: value_preview.into(),
         is_highlighted,

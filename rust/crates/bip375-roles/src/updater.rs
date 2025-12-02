@@ -2,7 +2,10 @@
 //!
 //! Adds additional information like BIP32 derivation paths.
 
-use bip375_core::{constants::*, PsbtField, Result, SilentPaymentPsbt};
+use bip375_core::{Error, Result, SilentPaymentPsbt};
+use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
+use bitcoin::{EcdsaSighashType};
+use psbt_v2::PsbtSighashType;
 
 /// BIP32 derivation information
 pub struct Bip32Derivation {
@@ -20,19 +23,6 @@ impl Bip32Derivation {
             path,
         }
     }
-
-    /// Serialize to PSBT format
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::new();
-        // Master fingerprint (4 bytes)
-        bytes.extend_from_slice(&self.master_fingerprint);
-        // Path length as compact size
-        // Each path component is 4 bytes
-        for component in &self.path {
-            bytes.extend_from_slice(&component.to_le_bytes());
-        }
-        bytes
-    }
 }
 
 /// Add BIP32 derivation information for an input
@@ -42,16 +32,15 @@ pub fn add_input_bip32_derivation(
     pubkey: &secp256k1::PublicKey,
     derivation: &Bip32Derivation,
 ) -> Result<()> {
-    // Key data is the public key (33 bytes compressed)
-    let key_data = pubkey.serialize().to_vec();
+    let input = psbt.inputs.get_mut(input_index)
+        .ok_or(Error::InvalidInputIndex(input_index))?;
 
-    // Value is master fingerprint + derivation path
-    let value_data = derivation.to_bytes();
+    let fingerprint = Fingerprint::from(derivation.master_fingerprint);
+    let path: DerivationPath = derivation.path.iter()
+        .map(|&i| ChildNumber::from(i))
+        .collect();
 
-    psbt.add_input_field(
-        input_index,
-        PsbtField::new(PSBT_IN_BIP32_DERIVATION, key_data, value_data),
-    )?;
+    input.bip32_derivations.insert(*pubkey, (fingerprint, path));
 
     Ok(())
 }
@@ -63,16 +52,15 @@ pub fn add_output_bip32_derivation(
     pubkey: &secp256k1::PublicKey,
     derivation: &Bip32Derivation,
 ) -> Result<()> {
-    // Key data is the public key (33 bytes compressed)
-    let key_data = pubkey.serialize().to_vec();
+    let output = psbt.outputs.get_mut(output_index)
+        .ok_or(Error::InvalidOutputIndex(output_index))?;
 
-    // Value is master fingerprint + derivation path
-    let value_data = derivation.to_bytes();
+    let fingerprint = Fingerprint::from(derivation.master_fingerprint);
+    let path: DerivationPath = derivation.path.iter()
+        .map(|&i| ChildNumber::from(i))
+        .collect();
 
-    psbt.add_output_field(
-        output_index,
-        PsbtField::new(PSBT_OUT_BIP32_DERIVATION, key_data, value_data),
-    )?;
+    output.bip32_derivations.insert(*pubkey, (fingerprint, path));
 
     Ok(())
 }
@@ -83,10 +71,11 @@ pub fn add_input_sighash_type(
     input_index: usize,
     sighash_type: u32,
 ) -> Result<()> {
-    psbt.add_input_field(
-        input_index,
-        PsbtField::with_value(PSBT_IN_SIGHASH_TYPE, sighash_type.to_le_bytes().to_vec()),
-    )?;
+    let input = psbt.inputs.get_mut(input_index)
+        .ok_or(Error::InvalidInputIndex(input_index))?;
+
+    let sighash = EcdsaSighashType::from_consensus(sighash_type);
+    input.sighash_type = Some(PsbtSighashType::from(sighash));
 
     Ok(())
 }
@@ -96,15 +85,6 @@ mod tests {
     use super::*;
     use crate::creator::create_psbt;
     use secp256k1::{Secp256k1, SecretKey};
-
-    #[test]
-    fn test_bip32_derivation() {
-        let derivation = Bip32Derivation::new([0x12, 0x34, 0x56, 0x78], vec![0x8000002C, 0x80000000]);
-
-        let bytes = derivation.to_bytes();
-        assert_eq!(&bytes[0..4], &[0x12, 0x34, 0x56, 0x78]);
-        assert_eq!(bytes.len(), 4 + 8); // fingerprint + 2 path components
-    }
 
     #[test]
     fn test_add_input_bip32_derivation() {
@@ -118,8 +98,12 @@ mod tests {
         add_input_bip32_derivation(&mut psbt, 0, &pubkey, &derivation).unwrap();
 
         // Verify derivation was added
-        let field = psbt.get_input_field(0, PSBT_IN_BIP32_DERIVATION).unwrap();
-        assert_eq!(field.key_data, pubkey.serialize());
+        let input = &psbt.inputs[0];
+        assert!(input.bip32_derivations.contains_key(&pubkey));
+        
+        let (fp, path) = input.bip32_derivations.get(&pubkey).unwrap();
+        assert_eq!(fp.as_bytes(), &[0xAA, 0xBB, 0xCC, 0xDD]);
+        assert_eq!(path.len(), 1);
     }
 
     #[test]
@@ -128,7 +112,8 @@ mod tests {
 
         add_input_sighash_type(&mut psbt, 0, 0x01).unwrap(); // SIGHASH_ALL
 
-        let field = psbt.get_input_field(0, PSBT_IN_SIGHASH_TYPE).unwrap();
-        assert_eq!(field.value_data, vec![0x01, 0x00, 0x00, 0x00]);
+        let input = &psbt.inputs[0];
+        assert!(input.sighash_type.is_some());
+        assert_eq!(input.sighash_type.unwrap().to_u32(), 0x01);
     }
 }

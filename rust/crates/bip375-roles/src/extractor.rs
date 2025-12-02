@@ -2,58 +2,33 @@
 //!
 //! Extracts the final Bitcoin transaction from a completed PSBT.
 
-use bip375_core::{constants::*, Error, Result, SilentPaymentPsbt};
+use bip375_core::{Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
 use bitcoin::{
-    absolute::LockTime, hashes::Hash as BitcoinHash, transaction::Version, Amount, OutPoint,
-    ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
+    absolute::LockTime, Amount, OutPoint,
+    ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 
 /// Extract the final signed transaction from a PSBT
-///
-/// This verifies that:
-/// - All inputs have required witness data (signatures)
-/// - All outputs have scripts assigned
-/// - Transaction is complete and ready to broadcast
 pub fn extract_transaction(psbt: &SilentPaymentPsbt) -> Result<Transaction> {
-    // Get version
-    let version_field = psbt
-        .get_global_field(PSBT_GLOBAL_TX_VERSION)
-        .ok_or_else(|| Error::MissingField("PSBT_GLOBAL_TX_VERSION".to_string()))?;
-    let version = i32::from_le_bytes([
-        version_field.value_data[0],
-        version_field.value_data[1],
-        version_field.value_data[2],
-        version_field.value_data[3],
-    ]);
+    let global = &psbt.global;
+    let version = global.tx_version;
+    let lock_time = global.fallback_lock_time.unwrap_or(LockTime::ZERO);
 
-    // Get locktime (if present, otherwise 0)
-    let locktime =
-        if let Some(locktime_field) = psbt.get_global_field(PSBT_GLOBAL_FALLBACK_LOCKTIME) {
-            u32::from_le_bytes([
-                locktime_field.value_data[0],
-                locktime_field.value_data[1],
-                locktime_field.value_data[2],
-                locktime_field.value_data[3],
-            ])
-        } else {
-            0
-        };
-
-    // Build inputs
+    // Extract inputs with witnesses
     let mut inputs = Vec::new();
     for input_idx in 0..psbt.num_inputs() {
         inputs.push(extract_input(psbt, input_idx)?);
     }
 
-    // Build outputs
+    // Extract outputs
     let mut outputs = Vec::new();
     for output_idx in 0..psbt.num_outputs() {
         outputs.push(extract_output(psbt, output_idx)?);
     }
 
     Ok(Transaction {
-        version: Version(version),
-        lock_time: LockTime::from_consensus(locktime),
+        version,
+        lock_time,
         input: inputs,
         output: outputs,
     })
@@ -61,42 +36,19 @@ pub fn extract_transaction(psbt: &SilentPaymentPsbt) -> Result<Transaction> {
 
 /// Extract a single input from the PSBT
 fn extract_input(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<TxIn> {
-    // Get TXID
-    let txid_field = psbt
-        .get_input_field(input_idx, PSBT_IN_PREVIOUS_TXID)
-        .ok_or_else(|| Error::MissingField(format!("Input {} TXID", input_idx)))?;
-    let txid = Txid::from_slice(&txid_field.value_data)
-        .map_err(|e| Error::InvalidFieldData(format!("Invalid TXID: {}", e)))?;
-
-    // Get vout
-    let vout_field = psbt
-        .get_input_field(input_idx, PSBT_IN_OUTPUT_INDEX)
-        .ok_or_else(|| Error::MissingField(format!("Input {} vout", input_idx)))?;
-    let vout = u32::from_le_bytes([
-        vout_field.value_data[0],
-        vout_field.value_data[1],
-        vout_field.value_data[2],
-        vout_field.value_data[3],
-    ]);
-
-    // Get sequence
-    let sequence_field = psbt
-        .get_input_field(input_idx, PSBT_IN_SEQUENCE)
-        .ok_or_else(|| Error::MissingField(format!("Input {} sequence", input_idx)))?;
-    let sequence = Sequence::from_consensus(u32::from_le_bytes([
-        sequence_field.value_data[0],
-        sequence_field.value_data[1],
-        sequence_field.value_data[2],
-        sequence_field.value_data[3],
-    ]));
+    let input = psbt.inputs.get(input_idx)
+        .ok_or(Error::InvalidInputIndex(input_idx))?;
 
     // Build witness from partial signatures
     let witness = extract_witness(psbt, input_idx)?;
 
     Ok(TxIn {
-        previous_output: OutPoint { txid, vout },
+        previous_output: OutPoint {
+            txid: input.previous_txid,
+            vout: input.spent_output_index,
+        },
         script_sig: ScriptBuf::new(), // SegWit inputs have empty script_sig
-        sequence,
+        sequence: input.sequence.unwrap_or(Sequence::MAX),
         witness,
     })
 }
@@ -135,33 +87,12 @@ fn extract_witness(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<Witness
 
 /// Extract a single output from the PSBT
 fn extract_output(psbt: &SilentPaymentPsbt, output_idx: usize) -> Result<TxOut> {
-    // Get amount
-    let amount_field = psbt
-        .get_output_field(output_idx, PSBT_OUT_AMOUNT)
-        .ok_or_else(|| Error::MissingField(format!("Output {} amount", output_idx)))?;
-
-    // Parse 64-bit little-endian amount (PSBT v2 spec)
-    if amount_field.value_data.len() != 8 {
-        return Err(Error::InvalidFieldData(format!(
-            "Invalid amount length: expected 8 bytes, got {}",
-            amount_field.value_data.len()
-        )));
-    }
-    let amount_bytes: [u8; 8] = amount_field.value_data[0..8]
-        .try_into()
-        .expect("amount bytes did not convert to 8 bytes");
-    let amount_sats = u64::from_le_bytes(amount_bytes);
-    let amount = Amount::from_sat(amount_sats);
-
-    // Get script
-    let script_field = psbt
-        .get_output_field(output_idx, PSBT_OUT_SCRIPT)
-        .ok_or_else(|| Error::MissingField(format!("Output {} script", output_idx)))?;
-    let script_pubkey = ScriptBuf::from_bytes(script_field.value_data.clone());
+    let output = psbt.outputs.get(output_idx)
+        .ok_or(Error::InvalidOutputIndex(output_idx))?;
 
     Ok(TxOut {
-        value: amount,
-        script_pubkey,
+        value: Amount::from_sat(output.amount.to_sat()),
+        script_pubkey: output.script_pubkey.clone(),
     })
 }
 
@@ -176,7 +107,7 @@ mod tests {
     };
     use bip375_core::{Output, SilentPaymentAddress, Utxo};
     use bip375_crypto::pubkey_to_p2wpkh_script;
-    use bitcoin::{hashes::Hash, ScriptBuf};
+    use bitcoin::{hashes::Hash, ScriptBuf, Txid};
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
     #[test]

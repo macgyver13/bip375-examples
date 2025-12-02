@@ -3,21 +3,6 @@
 //! Field type constants for PSBT v2 and BIP-375 extensions.
 //! Based on BIP-174, BIP-370, and BIP-375 specifications.
 
-// PSBT Global Types (from BIP-370 PSBT v2)
-pub const PSBT_GLOBAL_UNSIGNED_TX: u8 = 0x00;
-pub const PSBT_GLOBAL_XPUB: u8 = 0x01;
-pub const PSBT_GLOBAL_TX_VERSION: u8 = 0x02;
-pub const PSBT_GLOBAL_FALLBACK_LOCKTIME: u8 = 0x03;
-pub const PSBT_GLOBAL_INPUT_COUNT: u8 = 0x04;
-pub const PSBT_GLOBAL_OUTPUT_COUNT: u8 = 0x05;
-pub const PSBT_GLOBAL_TX_MODIFIABLE: u8 = 0x06;
-pub const PSBT_GLOBAL_VERSION: u8 = 0xfb;
-pub const PSBT_GLOBAL_PROPRIETARY: u8 = 0xfc;
-
-// BIP-375 Silent Payment Global Fields (Dedicated Field Types)
-pub const PSBT_GLOBAL_SP_ECDH_SHARE: u8 = 0x07;
-pub const PSBT_GLOBAL_SP_DLEQ: u8 = 0x08;
-
 // PSBT Input Types (from BIP-174 and BIP-370)
 pub const PSBT_IN_NON_WITNESS_UTXO: u8 = 0x00;
 pub const PSBT_IN_WITNESS_UTXO: u8 = 0x01;
@@ -89,17 +74,17 @@ pub enum FieldCategory {
 pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str {
     match (category, field_type) {
         // Global types
-        (FieldCategory::Global, PSBT_GLOBAL_UNSIGNED_TX) => "PSBT_GLOBAL_UNSIGNED_TX",
-        (FieldCategory::Global, PSBT_GLOBAL_XPUB) => "PSBT_GLOBAL_XPUB",
-        (FieldCategory::Global, PSBT_GLOBAL_TX_VERSION) => "PSBT_GLOBAL_TX_VERSION",
-        (FieldCategory::Global, PSBT_GLOBAL_FALLBACK_LOCKTIME) => "PSBT_GLOBAL_FALLBACK_LOCKTIME",
-        (FieldCategory::Global, PSBT_GLOBAL_INPUT_COUNT) => "PSBT_GLOBAL_INPUT_COUNT",
-        (FieldCategory::Global, PSBT_GLOBAL_OUTPUT_COUNT) => "PSBT_GLOBAL_OUTPUT_COUNT",
-        (FieldCategory::Global, PSBT_GLOBAL_TX_MODIFIABLE) => "PSBT_GLOBAL_TX_MODIFIABLE",
-        (FieldCategory::Global, PSBT_GLOBAL_VERSION) => "PSBT_GLOBAL_VERSION",
-        (FieldCategory::Global, PSBT_GLOBAL_PROPRIETARY) => "PSBT_GLOBAL_PROPRIETARY",
-        (FieldCategory::Global, PSBT_GLOBAL_SP_ECDH_SHARE) => "PSBT_GLOBAL_SP_ECDH_SHARE",
-        (FieldCategory::Global, PSBT_GLOBAL_SP_DLEQ) => "PSBT_GLOBAL_SP_DLEQ",
+        // (FieldCategory::Global, PSBT_GLOBAL_UNSIGNED_TX) => "PSBT_GLOBAL_UNSIGNED_TX",
+        // (FieldCategory::Global, PSBT_GLOBAL_XPUB) => "PSBT_GLOBAL_XPUB",
+        // (FieldCategory::Global, PSBT_GLOBAL_TX_VERSION) => "PSBT_GLOBAL_TX_VERSION",
+        // (FieldCategory::Global, PSBT_GLOBAL_FALLBACK_LOCKTIME) => "PSBT_GLOBAL_FALLBACK_LOCKTIME",
+        // (FieldCategory::Global, PSBT_GLOBAL_INPUT_COUNT) => "PSBT_GLOBAL_INPUT_COUNT",
+        // (FieldCategory::Global, PSBT_GLOBAL_OUTPUT_COUNT) => "PSBT_GLOBAL_OUTPUT_COUNT",
+        // (FieldCategory::Global, PSBT_GLOBAL_TX_MODIFIABLE) => "PSBT_GLOBAL_TX_MODIFIABLE",
+        // (FieldCategory::Global, PSBT_GLOBAL_VERSION) => "PSBT_GLOBAL_VERSION",
+        // (FieldCategory::Global, PSBT_GLOBAL_PROPRIETARY) => "PSBT_GLOBAL_PROPRIETARY",
+        // (FieldCategory::Global, PSBT_GLOBAL_SP_ECDH_SHARE) => "PSBT_GLOBAL_SP_ECDH_SHARE",
+        // (FieldCategory::Global, PSBT_GLOBAL_SP_DLEQ) => "PSBT_GLOBAL_SP_DLEQ",
 
         // Input types
         (FieldCategory::Input, PSBT_IN_NON_WITNESS_UTXO) => "PSBT_IN_NON_WITNESS_UTXO",
