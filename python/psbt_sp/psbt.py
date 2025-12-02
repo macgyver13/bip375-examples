@@ -758,8 +758,7 @@ class SilentPaymentPSBT:
             return False
 
         print("4.3. Checking ECDH share coverage...")
-        # TODO: For now, assume global ECDH covers all inputs (single signer scenario)
-        has_complete_ecdh_coverage = True
+        has_complete_ecdh_coverage = self.check_ecdh_coverage()
 
         if not has_complete_ecdh_coverage:
             print("❌ Incomplete ECDH share coverage - cannot compute output scripts yet")
@@ -1208,7 +1207,7 @@ class SilentPaymentPSBT:
             in psbt_utils.py, automatically providing the PSBT field data.
         """
         from .psbt_utils import check_ecdh_coverage as _check_ecdh_coverage
-        return _check_ecdh_coverage(self.global_fields, self.input_maps)
+        return _check_ecdh_coverage(self.global_fields, self.input_maps, self.output_maps)
 
     def can_compute_output_scripts(self) -> bool:
         """

@@ -144,27 +144,44 @@ def extract_combined_input_pubkeys(input_maps: List[List[PSBTField]], inputs: Li
     return A_combined
 
 
-def check_ecdh_coverage(global_fields: List[PSBTField], input_maps: List[List[PSBTField]]) -> tuple[bool, List[int]]:
+def check_ecdh_coverage(global_fields: List[PSBTField], input_maps: List[List[PSBTField]], output_maps: List[List[PSBTField]]) -> tuple[bool, List[int]]:
     """
     Check which inputs have ECDH shares and if coverage is complete
+
+    Per BIP 375: Global ECDH shares are keyed by scan public key.
+    Complete coverage requires either:
+    - Global ECDH shares for ALL unique scan keys in outputs, OR
+    - Per-input ECDH shares for ALL inputs
 
     Args:
         global_fields: List of global PSBT fields
         input_maps: List of input field lists
+        output_maps: List of output field lists
 
     Returns:
         Tuple of (is_complete, list_of_input_indices_with_ecdh)
     """
     inputs_with_ecdh = []
 
-    # Check for global ECDH shares (covers all inputs if present)
-    has_global_ecdh = any(
-        field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE
-        for field in global_fields
+    # Extract unique scan keys from outputs
+    scan_keys = extract_scan_keys_from_outputs(output_maps)
+    
+    # Check for global ECDH shares per scan key
+    global_ecdh_scan_keys = set()
+    for field in global_fields:
+        if field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE:
+            # Key field contains the scan public key (33 bytes)
+            if len(field.key_data) == 33:
+                global_ecdh_scan_keys.add(field.key_data)
+    
+    # Check if all scan keys have global ECDH shares
+    has_complete_global_ecdh = all(
+        scan_key in global_ecdh_scan_keys 
+        for scan_key in scan_keys
     )
 
-    if has_global_ecdh:
-        # Global ECDH covers all inputs
+    if has_complete_global_ecdh and len(scan_keys) > 0:
+        # Global ECDH covers all inputs (for all scan keys)
         inputs_with_ecdh = list(range(len(input_maps)))
         is_complete = True
     else:

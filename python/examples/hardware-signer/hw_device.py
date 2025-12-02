@@ -263,7 +263,7 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet,
 
         # Use malicious scan key for ECDH computation
         # Note: In attack mode, we only use malicious key (not realistic but for demo)
-        scan_keys = [malicious_scan_key, wallet.scan_pub]
+        scan_keys[0] = malicious_scan_key
 
     # Hardware wallet controls both inputs
     hw_controlled_inputs = metadata.get("hw_must_sign", [0, 1])
