@@ -4,6 +4,7 @@
 //! computing differences between PSBT states, and identifying field types.
 
 use crate::field_identifier::{FieldIdentifier, TransactionSummary};
+use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
 use bip375_core::{constants, SilentPaymentPsbt};
 use std::collections::HashSet;
 
@@ -13,34 +14,36 @@ use std::collections::HashSet;
 pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldIdentifier> {
     let mut fields = HashSet::new();
 
-    // Global unknown fields (custom/proprietary fields stored in unknowns map)
-    // TODO: use psbt.global named fields instead of unknowns
-    for key in psbt.global.unknowns.keys() {
-        fields.insert(FieldIdentifier::Global {
-            field_type: key.type_value,
-            key_data: key.key.clone(),
-        });
+    // Global fields (standard + unknown)
+    for (field_type, key_data, _) in psbt.global.iter_global_fields() {
+        let identifier = FieldIdentifier::Global {
+            field_type,
+            key_data: key_data.clone(),
+        };
+        fields.insert(identifier);
     }
 
-    // Input unknown fields
+    // Input fields (standard + unknown)
     for (index, input) in psbt.inputs.iter().enumerate() {
-        for key in input.unknowns.keys() {
-            fields.insert(FieldIdentifier::Input {
+        for (field_type, key_data, _) in input.iter_input_fields() {
+            let identifier = FieldIdentifier::Input {
                 index,
-                field_type: key.type_value,
-                key_data: key.key.clone(),
-            });
+                field_type,
+                key_data: key_data.clone(),
+            };
+            fields.insert(identifier);
         }
     }
 
-    // Output unknown fields
+    // Output fields (standard + unknown)
     for (index, output) in psbt.outputs.iter().enumerate() {
-        for key in output.unknowns.keys() {
-            fields.insert(FieldIdentifier::Output {
+        for (field_type, key_data, _) in output.iter_output_fields() {
+            let identifier = FieldIdentifier::Output {
                 index,
-                field_type: key.type_value,
-                key_data: key.key.clone(),
-            });
+                field_type,
+                key_data: key_data.clone(),
+            };
+            fields.insert(identifier);
         }
     }
 

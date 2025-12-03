@@ -6,11 +6,10 @@
 mod resources;
 mod test_vector_helper;
 
-use bip375_core::{constants::FieldCategory, SilentPaymentPsbt};
-use bip375_gui_common::{
-    display_formatting, field_identifier::FieldIdentifier, psbt_analyzer, psbt_io,
-};
+use bip375_core::SilentPaymentPsbt;
+use bip375_gui_common::{display_adapter, psbt_analyzer, psbt_io};
 use slint::Model;
+use std::collections::HashSet;
 use test_vector_helper::TestVectorFile;
 
 slint::include_modules!();
@@ -19,74 +18,25 @@ slint::include_modules!();
 fn convert_fields_to_slint(
     psbt: &SilentPaymentPsbt,
 ) -> (Vec<PsbtField>, Vec<PsbtField>, Vec<PsbtField>) {
-    let mut global_fields = Vec::new();
-    let mut input_fields = Vec::new();
-    let mut output_fields = Vec::new();
+    // Extract all fields using the shared display adapter (no highlighting needed)
+    let (global_fields, input_fields, output_fields) =
+        display_adapter::extract_display_fields(psbt, &HashSet::new());
 
-    // Extract all field identifiers
-    let identifiers = psbt_analyzer::extract_all_field_identifiers(psbt);
+    // Convert DisplayField to Slint's PsbtField
+    let convert = |field: display_adapter::DisplayField| PsbtField {
+        field_name: field.field_name.into(),
+        field_type: field.field_type_str.into(),
+        key_preview: field.key_preview.into(),
+        value_preview: field.value_preview.into(),
+        is_sp_field: field.is_sp_field,
+        map_index: field.map_index,
+    };
 
-    for identifier in identifiers {
-        let (field_type, key_data, value_data, category, map_index) = match &identifier {
-            FieldIdentifier::Global {
-                field_type,
-                key_data,
-            } => {
-                let value = psbt.global.unknowns
-                    .iter()
-                    .find(|(key, _value)| key.type_value == *field_type && &key.key == key_data)
-                    .map(|(_key, value)| value)
-                    .expect("Field should exist");
-                (*field_type, key_data.clone(), value.clone(), FieldCategory::Global, -1)
-            }
-            FieldIdentifier::Input {
-                index,
-                field_type,
-                key_data,
-            } => {
-                let value = psbt.inputs[*index].unknowns
-                    .iter()
-                    .find(|(key, _value)| key.type_value == *field_type && &key.key == key_data)
-                    .map(|(_key, value)| value)
-                    .expect("Field should exist");
-                (*field_type, key_data.clone(), value.clone(), FieldCategory::Input, *index as i32)
-            }
-            FieldIdentifier::Output {
-                index,
-                field_type,
-                key_data,
-            } => {
-                let value = psbt.outputs[*index].unknowns
-                    .iter()
-                    .find(|(key, _value)| key.type_value == *field_type && &key.key == key_data)
-                    .map(|(_key, value)| value)
-                    .expect("Field should exist");
-                (*field_type, key_data.clone(), value.clone(), FieldCategory::Output, *index as i32)
-            }
-        };
-
-        let field_name = display_formatting::format_field_name(category, field_type);
-        let is_sp_field = psbt_analyzer::is_sp_field(field_type);
-        let key_preview = display_formatting::format_value_preview(&key_data);
-        let value_preview = display_formatting::format_value_preview(&value_data);
-
-        let slint_field = PsbtField {
-            field_name: field_name.into(),
-            field_type: format!("0x{:02x}", field_type).into(),
-            key_preview: key_preview.into(),
-            value_preview: value_preview.into(),
-            is_sp_field,
-            map_index,
-        };
-
-        match category {
-            FieldCategory::Global => global_fields.push(slint_field),
-            FieldCategory::Input => input_fields.push(slint_field),
-            FieldCategory::Output => output_fields.push(slint_field),
-        }
-    }
-
-    (global_fields, input_fields, output_fields)
+    (
+        global_fields.into_iter().map(convert).collect(),
+        input_fields.into_iter().map(convert).collect(),
+        output_fields.into_iter().map(convert).collect(),
+    )
 }
 
 /// Update the UI with PSBT data

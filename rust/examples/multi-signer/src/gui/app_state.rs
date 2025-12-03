@@ -2,7 +2,7 @@
 //!
 //! Manages state for the 3-party signing workflow (Alice → Bob → Charlie)
 
-use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
+use bip375_core::SilentPaymentPsbt;
 use std::collections::HashSet;
 
 // Re-export types from gui-common for convenience

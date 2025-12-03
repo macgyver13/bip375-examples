@@ -4,8 +4,8 @@
 //! All operations are in-memory with no file I/O.
 
 use super::app_state::*;
-use crate::{hw_device::HardwareDevice, shared_utils::*, wallet_coordinator::WalletCoordinator};
-use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
+use crate::{hw_device::HardwareDevice, wallet_coordinator::WalletCoordinator};
+use bip375_core::SilentPaymentPsbt;
 use common::*;
 use std::collections::HashSet;
 
