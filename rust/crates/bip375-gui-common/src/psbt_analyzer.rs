@@ -69,17 +69,6 @@ pub fn compute_field_diff(
     after_fields.difference(&before_fields).cloned().collect()
 }
 
-/// Check if a field type is BIP-375 silent payment specific
-pub fn is_sp_field(field_type: u8) -> bool {
-    matches!(
-        field_type,
-        constants::PSBT_IN_SP_ECDH_SHARE
-            | constants::PSBT_IN_SP_DLEQ
-            | constants::PSBT_OUT_SP_V0_INFO
-            | constants::PSBT_OUT_SP_V0_LABEL
-    )
-}
-
 /// Compute transaction summary from PSBT
 ///
 /// Extracts input amounts from witness_utxo fields and output amounts

@@ -28,7 +28,6 @@ fn convert_fields_to_slint(
         field_type: field.field_type_str.into(),
         key_preview: field.key_preview.into(),
         value_preview: field.value_preview.into(),
-        is_sp_field: field.is_sp_field,
         map_index: field.map_index,
     };
 

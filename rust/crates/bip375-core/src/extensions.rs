@@ -444,15 +444,15 @@ pub trait GlobalFieldsExt {
     /// Iterator over all standard global fields as (field_type, key_data, value_data) tuples
     ///
     /// Returns fields in the following order:
-    /// - PSBT_GLOBAL_VERSION (0x00)
     /// - PSBT_GLOBAL_XPUB (0x01) - Multiple entries possible
     /// - PSBT_GLOBAL_TX_VERSION (0x02)
     /// - PSBT_GLOBAL_FALLBACK_LOCKTIME (0x03) - If present
-    /// - PSBT_GLOBAL_TX_MODIFIABLE (0x04)
-    /// - PSBT_GLOBAL_INPUT_COUNT (0x05)
-    /// - PSBT_GLOBAL_OUTPUT_COUNT (0x06)
+    /// - PSBT_GLOBAL_INPUT_COUNT (0x04)
+    /// - PSBT_GLOBAL_OUTPUT_COUNT (0x05)
+    /// - PSBT_GLOBAL_TX_MODIFIABLE (0x06)
     /// - PSBT_GLOBAL_SP_ECDH_SHARE (0x07) - Multiple entries possible (BIP-375)
     /// - PSBT_GLOBAL_SP_DLEQ (0x08) - Multiple entries possible (BIP-375)
+    /// - PSBT_GLOBAL_VERSION (0xFB)
     /// - PSBT_GLOBAL_PROPRIETARY (0xFC) - Multiple entries possible
     /// - Unknown fields from the unknowns map
     fn iter_global_fields(&self) -> Vec<(u8, Vec<u8>, Vec<u8>)>;
@@ -462,15 +462,7 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
     fn iter_global_fields(&self) -> Vec<(u8, Vec<u8>, Vec<u8>)> {
         let mut fields = Vec::new();
 
-        // PSBT_GLOBAL_VERSION (0x00) - Always present
-        {
-            let field_type = 0x00;
-            let key_data = vec![];
-            let value_data = self.version.to_u32().to_le_bytes().to_vec();
-            fields.push((field_type, key_data, value_data));
-        }
-
-        // PSBT_GLOBAL_XPUB (0x01) - Can have multiple entries
+        // PSBT_GLOBAL_XPUB = 0x01 - Can have multiple entries
         for (xpub, key_source) in &self.xpubs {
             let field_type = 0x01;
             // Key is the serialized xpub
@@ -486,7 +478,7 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
             fields.push((field_type, key_data, value_data));
         }
 
-        // PSBT_GLOBAL_TX_VERSION (0x02) - Always present
+        // PSBT_GLOBAL_TX_VERSION = 0x02 - Always present
         {
             let field_type = 0x02;
             let key_data = vec![];
@@ -494,7 +486,7 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
             fields.push((field_type, key_data, value_data));
         }
 
-        // PSBT_GLOBAL_FALLBACK_LOCKTIME (0x03) - Optional
+        // PSBT_GLOBAL_FALLBACK_LOCKTIME = 0x03 - Optional
         if let Some(lock_time) = self.fallback_lock_time {
             let field_type = 0x03;
             let key_data = vec![];
@@ -502,17 +494,9 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
             fields.push((field_type, key_data, value_data));
         }
 
-        // PSBT_GLOBAL_TX_MODIFIABLE (0x04) - Always present
+        // PSBT_GLOBAL_INPUT_COUNT = 0x04 - Always present
         {
             let field_type = 0x04;
-            let key_data = vec![];
-            let value_data = vec![self.tx_modifiable_flags];
-            fields.push((field_type, key_data, value_data));
-        }
-
-        // PSBT_GLOBAL_INPUT_COUNT (0x05) - Always present
-        {
-            let field_type = 0x05;
             let key_data = vec![];
             // Serialize as VarInt (compact size)
             let mut value_data = vec![];
@@ -532,9 +516,9 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
             fields.push((field_type, key_data, value_data));
         }
 
-        // PSBT_GLOBAL_OUTPUT_COUNT (0x06) - Always present
+        // PSBT_GLOBAL_OUTPUT_COUNT = 0x05 - Always present
         {
-            let field_type = 0x06;
+            let field_type = 0x05;
             let key_data = vec![];
             // Serialize as VarInt (compact size)
             let mut value_data = vec![];
@@ -554,19 +538,35 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
             fields.push((field_type, key_data, value_data));
         }
 
-        // PSBT_GLOBAL_SP_ECDH_SHARE (0x07) - BIP-375, can have multiple entries
+        // PSBT_GLOBAL_TX_MODIFIABLE = 0x06 - Always present
+        {
+            let field_type = 0x06;
+            let key_data = vec![];
+            let value_data = vec![self.tx_modifiable_flags];
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_GLOBAL_SP_ECDH_SHARE = 0x07 - BIP-375, can have multiple entries
         for (scan_key, ecdh_share) in &self.sp_ecdh_shares {
             let field_type = 0x07;
             fields.push((field_type, scan_key.clone(), ecdh_share.clone()));
         }
 
-        // PSBT_GLOBAL_SP_DLEQ (0x08) - BIP-375, can have multiple entries  
+        // PSBT_GLOBAL_SP_DLEQ = 0x08 - BIP-375, can have multiple entries
         for (scan_key, dleq_proof) in &self.sp_dleq_proofs {
             let field_type = 0x08;
             fields.push((field_type, scan_key.clone(), dleq_proof.clone()));
         }
 
-        // PSBT_GLOBAL_PROPRIETARY (0xFC) - Can have multiple entries
+        // PSBT_GLOBAL_VERSION = 0xFB - Always present
+        {
+            let field_type = 0xFB;
+            let key_data = vec![];
+            let value_data = self.version.to_u32().to_le_bytes().to_vec();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_GLOBAL_PROPRIETARY = 0xFC - Can have multiple entries
         for (prop_key, value) in &self.proprietaries {
             use bitcoin::consensus::Encodable;
             let field_type = 0xFC;

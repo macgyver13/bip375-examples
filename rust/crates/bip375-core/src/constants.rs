@@ -3,12 +3,6 @@
 //! BIP-375 specific field type constants and utilities.
 //! Standard PSBT field types are provided by the rust-psbt crate.
 
-// TODO: Remove these 
-pub const PSBT_IN_SP_ECDH_SHARE: u8 = 0x1d;
-pub const PSBT_IN_SP_DLEQ: u8 = 0x1e;
-pub const PSBT_OUT_SP_V0_INFO: u8 = 0x09;
-pub const PSBT_OUT_SP_V0_LABEL: u8 = 0x0a;
-
 // TODO: implement bip353
 pub const PSBT_OUT_DNSSEC_PROOF: u8 = 0x35;
 
@@ -33,8 +27,26 @@ pub enum FieldCategory {
 
 /// Get a human-readable name for a PSBT field type based on its category
 ///
-/// Delegates to rust-psbt's field type naming functions for standard fields.
+/// Handles specific field types first not handled by rust-psbt
+/// field type naming functions for standard fields.
 pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str {
+    // Handle specific fields first
+    match category {
+        FieldCategory::Input => {
+            match field_type {
+                _ => {}
+            }
+        }
+        FieldCategory::Output => {
+            match field_type {
+                PSBT_OUT_DNSSEC_PROOF => return "PSBT_OUT_DNSSEC_PROOF",
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+
+    // Fall back to rust-psbt's naming for standard fields
     match category {
         FieldCategory::Global => psbt_v2::consts::psbt_global_key_type_value_to_str(field_type),
         FieldCategory::Input => psbt_v2::consts::psbt_in_key_type_value_to_str(field_type),

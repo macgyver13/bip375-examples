@@ -71,7 +71,7 @@ pub fn create_psbt(num_inputs: usize, num_outputs: usize) -> Result<SilentPaymen
             fallback_lock_time: None,
             input_count: num_inputs,
             output_count: num_outputs,
-            tx_modifiable_flags: 0,
+            tx_modifiable_flags: 3,
             sp_dleq_proofs: std::collections::BTreeMap::new(),
             sp_ecdh_shares: std::collections::BTreeMap::new(),
             unknowns: std::collections::BTreeMap::new(),

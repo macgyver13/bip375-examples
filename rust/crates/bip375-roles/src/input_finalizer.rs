@@ -76,10 +76,14 @@ pub fn finalize_inputs(
 
         // Add output script to PSBT
         psbt.outputs[output_idx].script_pubkey = output_script;
-        
+
         // Increment the output index for this scan key
         scan_key_output_indices.insert(sp_address.scan_key, k + 1);
     }
+
+    // BIP-370: Clear tx_modifiable_flags after finalizing outputs
+    // Once output scripts are computed, the transaction structure is locked
+    psbt.global.tx_modifiable_flags = 0x00;
 
     Ok(())
 }
@@ -188,5 +192,63 @@ mod tests {
         let result = finalize_inputs(&secp, &mut psbt, None);
         assert!(result.is_err());
         assert!(matches!(result, Err(Error::IncompleteEcdhCoverage(0))));
+    }
+
+    #[test]
+    fn test_tx_modifiable_flags_cleared_after_finalization() {
+        let secp = Secp256k1::new();
+
+        // Create PSBT with 2 inputs and 1 silent payment output
+        let mut psbt = create_psbt(2, 1).unwrap();
+
+        // Verify initial tx_modifiable_flags is non-zero
+        assert_ne!(psbt.global.tx_modifiable_flags, 0x00, "Initial flags should be non-zero");
+
+        // Create scan and spend keys
+        let scan_privkey = SecretKey::from_slice(&[10u8; 32]).unwrap();
+        let scan_key = PublicKey::from_secret_key(&secp, &scan_privkey);
+        let spend_privkey = SecretKey::from_slice(&[20u8; 32]).unwrap();
+        let spend_key = PublicKey::from_secret_key(&secp, &spend_privkey);
+
+        let sp_address = SilentPaymentAddress::new(scan_key, spend_key, None);
+
+        // Add output
+        let outputs = vec![Output::silent_payment(Amount::from_sat(50000), sp_address)];
+        add_outputs(&mut psbt, &outputs).unwrap();
+
+        // Create inputs with private keys
+        let privkey1 = SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let privkey2 = SecretKey::from_slice(&[2u8; 32]).unwrap();
+
+        let inputs = vec![
+            Utxo::new(
+                Txid::all_zeros(),
+                0,
+                Amount::from_sat(30000),
+                ScriptBuf::new(),
+                Some(privkey1),
+                Sequence::MAX,
+            ),
+            Utxo::new(
+                Txid::all_zeros(),
+                1,
+                Amount::from_sat(30000),
+                ScriptBuf::new(),
+                Some(privkey2),
+                Sequence::MAX,
+            ),
+        ];
+
+        // Add ECDH shares
+        add_ecdh_shares_full(&secp, &mut psbt, &inputs, &[scan_key], false).unwrap();
+
+        // Finalize inputs (compute output scripts)
+        finalize_inputs(&secp, &mut psbt, None).unwrap();
+
+        // Verify tx_modifiable_flags is cleared after finalization
+        assert_eq!(
+            psbt.global.tx_modifiable_flags, 0x00,
+            "tx_modifiable_flags should be 0x00 after finalization (BIP-370)"
+        );
     }
 }

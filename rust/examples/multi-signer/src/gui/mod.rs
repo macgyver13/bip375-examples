@@ -98,7 +98,6 @@ fn into_slint_field(f: bip375_gui_common::display_adapter::DisplayField) -> Psbt
         key_preview: f.key_preview.into(),
         value_preview: f.value_preview.into(),
         is_highlighted: f.is_highlighted,
-        is_sp_field: f.is_sp_field,
         map_index: f.map_index,
     }
 }

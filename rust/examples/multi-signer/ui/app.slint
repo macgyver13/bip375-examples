@@ -10,7 +10,6 @@ export struct PsbtField {
     key-preview: string,
     value-preview: string,
     is-highlighted: bool,
-    is-sp-field: bool,
     map-index: int,
 }
 
@@ -73,7 +72,7 @@ component PSBTFields inherits HorizontalBox {
     }
 
     TextInput {
-        text: field.is-sp-field ? field.field-name + " ✨" : field.field-name;
+        text: field.field-name;
         font-size: 14px;
         color: #2c2c2c;
         read-only: true;
@@ -364,9 +363,7 @@ export component AppWindow inherits Window {
 
                                 for field in global-fields: Rectangle {
                                     height: 40px;
-                                    background: field.is-highlighted ? #ccffcc :
-                                               field.is-sp-field ? #e6f2ff :
-                                               #f7f7f7;
+                                    background: field.is-highlighted ? #ccffcc : #f7f7f7;
 
                                     PSBTFields {
                                         field: field;
@@ -393,9 +390,7 @@ export component AppWindow inherits Window {
 
                                 for field in input-fields: Rectangle {
                                     height: 40px;
-                                    background: field.is-highlighted ? #ccffcc :
-                                               field.is-sp-field ? #e6f2ff :
-                                               #f7f7f7;
+                                    background: field.is-highlighted ? #ccffcc : #f7f7f7;
 
                                     PSBTFields {
                                         field: field;
@@ -422,9 +417,7 @@ export component AppWindow inherits Window {
 
                                 for field in output-fields: Rectangle {
                                     height: 40px;
-                                    background: field.is-highlighted ? #ccffcc :
-                                               field.is-sp-field ? #e6f2ff :
-                                               #f7f7f7;
+                                    background: field.is-highlighted ? #ccffcc : #f7f7f7;
 
                                     PSBTFields {
                                         field: field;

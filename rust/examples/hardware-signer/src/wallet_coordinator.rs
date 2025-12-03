@@ -178,7 +178,7 @@ impl WalletCoordinator {
         });
 
         // Collect scan keys from global DLEQ proofs
-        for (scan_key_bytes, _) in &psbt.global.sp_dleq_proofs {
+        for scan_key_bytes in psbt.global.sp_dleq_proofs.keys() {
             if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes) {
                 found_scan_keys.insert(scan_key.serialize().to_vec());
             }

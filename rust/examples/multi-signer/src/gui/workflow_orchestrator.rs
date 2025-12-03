@@ -85,10 +85,7 @@ impl WorkflowOrchestrator {
 
         // Count inputs that have ECDH shares
         for input in &psbt.inputs {
-            let has_ecdh = input.unknowns.iter().any(|(key, _value)| {
-                key.type_value == constants::PSBT_IN_SP_ECDH_SHARE
-            });
-            if has_ecdh {
+            if !input.sp_ecdh_shares.is_empty() {
                 inputs_with_ecdh += 1;
             }
         }
@@ -104,10 +101,10 @@ impl WorkflowOrchestrator {
             let mut state = InputState::new(index);
 
             // Check for ECDH share
-            state.has_ecdh_share = input.unknowns.iter().any(|(key, _)| key.type_value == constants::PSBT_IN_SP_ECDH_SHARE);
+            state.has_ecdh_share = !input.sp_ecdh_shares.is_empty();
 
             // Check for DLEQ proof
-            state.has_dleq_proof = input.unknowns.iter().any(|(key, _)| key.type_value == constants::PSBT_IN_SP_DLEQ);
+            state.has_dleq_proof = !input.sp_dleq_proofs.is_empty();
 
             // Check for signature (partial_sig in structured field)
             state.has_signature = !input.partial_sigs.is_empty();
@@ -168,7 +165,7 @@ impl WorkflowOrchestrator {
         // Compute input states
         state.input_states = Self::compute_input_states(&psbt);
 
-        // Compute transaction summary (placeholder - needs actual implementation)
+        // Compute transaction summary
         state.transaction_summary = Some(psbt_analyzer::compute_transaction_summary(&psbt));
 
         // Compute validation summary

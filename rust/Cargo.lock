@@ -4007,6 +4007,7 @@ dependencies = [
 [[package]]
 name = "psbt-v2"
 version = "0.2.0"
+source = "git+https://github.com/macgyver13/rust-psbt?branch=bip375-support#59f3c9e449348d759dbf88986382c3f2bb0a4152"
 dependencies = [
  "bitcoin",
  "bitcoin-internals 0.3.0",

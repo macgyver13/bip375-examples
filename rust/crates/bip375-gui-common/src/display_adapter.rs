@@ -7,7 +7,7 @@ use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
 use bip375_core::constants::FieldCategory;
 use bip375_core::SilentPaymentPsbt;
 use std::collections::HashSet;
-use crate::{display_formatting, psbt_analyzer};
+use crate::display_formatting;
 
 /// A generic representation of a PSBT field for display
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,7 +18,6 @@ pub struct DisplayField {
     pub key_preview: String,
     pub value_preview: String,
     pub is_highlighted: bool,
-    pub is_sp_field: bool,
     pub map_index: i32,
 }
 
@@ -128,12 +127,11 @@ fn create_display_field(
     category: FieldCategory,
 ) -> DisplayField {
     let is_highlighted = highlighted.contains(&identifier);
-    let is_sp_field = psbt_analyzer::is_sp_field(field_type);
 
     let field_name = display_formatting::format_field_name(category, field_type);
     let field_type_str = format!("0x{:02x}", field_type);
     let key_preview = display_formatting::format_value_preview(key_data);
-    let value_preview = display_formatting::format_value_preview(value_data);
+    let value_preview = display_formatting::format_field_value(category, field_type, value_data);
 
     DisplayField {
         identifier,
@@ -142,7 +140,6 @@ fn create_display_field(
         key_preview,
         value_preview,
         is_highlighted,
-        is_sp_field,
         map_index,
     }
 }
