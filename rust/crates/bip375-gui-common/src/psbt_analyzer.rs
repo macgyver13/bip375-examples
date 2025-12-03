@@ -14,7 +14,8 @@ pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldI
     let mut fields = HashSet::new();
 
     // Global unknown fields (custom/proprietary fields stored in unknowns map)
-    for (key, _value) in &psbt.global.unknowns {
+    // TODO: use psbt.global named fields instead of unknowns
+    for key in psbt.global.unknowns.keys() {
         fields.insert(FieldIdentifier::Global {
             field_type: key.type_value,
             key_data: key.key.clone(),
@@ -23,7 +24,7 @@ pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldI
 
     // Input unknown fields
     for (index, input) in psbt.inputs.iter().enumerate() {
-        for (key, _value) in &input.unknowns {
+        for key in input.unknowns.keys() {
             fields.insert(FieldIdentifier::Input {
                 index,
                 field_type: key.type_value,
@@ -34,7 +35,7 @@ pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldI
 
     // Output unknown fields
     for (index, output) in psbt.outputs.iter().enumerate() {
-        for (key, _value) in &output.unknowns {
+        for key in output.unknowns.keys() {
             fields.insert(FieldIdentifier::Output {
                 index,
                 field_type: key.type_value,

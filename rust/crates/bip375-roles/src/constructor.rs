@@ -18,7 +18,6 @@ pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
     }
 
     for (i, utxo) in inputs.iter().enumerate() {
-        let input = &mut psbt.inputs[i];
         let psbt_input = &mut psbt.inputs[i];
         
         psbt_input.previous_txid = utxo.txid;

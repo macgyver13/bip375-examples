@@ -179,32 +179,25 @@ fn validate_ecdh_coverage(psbt: &SilentPaymentPsbt) -> Result<()> {
         }
     }
 
-    // For each scan key, verify all inputs have ECDH shares
+    // For each scan key, verify coverage
     for scan_key in scan_keys {
+        // Check for global share first
         let global_shares = psbt.get_global_ecdh_shares();
-        let has_global = global_shares.iter().any(|s| s.scan_key == scan_key);
         
-        // Check for per-input shares
-        let has_per_input = false;
+        if global_shares.iter().any(|s| s.scan_key == scan_key) {
+            continue;
+        }
+
+        // If no global share, MUST have per-input shares for ALL inputs
         for i in 0..num_inputs {
             let shares = psbt.get_input_ecdh_shares(i);
-            // Note: get_input_ecdh_shares falls back to global if no per-input.
-            // But we want to detect if we have explicit per-input shares mixed with global.
-            // The extension trait doesn't easily distinguish source.
-            // However, `aggregate_ecdh_shares` handles this logic.
-            // Here we just need to ensure coverage.
-            
-            // If we rely on get_input_ecdh_shares, it returns valid shares.
             if !shares.iter().any(|s| s.scan_key == scan_key) {
-                 return Err(Error::Other(format!(
-                    "Input {} missing ECDH share for scan key",
-                    i
+                return Err(Error::Other(format!(
+                    "Scan key {} missing ECDH share for input {} (and no global share found)",
+                    scan_key, i
                 )));
             }
         }
-        
-        // Ideally we should check for mixed global/per-input, but extension trait abstracts it.
-        // We can check raw unknowns if strict validation is needed, but coverage is the main point.
     }
 
     Ok(())
@@ -384,11 +377,10 @@ mod tests {
     use crate::{
         constructor::{add_inputs, add_outputs},
         creator::create_psbt,
-        signer::{add_ecdh_shares_full, sign_inputs},
     };
     use bip375_core::{Output, SilentPaymentAddress, Utxo};
     use bip375_crypto::pubkey_to_p2wpkh_script;
-    use bitcoin::{Amount, ScriptBuf, Sequence, Txid};
+    use bitcoin::{Amount, Sequence, Txid};
     use bitcoin::hashes::Hash;
     use secp256k1::SecretKey;
 
@@ -437,5 +429,75 @@ mod tests {
         assert!(validate_output_fields(&psbt).is_ok());
     }
     
-    // ... other tests ...
+    #[test]
+    fn test_validate_ecdh_coverage() {
+        use bip375_core::{Bip375PsbtExt, EcdhShare};
+
+        let secp = Secp256k1::new();
+        let mut psbt = create_psbt(2, 1).unwrap(); // 2 inputs, 1 output
+
+        // Setup keys
+        let scan_priv = SecretKey::from_slice(&[2u8; 32]).unwrap();
+        let scan_pub = PublicKey::from_secret_key(&secp, &scan_priv);
+        let spend_priv = SecretKey::from_slice(&[3u8; 32]).unwrap();
+        let spend_pub = PublicKey::from_secret_key(&secp, &spend_priv);
+        
+        let sp_addr = SilentPaymentAddress::new(scan_pub, spend_pub, None);
+
+        // Add SP output
+        let outputs = vec![Output::silent_payment(Amount::from_sat(10000), sp_addr)];
+        add_outputs(&mut psbt, &outputs).unwrap();
+
+        // Add dummy inputs so we have something to check against
+        let input_priv = SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let input_pub = PublicKey::from_secret_key(&secp, &input_priv);
+        let inputs = vec![
+            Utxo::new(Txid::all_zeros(), 0, Amount::from_sat(10000), pubkey_to_p2wpkh_script(&input_pub), Some(input_priv), Sequence::MAX),
+            Utxo::new(Txid::all_zeros(), 1, Amount::from_sat(10000), pubkey_to_p2wpkh_script(&input_pub), Some(input_priv), Sequence::MAX),
+        ];
+        add_inputs(&mut psbt, &inputs).unwrap();
+
+        // Case 1: No shares at all -> Invalid
+        assert!(validate_ecdh_coverage(&psbt).is_err());
+
+        // Case 2: Global share present -> Valid
+        {
+            let mut psbt_global = psbt.clone();
+            // Create a dummy share
+            let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
+            let share = EcdhShare::without_proof(scan_pub, share_point);
+            psbt_global.add_global_ecdh_share(&share).unwrap();
+            
+            assert!(validate_ecdh_coverage(&psbt_global).is_ok());
+        }
+
+        // Case 3: Per-input shares for ALL inputs -> Valid
+        {
+            let mut psbt_inputs = psbt.clone();
+            let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
+            let share = EcdhShare::without_proof(scan_pub, share_point);
+            
+            // Add to all inputs
+            for i in 0..psbt_inputs.num_inputs() {
+                psbt_inputs.add_input_ecdh_share(i, &share).unwrap();
+            }
+            
+            assert!(validate_ecdh_coverage(&psbt_inputs).is_ok());
+        }
+
+        // Case 4: Per-input shares for SOME inputs -> Invalid
+        {
+            let mut psbt_partial = psbt.clone();
+            let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
+            let share = EcdhShare::without_proof(scan_pub, share_point);
+            
+            // Add to only first input
+            psbt_partial.add_input_ecdh_share(0, &share).unwrap();
+            
+            assert!(validate_ecdh_coverage(&psbt_partial).is_err());
+        }
+
+        // TODO: Case 5: Per-input shares for ALL inputs, but some are invalid -> Invalid
+        // TODO: Case 6: Global share present, invalid input shares -> Valid
+    }
 }

@@ -9,7 +9,7 @@ pub mod workflow_orchestrator;
 use app_state::*;
 use workflow_orchestrator::WorkflowOrchestrator;
 use std::rc::Rc;
-use bip375_core::GlobalFieldsExt;
+use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
 
 slint::include_modules!();
 
@@ -35,7 +35,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         // Convert global fields using the GlobalFieldsExt trait
         let mut global_fields: Vec<PsbtField> = Vec::new();
 
-        // Iterate over all global fields (standard + BIP-375 + unknowns)
+        // Iterate over all global fields)
         for (field_type, key_data, value_data) in psbt.global.iter_global_fields() {
             let identifier = FieldIdentifier::Global {
                 field_type,
@@ -55,41 +55,43 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         // Convert input fields (flatten all inputs)
         let mut input_fields = Vec::new();
         for (idx, input) in psbt.inputs.iter().enumerate() {
-            for (key, value) in &input.unknowns {
+            for (field_type, key_data, value_data) in input.iter_input_fields() {
                 let identifier = FieldIdentifier::Input {
                     index: idx,
-                    field_type: key.type_value,
-                    key_data: key.key.clone(),
+                    field_type,
+                    key_data: key_data.clone(),
                 };
                 input_fields.push(convert_field_to_slint(
                     &identifier,
-                    key.type_value,
-                    &key.key,
-                    value,
+                    field_type,
+                    &key_data,
+                    &value_data,
                     &state.highlighted_fields,
                 ));
             }
         }
+
         window.set_input_fields(slint::ModelRc::new(slint::VecModel::from(input_fields)));
 
         // Convert output fields (flatten all outputs)
         let mut output_fields = Vec::new();
         for (idx, output) in psbt.outputs.iter().enumerate() {
-            for (key, value) in &output.unknowns {
+            for (field_type, key_data, value_data) in output.iter_output_fields() {
                 let identifier = FieldIdentifier::Output {
                     index: idx,
-                    field_type: key.type_value,
-                    key_data: key.key.clone(),
+                    field_type,
+                    key_data: key_data.clone(),
                 };
                 output_fields.push(convert_field_to_slint(
                     &identifier,
-                    key.type_value,
-                    &key.key,
-                    value,
+                    field_type,
+                    &key_data,
+                    &value_data,
                     &state.highlighted_fields,
                 ));
             }
         }
+
         window.set_output_fields(slint::ModelRc::new(slint::VecModel::from(output_fields)));
     } else {
         window.set_has_psbt(false);

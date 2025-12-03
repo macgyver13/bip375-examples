@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use bip375_io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
-use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
+use bip375_core::SilentPaymentPsbt;
 use std::cell::RefCell;
 
 /// File paths for PSBT transfer

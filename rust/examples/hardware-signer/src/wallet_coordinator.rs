@@ -136,17 +136,11 @@ impl WalletCoordinator {
         }
 
         // Verify PSBT is actually signed
-        let has_ecdh_shares = psbt.inputs.iter().any(|input| {
-            input.unknowns.iter().any(|(key, _value)| {
-                key.type_value == constants::PSBT_IN_SP_ECDH_SHARE
-            })
-        });
-
         let has_signatures = psbt.inputs.iter().any(|input| {
             !input.partial_sigs.is_empty()
         });
 
-        if !has_ecdh_shares || !has_signatures {
+        if !has_signatures {
             return Err("PSBT is not signed yet! Hardware device must sign first.".into());
         }
 
@@ -177,13 +171,11 @@ impl WalletCoordinator {
         let mut found_scan_keys: HashSet<Vec<u8>> = HashSet::new();
 
         // Collect scan keys from input DLEQ proofs
-        for input in &psbt.inputs {
-            for (key, _value) in &input.unknowns {
-                if key.type_value == constants::PSBT_IN_SP_DLEQ {
-                    found_scan_keys.insert(key.key.clone());
-                }
+        psbt.inputs.iter().for_each(|input| {
+            for key in input.sp_dleq_proofs.keys() {
+                found_scan_keys.insert(key.clone());
             }
-        }
+        });
 
         // Collect scan keys from global DLEQ proofs
         for (scan_key_bytes, _) in &psbt.global.sp_dleq_proofs {

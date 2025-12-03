@@ -1,4 +1,3 @@
-use bip375_core::Bip375PsbtExt;
 
 // BIP-375 Hardware Signer - Shared Library
 // Exports all modules for use by binaries

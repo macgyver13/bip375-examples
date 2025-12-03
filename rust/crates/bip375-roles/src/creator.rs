@@ -33,6 +33,8 @@ pub fn create_psbt(num_inputs: usize, num_outputs: usize) -> Result<SilentPaymen
             tap_script_sigs: std::collections::BTreeMap::new(),
             tap_internal_key: None,
             tap_merkle_root: None,
+            sp_ecdh_shares: std::collections::BTreeMap::new(),
+            sp_dleq_proofs: std::collections::BTreeMap::new(),
             unknowns: std::collections::BTreeMap::new(),
             min_time: None,
             min_height: None,
@@ -55,6 +57,8 @@ pub fn create_psbt(num_inputs: usize, num_outputs: usize) -> Result<SilentPaymen
             tap_internal_key: None,
             tap_tree: None,
             tap_key_origins: std::collections::BTreeMap::new(),
+            sp_v0_info: None,
+            sp_v0_label: None,
             unknowns: std::collections::BTreeMap::new(),
             proprietaries: std::collections::BTreeMap::new(),
         });

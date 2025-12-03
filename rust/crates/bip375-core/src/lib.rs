@@ -22,7 +22,7 @@ pub use ecdh_aggregation::{aggregate_ecdh_shares, AggregatedShare, AggregatedSha
 pub use error::{Error, Result};
 pub use field::PsbtField;
 pub use types::{EcdhShare, Output, OutputRecipient, SilentPaymentAddress, Utxo};
-pub use extensions::{Bip375PsbtExt, GlobalFieldsExt};
+pub use extensions::{Bip375PsbtExt, GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
 
 /// Type alias for PSBT v2 with BIP-375 extensions
 ///

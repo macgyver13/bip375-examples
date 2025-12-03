@@ -12,7 +12,6 @@
 //! - **Type-safe**: Leverages Rust's type system for correctness
 
 use crate::{
-    constants::*,
     error::{Error, Result},
     types::{EcdhShare, SilentPaymentAddress},
 };
@@ -151,18 +150,6 @@ pub trait Bip375PsbtExt {
 
     // ===== Generic Field Accessors =====
 
-    /// Add a global field (for custom/unknown fields)
-    ///
-    /// # Arguments
-    /// * `field` - The field to add
-    fn add_global_field(&mut self, field: crate::field::PsbtField);
-
-    /// Get a global field by type
-    ///
-    /// # Arguments
-    /// * `field_type` - The field type to look up
-    fn get_global_field(&self, field_type: u8) -> Option<crate::field::PsbtField>;
-
     /// Add an input field
     ///
     /// # Arguments
@@ -196,7 +183,6 @@ impl Bip375PsbtExt for Psbt {
     fn get_global_ecdh_shares(&self) -> Vec<EcdhShare> {
         let mut shares = Vec::new();
 
-        // Access native BIP375 fields from rust-psbt
         for (scan_key_bytes, share_bytes) in &self.global.sp_ecdh_shares {
             if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes) {
                 if let Ok(share_point) = PublicKey::from_slice(share_bytes) {
@@ -211,7 +197,6 @@ impl Bip375PsbtExt for Psbt {
     }
 
     fn add_global_ecdh_share(&mut self, share: &EcdhShare) -> Result<()> {
-        // Use native rust-psbt fields
         self.global.sp_ecdh_shares.insert(
             share.scan_key.serialize().to_vec(),
             share.share.serialize().to_vec(),
@@ -232,28 +217,16 @@ impl Bip375PsbtExt for Psbt {
 
         let mut shares = Vec::new();
 
-        // First check for per-input ECDH shares (0x1d)
-        for (key, value) in &input.unknowns {
-            if key.type_value == PSBT_IN_SP_ECDH_SHARE && key.key.len() == 33 {
-                // key format: type_value=0x1d, key=33-byte scan key
-                // value format: 33-byte ECDH share
-                if value.len() == 33 {
-                    if let Ok(scan_key) = PublicKey::from_slice(&key.key) {
-                        if let Ok(share_point) = PublicKey::from_slice(value) {
-                            // Look for DLEQ proof (input-specific or global)
-                            let dleq_proof = self
-                                .get_input_dleq_proof(input_index, &scan_key)
-                                .or_else(|| self.get_global_dleq_proof(&scan_key));
-                            shares.push(EcdhShare::new(scan_key, share_point, dleq_proof));
-                        }
-                    }
+        for (scan_key_bytes, share_bytes) in &input.sp_ecdh_shares {
+            if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes) {
+                if let Ok(share_point) = PublicKey::from_slice(share_bytes) {
+                    // Look for DLEQ proof (input-specific or global)
+                    let dleq_proof = self
+                        .get_input_dleq_proof(input_index, &scan_key)
+                        .or_else(|| self.get_global_dleq_proof(&scan_key));
+                    shares.push(EcdhShare::new(scan_key, share_point, dleq_proof));
                 }
             }
-        }
-
-        // If no per-input shares, fall back to global shares
-        if shares.is_empty() {
-            shares = self.get_global_ecdh_shares();
         }
 
         shares
@@ -265,16 +238,10 @@ impl Bip375PsbtExt for Psbt {
             .get_mut(input_index)
             .ok_or(Error::InvalidInputIndex(input_index))?;
 
-        // Create key: type_value=0x1d, key=33-byte scan key
-        let key = Key {
-            type_value: PSBT_IN_SP_ECDH_SHARE,
-            key: share.scan_key.serialize().to_vec(),
-        };
-
-        // Value: 33-byte ECDH share
-        let value = share.share.serialize().to_vec();
-
-        input.unknowns.insert(key, value);
+        input.sp_ecdh_shares.insert(
+            share.scan_key.serialize().to_vec(),
+            share.share.serialize().to_vec(),
+        );
 
         // Add DLEQ proof if present
         if let Some(proof) = share.dleq_proof {
@@ -285,7 +252,6 @@ impl Bip375PsbtExt for Psbt {
     }
 
     fn get_global_dleq_proof(&self, scan_key: &PublicKey) -> Option<[u8; 64]> {
-        // Use native rust-psbt fields
         let scan_key_bytes = scan_key.serialize().to_vec();
         self.global.sp_dleq_proofs.get(&scan_key_bytes).and_then(|value| {
             if value.len() == 64 {
@@ -299,11 +265,11 @@ impl Bip375PsbtExt for Psbt {
     }
 
     fn add_global_dleq_proof(&mut self, scan_key: &PublicKey, proof: [u8; 64]) -> Result<()> {
-        // Use native rust-psbt fields
         self.global.sp_dleq_proofs.insert(
             scan_key.serialize().to_vec(),
             proof.to_vec(),
         );
+
         Ok(())
     }
 
@@ -313,22 +279,17 @@ impl Bip375PsbtExt for Psbt {
         scan_key: &PublicKey,
     ) -> Option<[u8; 64]> {
         let input = self.inputs.get(input_index)?;
+        let scan_key_bytes = scan_key.serialize().to_vec();
 
-        // Key format: type_value=0x1e, key=33-byte scan key
-        let key = Key {
-            type_value: PSBT_IN_SP_DLEQ,
-            key: scan_key.serialize().to_vec(),
-        };
-
-        input.unknowns.get(&key).and_then(|value| {
+        if let Some(value) = input.sp_dleq_proofs.get(&scan_key_bytes) {
             if value.len() == 64 {
                 let mut proof = [0u8; 64];
                 proof.copy_from_slice(value);
-                Some(proof)
-            } else {
-                None
+                return Some(proof);
             }
-        })
+        }
+
+        None
     }
 
     fn add_input_dleq_proof(
@@ -342,29 +303,24 @@ impl Bip375PsbtExt for Psbt {
             .get_mut(input_index)
             .ok_or(Error::InvalidInputIndex(input_index))?;
 
-        // Key format: type_value=0x1e, key=33-byte scan key
-        let key = Key {
-            type_value: PSBT_IN_SP_DLEQ,
-            key: scan_key.serialize().to_vec(),
-        };
+        input.sp_dleq_proofs.insert(
+            scan_key.serialize().to_vec(),
+            proof.to_vec(),
+        );
 
-        input.unknowns.insert(key, proof.to_vec());
         Ok(())
     }
 
     fn get_output_sp_address(&self, output_index: usize) -> Option<SilentPaymentAddress> {
         let output = self.outputs.get(output_index)?;
 
-        // Key format: type_value=0x09, key=empty
-        let key = Key {
-            type_value: PSBT_OUT_SP_V0_INFO,
-            key: vec![],
-        };
+        if let Some(value) = &output.sp_v0_info {
+            if let Ok(address) = SilentPaymentAddress::from_bytes(value) {
+                return Some(address);
+            }
+        }
 
-        output
-            .unknowns
-            .get(&key)
-            .and_then(|value| SilentPaymentAddress::from_bytes(value).ok())
+        None
     }
 
     fn set_output_sp_address(
@@ -377,35 +333,19 @@ impl Bip375PsbtExt for Psbt {
             .get_mut(output_index)
             .ok_or(Error::InvalidOutputIndex(output_index))?;
 
-        // Key format: type_value=0x09, key=empty
-        let key = Key {
-            type_value: PSBT_OUT_SP_V0_INFO,
-            key: vec![],
-        };
+        output.sp_v0_info = Some(address.to_bytes());
 
-        // Value: serialized silent payment address
-        let value = address.to_bytes();
-
-        output.unknowns.insert(key, value);
         Ok(())
     }
 
     fn get_output_sp_label(&self, output_index: usize) -> Option<u32> {
         let output = self.outputs.get(output_index)?;
 
-        // Key format: type_value=0x0a, key=empty
-        let key = Key {
-            type_value: PSBT_OUT_SP_V0_LABEL,
-            key: vec![],
-        };
+        if let Some(label) = output.sp_v0_label {
+            return Some(label);
+        }
 
-        output.unknowns.get(&key).and_then(|value| {
-            if value.len() == 4 {
-                Some(u32::from_le_bytes([value[0], value[1], value[2], value[3]]))
-            } else {
-                None
-            }
-        })
+        None
     }
 
     fn set_output_sp_label(&mut self, output_index: usize, label: u32) -> Result<()> {
@@ -414,16 +354,8 @@ impl Bip375PsbtExt for Psbt {
             .get_mut(output_index)
             .ok_or(Error::InvalidOutputIndex(output_index))?;
 
-        // Key format: type_value=0x0a, key=empty
-        let key = Key {
-            type_value: PSBT_OUT_SP_V0_LABEL,
-            key: vec![],
-        };
+        output.sp_v0_label = Some(label);
 
-        // Value: 4-byte little-endian label
-        let value = label.to_le_bytes().to_vec();
-
-        output.unknowns.insert(key, value);
         Ok(())
     }
 
@@ -445,27 +377,7 @@ impl Bip375PsbtExt for Psbt {
         }
     }
 
-    fn add_global_field(&mut self, field: crate::field::PsbtField) {
-        let key = Key {
-            type_value: field.field_type,
-            key: field.key_data,
-        };
-        self.global.unknowns.insert(key, field.value_data);
-    }
-
-    fn get_global_field(&self, field_type: u8) -> Option<crate::field::PsbtField> {
-        for (key, value) in &self.global.unknowns {
-            if key.type_value == field_type {
-                return Some(crate::field::PsbtField::new(
-                    key.type_value,
-                    key.key.clone(),
-                    value.clone(),
-                ));
-            }
-        }
-        None
-    }
-
+    // TODO: Replace with native rust-psbt fields or remove?
     fn add_input_field(&mut self, input_index: usize, field: crate::field::PsbtField) -> Result<()> {
         let input = self.inputs.get_mut(input_index)
             .ok_or(Error::InvalidInputIndex(input_index))?;
@@ -478,6 +390,7 @@ impl Bip375PsbtExt for Psbt {
         Ok(())
     }
 
+    // TODO: Replace with native rust-psbt fields or remove?
     fn get_input_field(&self, input_index: usize, field_type: u8) -> Option<crate::field::PsbtField> {
         let input = self.inputs.get(input_index)?;
 
@@ -493,6 +406,7 @@ impl Bip375PsbtExt for Psbt {
         None
     }
 
+    // TODO: Replace with native rust-psbt fields or remove?
     fn add_output_field(&mut self, output_index: usize, field: crate::field::PsbtField) -> Result<()> {
         let output = self.outputs.get_mut(output_index)
             .ok_or(Error::InvalidOutputIndex(output_index))?;
@@ -505,6 +419,7 @@ impl Bip375PsbtExt for Psbt {
         Ok(())
     }
 
+    // TODO: Replace with native rust-psbt fields or remove?
     fn get_output_field(&self, output_index: usize, field_type: u8) -> Option<crate::field::PsbtField> {
         let output = self.outputs.get(output_index)?;
 
@@ -545,7 +460,6 @@ pub trait GlobalFieldsExt {
 
 impl GlobalFieldsExt for psbt_v2::v2::Global {
     fn iter_global_fields(&self) -> Vec<(u8, Vec<u8>, Vec<u8>)> {
-        use bitcoin::consensus::Encodable;
         let mut fields = Vec::new();
 
         // PSBT_GLOBAL_VERSION (0x00) - Always present
@@ -670,6 +584,252 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
         fields
     }
 }
+
+/// Extension trait for accessing psbt_v2::v2::Input fields
+///
+/// This trait provides convenient methods to access all standard PSBT v2 input fields
+/// in a serialized format suitable for display or further processing.
+pub trait InputFieldsExt {
+    /// Iterator over all standard input fields as (field_type, key_data, value_data) tuples
+    fn iter_input_fields(&self) -> Vec<(u8, Vec<u8>, Vec<u8>)>;
+}
+
+impl InputFieldsExt for psbt_v2::v2::Input {
+    fn iter_input_fields(&self) -> Vec<(u8, Vec<u8>, Vec<u8>)> {
+        let mut fields = Vec::new();
+
+        // PSBT_IN_NON_WITNESS_UTXO (0x00) - Optional
+        if let Some(ref tx) = self.non_witness_utxo {
+            use bitcoin::consensus::Encodable;
+            let field_type = 0x00;
+            let key_data = vec![];
+            let mut value_data = vec![];
+            let _ = tx.consensus_encode(&mut value_data);
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_WITNESS_UTXO (0x01) - Optional
+        if let Some(ref utxo) = self.witness_utxo {
+            use bitcoin::consensus::Encodable;
+            let field_type = 0x01;
+            let key_data = vec![];
+            let mut value_data = vec![];
+            let _ = utxo.consensus_encode(&mut value_data);
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_PARTIAL_SIG (0x02) - Multiple entries possible
+        for (pubkey, sig) in &self.partial_sigs {
+            let field_type = 0x02;
+            let key_data = pubkey.inner.serialize().to_vec();
+            let value_data = sig.to_vec();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_SIGHASH_TYPE (0x03) - Optional
+        if let Some(sighash_type) = self.sighash_type {
+            let field_type = 0x03;
+            let key_data = vec![];
+            let value_data = (sighash_type.to_u32()).to_le_bytes().to_vec();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_REDEEM_SCRIPT (0x04) - Optional
+        if let Some(ref script) = self.redeem_script {
+            let field_type = 0x04;
+            let key_data = vec![];
+            let value_data = script.to_bytes();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_WITNESS_SCRIPT (0x05) - Optional
+        if let Some(ref script) = self.witness_script {
+            let field_type = 0x05;
+            let key_data = vec![];
+            let value_data = script.to_bytes();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_BIP32_DERIVATION (0x06) - Multiple entries possible
+        for (pubkey, key_source) in &self.bip32_derivations {
+            let field_type = 0x06;
+            let key_data = pubkey.serialize().to_vec();
+            let mut value_data = Vec::new();
+            value_data.extend_from_slice(&key_source.0.to_bytes());
+            for child in &key_source.1 {
+                value_data.extend_from_slice(&u32::from(*child).to_le_bytes());
+            }
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_FINAL_SCRIPTSIG (0x07) - Optional
+        if let Some(ref script) = self.final_script_sig {
+            let field_type = 0x07;
+            let key_data = vec![];
+            let value_data = script.to_bytes();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_FINAL_SCRIPTWITNESS (0x08) - Optional
+        if let Some(ref witness) = self.final_script_witness {
+            use bitcoin::consensus::Encodable;
+            let field_type = 0x08;
+            let key_data = vec![];
+            let mut value_data = vec![];
+            let _ = witness.consensus_encode(&mut value_data);
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_PREVIOUS_TXID (0x0e) - Always present
+        {
+            use bitcoin::consensus::Encodable;
+            let field_type = 0x0e;
+            let key_data = vec![];
+            let mut value_data = vec![];
+            let _ = self.previous_txid.consensus_encode(&mut value_data);
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_OUTPUT_INDEX (0x0f) - Always present
+        {
+            let field_type = 0x0f;
+            let key_data = vec![];
+            let value_data = self.spent_output_index.to_le_bytes().to_vec();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_SEQUENCE (0x10) - Optional
+        if let Some(sequence) = self.sequence {
+            let field_type = 0x10;
+            let key_data = vec![];
+            let value_data = sequence.to_consensus_u32().to_le_bytes().to_vec();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_IN_SP_ECDH_SHARE (0x1d) - BIP-375, multiple entries possible
+        for (scan_key, ecdh_share) in &self.sp_ecdh_shares {
+            let field_type = 0x1d;
+            fields.push((field_type, scan_key.clone(), ecdh_share.clone()));
+        }
+
+        // PSBT_IN_SP_DLEQ (0x1e) - BIP-375, multiple entries possible
+        for (scan_key, dleq_proof) in &self.sp_dleq_proofs {
+            let field_type = 0x1e;
+            fields.push((field_type, scan_key.clone(), dleq_proof.clone()));
+        }
+
+        // PSBT_IN_PROPRIETARY (0xFC) - Multiple entries possible
+        for (prop_key, value) in &self.proprietaries {
+            use bitcoin::consensus::Encodable;
+            let field_type = 0xFC;
+            let mut key_data = vec![];
+            let _ = prop_key.consensus_encode(&mut key_data);
+            fields.push((field_type, key_data, value.clone()));
+        }
+
+        // Unknown fields
+        for (key, value) in &self.unknowns {
+            fields.push((key.type_value, key.key.clone(), value.clone()));
+        }
+
+        fields
+    }
+}
+
+/// Extension trait for accessing psbt_v2::v2::Output fields
+///
+/// This trait provides convenient methods to access all standard PSBT v2 output fields
+/// in a serialized format suitable for display or further processing.
+pub trait OutputFieldsExt {
+    /// Iterator over all standard output fields as (field_type, key_data, value_data) tuples
+    fn iter_output_fields(&self) -> Vec<(u8, Vec<u8>, Vec<u8>)>;
+}
+
+impl OutputFieldsExt for psbt_v2::v2::Output {
+    fn iter_output_fields(&self) -> Vec<(u8, Vec<u8>, Vec<u8>)> {
+        let mut fields = Vec::new();
+
+        // PSBT_OUT_REDEEM_SCRIPT (0x00) - Optional
+        if let Some(ref script) = self.redeem_script {
+            let field_type = 0x00;
+            let key_data = vec![];
+            let value_data = script.to_bytes();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_OUT_WITNESS_SCRIPT (0x01) - Optional
+        if let Some(ref script) = self.witness_script {
+            let field_type = 0x01;
+            let key_data = vec![];
+            let value_data = script.to_bytes();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_OUT_BIP32_DERIVATION (0x02) - Multiple entries possible
+        for (pubkey, key_source) in &self.bip32_derivations {
+            let field_type = 0x02;
+            let key_data = pubkey.serialize().to_vec();
+            let mut value_data = Vec::new();
+            value_data.extend_from_slice(&key_source.0.to_bytes());
+            for child in &key_source.1 {
+                value_data.extend_from_slice(&u32::from(*child).to_le_bytes());
+            }
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_OUT_AMOUNT (0x03) - Always present
+        {
+            let field_type = 0x03;
+            let key_data = vec![];
+            let value_data = self.amount.to_sat().to_le_bytes().to_vec();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_OUT_SCRIPT (0x04) - Always present
+        {
+            let field_type = 0x04;
+            let key_data = vec![];
+            let value_data = self.script_pubkey.to_bytes();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_OUT_SP_V0_INFO (0x09) - BIP-375, optional
+        if let Some(ref sp_info) = self.sp_v0_info {
+            let field_type = 0x09;
+            let key_data = vec![];
+            let value_data = sp_info.clone();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_OUT_SP_V0_LABEL (0x0a) - BIP-375, optional
+        if let Some(label) = self.sp_v0_label {
+            let field_type = 0x0a;
+            let key_data = vec![];
+            let value_data = label.to_le_bytes().to_vec();
+            fields.push((field_type, key_data, value_data));
+        }
+
+        // PSBT_OUT_DNSSEC_PROOF (0x35) - Optional (stored in unknowns)
+        // This field is not yet natively supported in rust-psbt, so it's in unknowns
+
+        // PSBT_OUT_PROPRIETARY (0xFC) - Multiple entries possible
+        for (prop_key, value) in &self.proprietaries {
+            use bitcoin::consensus::Encodable;
+            let field_type = 0xFC;
+            let mut key_data = vec![];
+            let _ = prop_key.consensus_encode(&mut key_data);
+            fields.push((field_type, key_data, value.clone()));
+        }
+
+        // Unknown fields
+        for (key, value) in &self.unknowns {
+            fields.push((key.type_value, key.key.clone(), value.clone()));
+        }
+
+        fields
+    }
+}
+
 
 
 #[cfg(test)]
