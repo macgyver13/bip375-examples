@@ -9,6 +9,7 @@ receivers, and other silent payment implementations.
 
 import hashlib
 import struct
+from typing import List, Tuple
 from secp256k1_374 import GE, G
 
 
@@ -142,3 +143,42 @@ def pubkey_to_p2tr_script(pubkey_point: GE) -> bytes:
     pubkey_bytes = pubkey_point.to_bytes_compressed()
     x_only = pubkey_bytes[1:]  # Remove first byte (02/03 parity), keep 32-byte x coordinate
     return b'\x51\x20' + x_only  # OP_1 (0x51) + PUSH_32 (0x20) + 32 bytes
+
+def compute_bip352_output_script(
+    outpoints: List[Tuple[bytes, int]],
+    summed_pubkey_bytes: bytes,
+    ecdh_share_bytes: bytes,
+    spend_pubkey_bytes: bytes,
+    k: int = 0,
+) -> bytes:
+    """Compute BIP-352 silent payment output script"""
+    # Find smallest outpoint lexicographically
+    serialized_outpoints = [txid + struct.pack("<I", idx) for txid, idx in outpoints]
+    smallest_outpoint = min(serialized_outpoints)
+
+    # Compute input_hash = hash_BIP0352/Inputs(smallest_outpoint || A)
+    tag_data = b"BIP0352/Inputs"
+    tag_hash = hashlib.sha256(tag_data).digest()
+    input_hash_preimage = tag_hash + tag_hash + smallest_outpoint + summed_pubkey_bytes
+    input_hash_bytes = hashlib.sha256(input_hash_preimage).digest()
+    input_hash = int.from_bytes(input_hash_bytes, "big")
+
+    # Compute shared_secret = input_hash * ecdh_share
+    ecdh_point = GE.from_bytes(ecdh_share_bytes)
+    shared_secret_point = input_hash * ecdh_point
+    shared_secret_bytes = shared_secret_point.to_bytes_compressed()
+
+    # Compute t_k = hash_BIP0352/SharedSecret(shared_secret || k)
+    tag_data = b"BIP0352/SharedSecret"
+    tag_hash = hashlib.sha256(tag_data).digest()
+    t_preimage = tag_hash + tag_hash + shared_secret_bytes + k.to_bytes(4, "big")
+    t_k_bytes = hashlib.sha256(t_preimage).digest()
+    t_k = int.from_bytes(t_k_bytes, "big")
+
+    # Compute P_k = B_spend + t_k * G
+    B_spend = GE.from_bytes(spend_pubkey_bytes)
+    P_k = B_spend + (t_k * G)
+
+    # Create P2TR script (x-only pubkey)
+    x_only = P_k.to_bytes_compressed()[1:]  # Remove parity byte
+    return bytes([0x51, 0x20]) + x_only
