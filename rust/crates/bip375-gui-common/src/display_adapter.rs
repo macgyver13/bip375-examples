@@ -4,7 +4,7 @@
 
 use crate::field_identifier::FieldIdentifier;
 use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
-use bip375_core::constants::FieldCategory;
+use crate::display_formatting::FieldCategory;
 use bip375_core::SilentPaymentPsbt;
 use std::collections::HashSet;
 use crate::display_formatting;
