@@ -48,12 +48,26 @@ fn display_psbt(window: &AppWindow, psbt: &SilentPaymentPsbt) {
 
     // Compute transaction summary
     let tx_summary = psbt_analyzer::compute_transaction_summary(psbt);
+
+    // Format DNSSEC contacts for display (with validation status indicators)
+    let dnssec_contacts_str = if !tx_summary.dnssec_contacts.is_empty() {
+        tx_summary
+            .dnssec_contacts
+            .iter()
+            .map(|(idx, name)| format!("[{}] {}", idx, name))
+            .collect::<Vec<_>>()
+            .join(", ")
+    } else {
+        String::new()
+    };
+
     window.set_tx_summary(TransactionSummary {
         total_input: tx_summary.total_input as i32,
         total_output: tx_summary.total_output as i32,
         fee: tx_summary.fee as i32,
         num_inputs: tx_summary.num_inputs as i32,
         num_outputs: tx_summary.num_outputs as i32,
+        dnssec_contacts: dnssec_contacts_str.into(),
     });
 
     window.set_has_psbt(true);

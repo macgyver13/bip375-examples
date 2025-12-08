@@ -98,9 +98,18 @@ pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSumma
         // Check for DNSSEC proofs in unknown fields
         for (key, value) in &output.unknowns {
             if key.type_value == PSBT_OUT_DNSSEC_PROOF {
-                // Decode DNSSEC proof to extract DNS name
-                if let Ok(dns_name) = decode_dnssec_proof(value) {
-                    dnssec_contacts.insert(output_idx, dns_name);
+                // Try to validate DNSSEC proof, fall back to decode-only
+                match validate_dnssec_proof(value) {
+                    Ok((dns_name, _txt_records)) => {
+                        // DNSSEC validation succeeded
+                        dnssec_contacts.insert(output_idx, format!("{} ✓", dns_name));
+                    }
+                    Err(_) => {
+                        // Validation failed, try to at least decode the DNS name
+                        if let Ok(dns_name) = decode_dnssec_proof(value) {
+                            dnssec_contacts.insert(output_idx, format!("{} ⚠", dns_name));
+                        }
+                    }
                 }
             }
         }
@@ -139,4 +148,77 @@ fn decode_dnssec_proof(proof_bytes: &[u8]) -> Result<String, String> {
     let dns_name_bytes = &proof_bytes[1..1 + dns_name_length];
     String::from_utf8(dns_name_bytes.to_vec())
         .map_err(|e| format!("Invalid UTF-8 in DNS name: {}", e))
+}
+
+/// Validate DNSSEC proof using RFC 9102 validation (BIP 353 format)
+///
+/// Returns (dns_name, txt_records) if validation succeeds, or an error if it fails.
+/// This performs cryptographic validation of the DNSSEC chain.
+fn validate_dnssec_proof(proof_bytes: &[u8]) -> Result<(String, Vec<String>), String> {
+    use dnssec_prover::validation::verify_rr_stream;
+    use dnssec_prover::rr::{RR, Name};
+    use dnssec_prover::ser::parse_rr_stream;
+
+    // First decode to get DNS name and RFC 9102 proof data
+    if proof_bytes.is_empty() {
+        return Err("DNSSEC proof too short".to_string());
+    }
+
+    let dns_name_length = proof_bytes[0] as usize;
+    if proof_bytes.len() < 1 + dns_name_length {
+        return Err("DNSSEC proof too short".to_string());
+    }
+
+    let dns_name_bytes = &proof_bytes[1..1 + dns_name_length];
+    let dns_name = String::from_utf8(dns_name_bytes.to_vec())
+        .map_err(|_| "Invalid UTF-8 in DNS name".to_string())?;
+
+    let rfc9102_proof = &proof_bytes[1 + dns_name_length..];
+
+    // Check if this is a mock proof
+    if rfc9102_proof.starts_with(b"MOCK_DNSSEC_PROOF_") {
+        return Err("Mock proof cannot be validated".to_string());
+    }
+
+    // Parse RFC 9102 proof
+    let rrs = parse_rr_stream(rfc9102_proof)
+        .map_err(|_| "Failed to parse RFC 9102 proof".to_string())?;
+
+    // Verify DNSSEC chain
+    let verified_rrs = verify_rr_stream(&rrs)
+        .map_err(|_| "DNSSEC validation failed".to_string())?;
+
+    // Extract TXT records
+    let dns_query_name = if dns_name.contains('@') {
+        let parts: Vec<&str> = dns_name.split('@').collect();
+        if parts.len() == 2 {
+            format!("{}.user._bitcoin-payment.{}.", parts[0], parts[1])
+        } else {
+            dns_name.clone()
+        }
+    } else {
+        dns_name.clone()
+    };
+
+    let query_name = Name::try_from(dns_query_name.as_str())
+        .map_err(|_| "Invalid DNS name format".to_string())?;
+
+    let txt_records: Vec<String> = verified_rrs
+        .resolve_name(&query_name)
+        .iter()
+        .filter_map(|rr| {
+            if let RR::Txt(txt) = rr {
+                let bytes: Vec<u8> = txt.data.iter().collect();
+                Some(String::from_utf8_lossy(&bytes).to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if txt_records.is_empty() {
+        return Err("No TXT records found".to_string());
+    }
+
+    Ok((dns_name, txt_records))
 }

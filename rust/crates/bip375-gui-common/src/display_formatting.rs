@@ -1,9 +1,24 @@
 //! Display formatting utilities for PSBT fields
 //!
 //! Provides functions for formatting PSBT field data for human-readable display.
+//!
+//! # DNSSEC Validation Status Indicators
+//!
+//! When displaying DNSSEC proofs (BIP-353), validation status is indicated with symbols:
+//! - `✓` - DNSSEC proof validated successfully using RFC 9102 cryptographic validation
+//! - `⚠` - DNSSEC validation failed or proof could not be validated (e.g., mock proof)
+//!
+//! Example: "donate@example.com ✓" indicates a cryptographically verified DNS name.
 
-// TODO: Migrate PSBT_OUT_DNSSEC_PROOF to bip353-rs crate when ready
 /// DNSSEC proof field type for BIP-353 silent payment addresses
+///
+/// This field contains RFC 9102-formatted DNSSEC proofs that cryptographically
+/// prove the authenticity of a DNS TXT record containing Bitcoin payment instructions.
+///
+/// Format: `<1-byte-length><dns_name><RFC 9102 DNSSEC proof>`
+///
+/// Note: The field type constant (0x35) is defined locally. Consider upstreaming to
+/// rust-psbt or bip353-rs once BIP-353 PSBT integration is standardized.
 pub const PSBT_OUT_DNSSEC_PROOF: u8 = 0x35;
 
 /// PSBT field category for disambiguating field types

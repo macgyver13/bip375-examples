@@ -61,6 +61,13 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1.0"
 anyhow = "1.0"
 
+# BIP-353 (Human-Readable Bitcoin Addresses) with DNSSEC validation
+bip353-rs = "0.1.1"
+dnssec-prover = { version = "0.6", features = ["std", "tokio", "validation"] }
+
+# Async runtime for BIP-353 resolution
+tokio = { version = "1", features = ["rt", "macros", "net"] }
+
 # Internal crates
 bip375-core = { path = "crates/bip375-core" }
 bip375-crypto = { path = "crates/bip375-crypto" }

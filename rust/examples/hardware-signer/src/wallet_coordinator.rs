@@ -53,16 +53,29 @@ impl WalletCoordinator {
             outputs.len()
         );
 
-        // Add DNSSEC proof to recipient output (Output 1)
-        let dns_name = "donate@example.com";
+        // Add BIP-353 DNSSEC proof to recipient output (Output 1)
+        //
+        // This demonstrates BIP-353 integration: the wallet coordinator resolves
+        // a human-readable Bitcoin address (e.g., "donate@example.com") via DNS
+        // and generates an RFC 9102 DNSSEC proof that cryptographically proves
+        // the authenticity of the Bitcoin payment instruction.
+        //
+        // The proof is included in the PSBT so hardware wallets can independently
+        // validate the DNS name and display it to the user for verification,
+        // preventing MITM attacks on DNS resolution.
+        let dns_name = "macgyver@spmac.xyz";
+        println!("   Generating DNSSEC proof for recipient: {}", dns_name);
+
+        // Note: create_dnssec_proof() attempts real DNS resolution with DNSSEC validation
+        // and falls back to mock proof if resolution fails (for demo purposes)
         let dnssec_proof = create_dnssec_proof(dns_name);
-        
+
         use bip375_core::PsbtField;
         let dnssec_field = PsbtField::with_value(PSBT_OUT_DNSSEC_PROOF, dnssec_proof.clone());
         psbt.add_output_field(1, dnssec_field)?; // Recipient output (not change)
-        
+
         println!("   Added DNSSEC proof for recipient output");
-        println!("   DNS Name: {}", dns_name);
+        println!("   Proof Format: <1-byte-length><dns_name><RFC 9102 proof>");
         println!("   Proof Size: {} bytes\n", dnssec_proof.len());
 
         // Note: BIP32 derivation fields would be added here in production

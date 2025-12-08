@@ -79,26 +79,43 @@ impl HardwareDevice {
         println!(" HARDWARE DEVICE SCREEN:");
         println!("{}\n", "=".repeat(60));
 
-        // Extract DNSSEC proofs from PSBT
+        // Extract and validate DNSSEC proofs from PSBT
         let (psbt, _) = load_psbt().map_err(|e| format!("Failed to load PSBT: {}", e))?;
-        
+
         let mut dnssec_proofs = std::collections::HashMap::new();
+        let mut validation_failures = Vec::new();
+
         for (output_idx, output) in psbt.outputs.iter().enumerate() {
             for (key, value) in &output.unknowns {
                 if key.type_value == PSBT_OUT_DNSSEC_PROOF {
-                    match decode_dnssec_proof(value) {
-                        Ok((dns_name, _proof_data)) => {
+                    // Try to validate the DNSSEC proof
+                    match validate_dnssec_proof(value) {
+                        Ok((dns_name, txt_records)) => {
+                            println!("   ✓ DNSSEC proof validated for output {}: {}", output_idx, dns_name);
+                            println!("     TXT records: {:?}", txt_records);
                             let proof_hex = hex::encode(value);
-                            dnssec_proofs.insert(output_idx, (dns_name, proof_hex));
+                            dnssec_proofs.insert(output_idx, (format!("{} ✓", dns_name), proof_hex));
                         }
                         Err(e) => {
-                            eprintln!("Warning: Failed to decode DNSSEC proof for output {}: {}", output_idx, e);
+                            // Validation failed - try to decode at least the DNS name
+                            match decode_dnssec_proof(value) {
+                                Ok((dns_name, _)) => {
+                                    eprintln!("   ⚠ DNSSEC validation FAILED for output {}: {}", output_idx, dns_name);
+                                    eprintln!("     Error: {}", e);
+                                    validation_failures.push((output_idx, dns_name.clone(), e.clone()));
+                                    let proof_hex = hex::encode(value);
+                                    dnssec_proofs.insert(output_idx, (format!("{} ⚠ UNVERIFIED", dns_name), proof_hex));
+                                }
+                                Err(decode_err) => {
+                                    eprintln!("   ✗ Failed to decode DNSSEC proof for output {}: {}", output_idx, decode_err);
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        
+
         // Display transaction summary with DNSSEC proofs inline
         let has_dnssec = !dnssec_proofs.is_empty();
         display_transaction_summary_with_dnssec(if has_dnssec { Some(dnssec_proofs) } else { None });
@@ -107,6 +124,13 @@ impl HardwareDevice {
         println!("   • Check recipient addresses");
         if has_dnssec {
             println!("   • Verify DNS contact names");
+            if !validation_failures.is_empty() {
+                println!("\n   🚨 WARNING: DNSSEC VALIDATION FAILURES DETECTED!");
+                for (idx, dns_name, err) in &validation_failures {
+                    println!("     Output {}: {} - {}", idx, dns_name, err);
+                }
+                println!("   ⚠️  DO NOT sign this transaction unless you trust the DNS names!");
+            }
         }
         println!("   • Verify amounts");
         println!("   • Confirm fee is reasonable\n");

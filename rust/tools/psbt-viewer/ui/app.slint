@@ -18,6 +18,7 @@ export struct TransactionSummary {
     fee: int,
     num-inputs: int,
     num-outputs: int,
+    dnssec-contacts: string,  // Formatted string of output->DNS mappings with validation status
 }
 
 export struct TestVector {
@@ -114,6 +115,7 @@ export component AppWindow inherits Window {
         fee: 0,
         num-inputs: 0,
         num-outputs: 0,
+        dnssec-contacts: "",
     };
 
     // Test vector properties
@@ -474,6 +476,17 @@ export component AppWindow inherits Window {
                     Text {
                         text: "Fee: " + tx-summary.fee + " sats";
                         color: tx-summary.fee > 100000 ? #e6b300 : #33cc33;
+                    }
+
+                    if tx-summary.dnssec-contacts != "": Rectangle {
+                        width: 1px;
+                        height: 100%;
+                        background: #666666;
+                    }
+
+                    if tx-summary.dnssec-contacts != "": Text {
+                        text: "DNS: " + tx-summary.dnssec-contacts;
+                        font-size: 12px;
                     }
                 }
 

@@ -34,6 +34,11 @@ ripemd.workspace = true
 chrono.workspace = true
 common = { path = "../common" }
 
+# BIP-353 support
+bip353-rs.workspace = true
+dnssec-prover.workspace = true
+tokio.workspace = true
+
 # GUI framework
 slint = { version = "1.8", optional = true }
 
