@@ -6,7 +6,7 @@ use super::app_state::*;
 use crate::alice_creates::alice_creates;
 use crate::bob_signs::bob_signs;
 use crate::charlie_finalizes::charlie_finalizes;
-use bip375_core::{Bip375PsbtExt, {constants, SilentPaymentPsbt}};
+use bip375_core::{Bip375PsbtExt, {SilentPaymentPsbt}};
 use bip375_gui_common::psbt_analyzer;
 use common::load_psbt;
 

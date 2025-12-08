@@ -92,7 +92,6 @@ mod tests {
     use super::*;
     use crate::creator::create_psbt;
     use bitcoin::{hashes::Hash, Amount, ScriptBuf, Sequence, Txid};
-    use bip375_core::constants::*;
 
     #[test]
     fn test_add_inputs() {

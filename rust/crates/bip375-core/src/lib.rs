@@ -7,9 +7,7 @@
 //! - Silent payment address types
 //! - ECDH share types
 //! - UTXO types
-//! - Field type constants
 
-pub mod constants;
 pub mod ecdh_aggregation;
 pub mod error;
 pub mod field;
@@ -17,7 +15,6 @@ pub mod psbt_accessors;
 pub mod types;
 pub mod extensions;
 
-pub use constants::*;
 pub use ecdh_aggregation::{aggregate_ecdh_shares, AggregatedShare, AggregatedShares};
 pub use error::{Error, Result};
 pub use field::PsbtField;

@@ -10,7 +10,7 @@
 //! - Input key information
 //! - Scan keys for silent payment outputs
 
-use bip375_core::{constants::*, SilentPaymentPsbt};
+use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
 use bip375_roles::validation::{validate_psbt, ValidationLevel};
 use secp256k1::{Secp256k1, PublicKey};
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,13 @@ use std::fs;
 
 /// Test vector file location
 const TEST_VECTORS_FILE: &str = "../test_vectors.json";
+
+// PSBT field type constants
+const PSBT_IN_SP_ECDH_SHARE: u8 = 0x1d;
+const PSBT_IN_SP_DLEQ: u8 = 0x1e;
+const PSBT_OUT_AMOUNT: u8 = 0x03;
+const PSBT_OUT_SCRIPT: u8 = 0x04;
+const PSBT_OUT_SP_V0_INFO: u8 = 0x09;
 
 /// Root structure for all test vectors
 #[derive(Debug, Deserialize, Serialize)]

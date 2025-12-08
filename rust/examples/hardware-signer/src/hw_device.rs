@@ -8,7 +8,8 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{Bip375PsbtExt, {constants, OutputRecipient, SilentPaymentPsbt}};
+use bip375_core::{Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt};
+use bip375_gui_common::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use common::{save_psbt,load_psbt};
@@ -84,7 +85,7 @@ impl HardwareDevice {
         let mut dnssec_proofs = std::collections::HashMap::new();
         for (output_idx, output) in psbt.outputs.iter().enumerate() {
             for (key, value) in &output.unknowns {
-                if key.type_value == constants::PSBT_OUT_DNSSEC_PROOF {
+                if key.type_value == PSBT_OUT_DNSSEC_PROOF {
                     match decode_dnssec_proof(value) {
                         Ok((dns_name, _proof_data)) => {
                             let proof_hex = hex::encode(value);

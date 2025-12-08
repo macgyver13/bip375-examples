@@ -2,7 +2,85 @@
 //!
 //! Provides functions for formatting PSBT field data for human-readable display.
 
-use bip375_core::constants::{field_type_name, FieldCategory, PSBT_OUT_DNSSEC_PROOF};
+// TODO: Migrate PSBT_OUT_DNSSEC_PROOF to bip353-rs crate when ready
+/// DNSSEC proof field type for BIP-353 silent payment addresses
+pub const PSBT_OUT_DNSSEC_PROOF: u8 = 0x35;
+
+/// PSBT field category for disambiguating field types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldCategory {
+    Global,
+    Input,
+    Output,
+}
+
+/// Get a human-readable name for a PSBT field type based on its category
+///
+/// Maps PSBT field type constants to their human-readable names.
+/// Supports standard PSBT v2 fields as well as BIP-375 and BIP-353 extensions.
+pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str {
+    match category {
+        FieldCategory::Global => match field_type {
+            0x00 => "PSBT_GLOBAL_XPUB",
+            0x01 => "PSBT_GLOBAL_TX_VERSION",
+            0x02 => "PSBT_GLOBAL_FALLBACK_LOCKTIME",
+            0x03 => "PSBT_GLOBAL_INPUT_COUNT",
+            0x04 => "PSBT_GLOBAL_OUTPUT_COUNT",
+            0x05 => "PSBT_GLOBAL_TX_MODIFIABLE",
+            0x06 => "PSBT_GLOBAL_VERSION",
+            0x07 => "PSBT_GLOBAL_SP_ECDH_SHARE",  // BIP-375
+            _ => "PSBT_GLOBAL_UNKNOWN",
+        },
+        FieldCategory::Input => match field_type {
+            0x00 => "PSBT_IN_NON_WITNESS_UTXO",
+            0x01 => "PSBT_IN_WITNESS_UTXO",
+            0x02 => "PSBT_IN_PARTIAL_SIG",
+            0x03 => "PSBT_IN_SIGHASH_TYPE",
+            0x04 => "PSBT_IN_REDEEM_SCRIPT",
+            0x05 => "PSBT_IN_WITNESS_SCRIPT",
+            0x06 => "PSBT_IN_BIP32_DERIVATION",
+            0x07 => "PSBT_IN_FINAL_SCRIPTSIG",
+            0x08 => "PSBT_IN_FINAL_SCRIPTWITNESS",
+            0x09 => "PSBT_IN_POR_COMMITMENT",
+            0x0a => "PSBT_IN_RIPEMD160",
+            0x0b => "PSBT_IN_SHA256",
+            0x0c => "PSBT_IN_HASH160",
+            0x0d => "PSBT_IN_HASH256",
+            0x0e => "PSBT_IN_PREVIOUS_TXID",
+            0x0f => "PSBT_IN_OUTPUT_INDEX",
+            0x10 => "PSBT_IN_SEQUENCE",
+            0x11 => "PSBT_IN_REQUIRED_TIME_LOCKTIME",
+            0x12 => "PSBT_IN_REQUIRED_HEIGHT_LOCKTIME",
+            0x13 => "PSBT_IN_TAP_KEY_SIG",
+            0x14 => "PSBT_IN_TAP_SCRIPT_SIG",
+            0x15 => "PSBT_IN_TAP_LEAF_SCRIPT",
+            0x16 => "PSBT_IN_TAP_BIP32_DERIVATION",
+            0x17 => "PSBT_IN_TAP_INTERNAL_KEY",
+            0x18 => "PSBT_IN_TAP_MERKLE_ROOT",
+            0x1a => "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS",
+            0x1b => "PSBT_IN_MUSIG2_PUB_NONCE",
+            0x1c => "PSBT_IN_MUSIG2_PARTIAL_SIG",
+            0x1d => "PSBT_IN_SP_ECDH_SHARE",  // BIP-375
+            0x1e => "PSBT_IN_SP_DLEQ",        // BIP-375
+            _ => "PSBT_IN_UNKNOWN",
+        },
+        FieldCategory::Output => match field_type {
+            0x00 => "PSBT_OUT_REDEEM_SCRIPT",
+            0x01 => "PSBT_OUT_WITNESS_SCRIPT",
+            0x02 => "PSBT_OUT_BIP32_DERIVATION",
+            0x03 => "PSBT_OUT_AMOUNT",
+            0x04 => "PSBT_OUT_SCRIPT",
+            0x05 => "PSBT_OUT_TAP_INTERNAL_KEY",
+            0x06 => "PSBT_OUT_TAP_TREE",
+            0x07 => "PSBT_OUT_TAP_BIP32_DERIVATION",
+            0x08 => "PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS",
+            0x09 => "PSBT_OUT_SP_V0_INFO",    // BIP-375
+            0x0a => "PSBT_OUT_SP_V0_LABEL",   // BIP-375
+            PSBT_OUT_DNSSEC_PROOF => "PSBT_OUT_DNSSEC_PROOF",  // BIP-353
+            _ => "PSBT_OUT_UNKNOWN",
+        },
+    }
+}
 
 /// Get human-readable field name based on category and type
 pub fn format_field_name(category: FieldCategory, field_type: u8) -> &'static str {

@@ -5,7 +5,8 @@
 
 use crate::field_identifier::{FieldIdentifier, TransactionSummary};
 use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
-use bip375_core::{constants, SilentPaymentPsbt};
+use bip375_core::SilentPaymentPsbt;
+use crate::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use std::collections::HashSet;
 
 /// Extract all field identifiers from a PSBT
@@ -96,7 +97,7 @@ pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSumma
 
         // Check for DNSSEC proofs in unknown fields
         for (key, value) in &output.unknowns {
-            if key.type_value == constants::PSBT_OUT_DNSSEC_PROOF {
+            if key.type_value == PSBT_OUT_DNSSEC_PROOF {
                 // Decode DNSSEC proof to extract DNS name
                 if let Ok(dns_name) = decode_dnssec_proof(value) {
                     dnssec_contacts.insert(output_idx, dns_name);
