@@ -170,7 +170,15 @@ pub fn display_transaction_summary_with_dnssec(dnssec_proofs: Option<std::collec
                 if let Some(ref proofs) = dnssec_proofs {
                     if let Some((dns_name, proof_hex)) = proofs.get(&i) {
                         println!("      Contact: {}", dns_name);
-                        println!("      DNS Proof: {}", proof_hex);
+                        let proof_display = if proof_hex.len() > 70 {
+                            format!("{}...{} ({} bytes)",
+                                &proof_hex[..30],
+                                &proof_hex[proof_hex.len()-30..],
+                                proof_hex.len() / 2) // hex string is 2 chars per byte
+                        } else {
+                            proof_hex.clone()
+                        };
+                        println!("      DNS Proof: {}", proof_display);
                     }
                 }
             }
@@ -237,27 +245,116 @@ pub fn display_air_gap_instructions(from: &str, to: &str, auto_continue: bool) {
 ///
 /// # Arguments
 /// * `dns_name` - DNS name (e.g., "donate@example.com")
+/// * `resolver_addr` - DNS resolver address (e.g., "8.8.8.8:53" for Google DNS)
+///
+/// # Returns
+/// Encoded bytes ready for PSBT_OUT_DNSSEC_PROOF field, or error
+///
+/// # Note
+/// This function performs real DNSSEC resolution and proof generation using RFC 9102.
+/// It queries DNS servers to build cryptographically verifiable proofs.
+///
+/// # BIP-353 DNS Format
+/// For a BIP-353 address like "user@domain.com", the DNS query targets:
+/// `user.user._bitcoin-payment.domain.com.` (TXT record)
+///
+/// # Async Requirement
+/// This function must be called from within a tokio runtime context.
+pub async fn create_dnssec_proof_async(dns_name: &str, resolver_addr: &str) -> Result<Vec<u8>, String> {
+    use dnssec_prover::query::build_txt_proof_async;
+    use dnssec_prover::rr::Name;
+    use std::net::SocketAddr;
+
+    let dns_name_bytes = dns_name.as_bytes();
+    if dns_name_bytes.len() > 255 {
+        return Err(format!("DNS name too long: {} bytes (max 255)", dns_name_bytes.len()));
+    }
+
+    // Parse BIP-353 address format: user@domain.com -> user.user._bitcoin-payment.domain.com.
+    let dns_query_name = if dns_name.contains('@') {
+        let parts: Vec<&str> = dns_name.split('@').collect();
+        if parts.len() != 2 {
+            return Err(format!("Invalid BIP-353 format: {}", dns_name));
+        }
+        let (user, domain) = (parts[0], parts[1]);
+        format!("{}.user._bitcoin-payment.{}.", user, domain)
+    } else {
+        // If no @, assume it's already in DNS format
+        if !dns_name.ends_with('.') {
+            format!("{}.", dns_name)
+        } else {
+            dns_name.to_string()
+        }
+    };
+
+    // Convert to dnssec-prover Name type
+    let name = Name::try_from(dns_query_name.as_str())
+        .map_err(|_| format!("Invalid DNS name: {}", dns_query_name))?;
+
+    // Parse resolver address
+    let resolver: SocketAddr = resolver_addr.parse()
+        .map_err(|e| format!("Invalid resolver address {}: {}", resolver_addr, e))?;
+
+    // Build RFC 9102 DNSSEC proof by querying DNS
+    let (proof_bytes, _ttl) = build_txt_proof_async(resolver, &name).await
+        .map_err(|e| format!("Failed to build DNSSEC proof: {:?}", e))?;
+
+    // Encode as BIP-353 format: <1-byte-length><dns_name><RFC 9102 proof>
+    let mut result = Vec::new();
+    result.push(dns_name_bytes.len() as u8);
+    result.extend_from_slice(dns_name_bytes);
+    result.extend_from_slice(&proof_bytes);
+
+    Ok(result)
+}
+
+/// Create a BIP 353 DNSSEC proof synchronously (blocking version)
+///
+/// This is a convenience wrapper that creates a temporary tokio runtime.
+/// For better performance in async contexts, use `create_dnssec_proof_async`.
+///
+/// # Arguments
+/// * `dns_name` - DNS name (e.g., "donate@example.com")
 ///
 /// # Returns
 /// Encoded bytes ready for PSBT_OUT_DNSSEC_PROOF field
 ///
 /// # Note
-/// For demo purposes, this creates a mock DNSSEC proof.
-/// In production, this would contain real RFC 9102 DNSSEC proof data.
+/// For demo/testing purposes with fallback to mock data on errors.
+/// In production wallets, handle errors appropriately.
 pub fn create_dnssec_proof(dns_name: &str) -> Vec<u8> {
-    use bitcoin::hashes::{sha256, Hash};
-    
-    let dns_name_bytes = dns_name.as_bytes();
-    if dns_name_bytes.len() > 255 {
-        panic!("DNS name too long: {} bytes (max 255)", dns_name_bytes.len());
-    }
+    // Try to create real DNSSEC proof using Google's public DNS (8.8.8.8)
+    let runtime = tokio::runtime::Runtime::new()
+        .expect("Failed to create tokio runtime");
 
-    // Create mock DNSSEC proof (RFC 9102 format would be used in production)
-    let mut mock_proof = b"DNSSEC_PROOF_MOCK_DATA_".to_vec();
+    match runtime.block_on(create_dnssec_proof_async(dns_name, "8.8.8.8:53")) {
+        Ok(proof) => {
+            println!("✓ Generated real DNSSEC proof for: {}", dns_name);
+            proof
+        },
+        Err(e) => {
+            // Fallback to mock for demo purposes
+            eprintln!("⚠ DNSSEC proof generation failed ({}), using mock data", e);
+            create_mock_dnssec_proof(dns_name)
+        }
+    }
+}
+
+/// Create a mock DNSSEC proof for demonstration purposes
+///
+/// This is used as a fallback when real DNSSEC resolution fails.
+/// Mock proofs will fail validation.
+fn create_mock_dnssec_proof(dns_name: &str) -> Vec<u8> {
+    use bitcoin::hashes::{sha256, Hash};
+
+    let dns_name_bytes = dns_name.as_bytes();
+
+    // Create mock proof data
+    let mut mock_proof = b"MOCK_DNSSEC_PROOF_".to_vec();
     let hash = sha256::Hash::hash(dns_name_bytes);
     mock_proof.extend_from_slice(hash.as_byte_array());
 
-    // Combine: <1-byte-length><dns_name><proof_data>
+    // Encode as BIP-353 format
     let mut proof_bytes = Vec::new();
     proof_bytes.push(dns_name_bytes.len() as u8);
     proof_bytes.extend_from_slice(dns_name_bytes);
@@ -297,4 +394,79 @@ pub fn decode_dnssec_proof(proof_bytes: &[u8]) -> Result<(String, Vec<u8>), Stri
     let proof_data = proof_bytes[1 + dns_name_length..].to_vec();
 
     Ok((dns_name, proof_data))
+}
+
+/// Validate a BIP 353 DNSSEC proof using RFC 9102 validation
+///
+/// # Arguments
+/// * `proof_bytes` - Encoded DNSSEC proof from PSBT_OUT_DNSSEC_PROOF field
+///
+/// # Returns
+/// Result containing (dns_name, validated_txt_records) or error message
+///
+/// # Note
+/// This function performs cryptographic validation of the DNSSEC chain
+/// from the DNS root to the target domain, verifying all RRSIG signatures.
+pub fn validate_dnssec_proof(proof_bytes: &[u8]) -> Result<(String, Vec<String>), String> {
+    use dnssec_prover::validation::verify_rr_stream;
+    use dnssec_prover::rr::RR;
+    use dnssec_prover::ser::parse_rr_stream;
+
+    // First decode to get DNS name and RFC 9102 proof data
+    let (dns_name, rfc9102_proof) = decode_dnssec_proof(proof_bytes)?;
+
+    // Check if this is a mock proof (starts with known mock prefix)
+    if rfc9102_proof.starts_with(b"MOCK_DNSSEC_PROOF_") {
+        return Err(format!(
+            "Cannot validate mock DNSSEC proof for '{}'. Use real DNSSEC resolution.",
+            dns_name
+        ));
+    }
+
+    // Parse RFC 9102 proof into Resource Records
+    let rrs = parse_rr_stream(&rfc9102_proof)
+        .map_err(|_| "Failed to parse RFC 9102 proof data".to_string())?;
+
+    // Verify DNSSEC chain from root to target using cryptographic validation
+    // Note: verify_rr_stream() uses root_hints() internally for trust anchor validation
+    let verified_rrs = verify_rr_stream(&rrs)
+        .map_err(|e| format!("DNSSEC validation failed: {:?}", e))?;
+
+    // Extract TXT records for the DNS name
+    // BIP-353 format: user@domain.com -> user.user._bitcoin-payment.domain.com.
+    let dns_query_name = if dns_name.contains('@') {
+        let parts: Vec<&str> = dns_name.split('@').collect();
+        if parts.len() == 2 {
+            let (user, domain) = (parts[0], parts[1]);
+            format!("{}.user._bitcoin-payment.{}.", user, domain)
+        } else {
+            dns_name.clone()
+        }
+    } else {
+        dns_name.clone()
+    };
+
+    let txt_records: Vec<String> = verified_rrs
+        .resolve_name(&dnssec_prover::rr::Name::try_from(dns_query_name.as_str())
+            .map_err(|_| "Invalid DNS name format")?)
+        .iter()
+        .filter_map(|rr| {
+            if let RR::Txt(txt) = rr {
+                // txt.data.iter() returns an iterator over u8 bytes
+                let bytes: Vec<u8> = txt.data.iter().collect();
+                Some(String::from_utf8_lossy(&bytes).to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if txt_records.is_empty() {
+        return Err(format!(
+            "No TXT records found in validated proof for '{}'",
+            dns_name
+        ));
+    }
+
+    Ok((dns_name, txt_records))
 }

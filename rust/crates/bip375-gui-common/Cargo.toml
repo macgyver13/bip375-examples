@@ -10,3 +10,8 @@ hex.workspace = true
 base64 = "0.22"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+
+# BIP-353 support for DNSSEC proof validation
+bip353-rs.workspace = true
+dnssec-prover.workspace = true
+tokio.workspace = true

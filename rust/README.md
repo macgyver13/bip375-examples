@@ -9,6 +9,7 @@ This is a Rust implementation of BIP-375, providing:
 - PSBT v2 support with silent payment extensions
 - Role-based architecture (Creator, Constructor, Updater, Signer, Input Finalizer, Extractor)
 - BIP-352 silent payment cryptography
+- BIP-353 resolver demonstrated hardware-signer / psbt-viewer
 - BIP-374 DLEQ proof generation and verification
 - Test vector compatibility
 

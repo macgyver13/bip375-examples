@@ -42,7 +42,7 @@ repository = "https://github.com/bitcoin/bips"
 [workspace.dependencies]
 bitcoin = "0.32.6"
 secp256k1 = { version = "0.29", features = ["rand", "global-context", "serde"] }
-psbt-v2 = { git = "https://github.com/macgyver13/rust-psbt", branch = "bip375-support", features = ["bip375"] }
+psbt-v2 = { git = "https://github.com/macgyver13/rust-psbt", branch = "bip375-support", features = ["silent-payments"] }
 
 # Cryptography
 bitcoin_hashes = "0.13"
@@ -60,6 +60,13 @@ chrono = { version = "0.4", features = ["serde"] }
 # Error handling
 thiserror = "1.0"
 anyhow = "1.0"
+
+# BIP-353 (Human-Readable Bitcoin Addresses) with DNSSEC validation
+bip353-rs = "0.1.1"
+dnssec-prover = { version = "0.6", features = ["std", "tokio", "validation"] }
+
+# Async runtime for BIP-353 resolution
+tokio = { version = "1", features = ["rt", "macros", "net"] }
 
 # Internal crates
 bip375-core = { path = "crates/bip375-core" }
