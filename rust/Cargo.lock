@@ -121,7 +121,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if",
- "getrandom",
+ "getrandom 0.3.4",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -586,7 +586,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c8d66485a3a2ea485c1913c4572ce0256067a5377ac8c75c4960e1cda98605f"
 dependencies = [
  "bitcoin-internals 0.3.0",
- "bitcoin_hashes 0.14.0",
+ "bitcoin_hashes 0.14.1",
 ]
 
 [[package]]
@@ -612,9 +612,9 @@ dependencies = [
 
 [[package]]
 name = "bech32"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d965446196e3b7decd44aa7ee49e31d630118f90ef12f97900f262eb915c951d"
+checksum = "32637268377fc7b10a8c6d51de3e7fba1ce5dd371a96e342b34e6078db558e7f"
 
 [[package]]
 name = "bincode"
@@ -656,6 +656,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "bip353-rs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d09e25da1b32b9dcab359bc5ba8cafaa702e65eca6d582f191717c4e39f32d7c"
+dependencies = [
+ "async-trait",
+ "bitcoin",
+ "bitcoin-payment-instructions",
+ "dnssec-prover",
+ "futures",
+ "log",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "bip375-core"
 version = "0.1.0"
 dependencies = [
@@ -688,11 +705,14 @@ name = "bip375-gui-common"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "bip353-rs",
  "bip375-core",
  "bip375-io",
+ "dnssec-prover",
  "hex",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -761,16 +781,16 @@ checksum = "1e4b40c7323adcfc0a41c4b88143ed58346ff65a288fc144329c5c45e05d70c6"
 
 [[package]]
 name = "bitcoin"
-version = "0.32.7"
+version = "0.32.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fda569d741b895131a88ee5589a467e73e9c4718e958ac9308e4f7dc44b6945"
+checksum = "1e499f9fc0407f50fe98af744ab44fa67d409f76b6772e1689ec8485eb0c0f66"
 dependencies = [
  "base58ck",
  "bech32",
  "bitcoin-internals 0.3.0",
  "bitcoin-io",
  "bitcoin-units",
- "bitcoin_hashes 0.14.0",
+ "bitcoin_hashes 0.14.1",
  "hex-conservative 0.2.2",
  "hex_lit",
  "secp256k1",
@@ -795,6 +815,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dee39a0ee5b4095224a0cfc6bf4cc1baf0f9624b96b367e53b66d974e51d953"
 
 [[package]]
+name = "bitcoin-payment-instructions"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4fbd9b4e95262ecfd6a6d820837a609f54d37995bc54a773c28d9573c0bd869"
+dependencies = [
+ "bitcoin",
+ "dnssec-prover",
+ "getrandom 0.3.4",
+ "lightning",
+ "lightning-invoice",
+]
+
+[[package]]
 name = "bitcoin-units"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -815,9 +848,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin_hashes"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb18c03d0db0247e147a21a6faafd5a7eb851c743db062de72018b6b7e8e4d16"
+checksum = "26ec84b80c482df901772e931a9a681e26a1b9ee2302edeff23cb30328745c8b"
 dependencies = [
  "bitcoin-io",
  "hex-conservative 0.2.2",
@@ -1037,9 +1070,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.48"
+version = "1.2.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c481bdbf0ed3b892f6f806287d72acd515b352a4ec27a208489b8c1bc839633a"
+checksum = "90583009037521a116abf44494efecd645ba48b6622457080f080b85544e2215"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1540,6 +1573,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
  "libloading",
+]
+
+[[package]]
+name = "dnssec-prover"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec4f825369fc7134da70ca4040fddc8e03b80a46d249ae38d9c1c39b7b4476bf"
+dependencies = [
+ "bitcoin_hashes 0.14.1",
+ "tokio",
 ]
 
 [[package]]
@@ -2072,6 +2115,17 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "wasi",
+]
+
+[[package]]
+name = "getrandom"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
@@ -2094,9 +2148,9 @@ dependencies = [
 
 [[package]]
 name = "gif"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f954a9e9159ec994f73a30a12b96a702dde78f5547bcb561174597924f7d4162"
+checksum = "f5df2ba84018d80c213569363bdcd0c64e6933c67fe4c1d60ecf822971a3c35e"
 dependencies = [
  "color_quant",
  "weezl",
@@ -2223,6 +2277,7 @@ dependencies = [
 name = "hardware-signer"
 version = "0.1.0"
 dependencies = [
+ "bip353-rs",
  "bip375-core",
  "bip375-crypto",
  "bip375-gui-common",
@@ -2231,6 +2286,7 @@ dependencies = [
  "bitcoin",
  "chrono",
  "common",
+ "dnssec-prover",
  "hex",
  "ripemd",
  "secp256k1",
@@ -2239,6 +2295,7 @@ dependencies = [
  "sha2",
  "slint",
  "slint-build",
+ "tokio",
 ]
 
 [[package]]
@@ -2253,6 +2310,12 @@ dependencies = [
  "read-fonts",
  "smallvec",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43a3c133739dddd0d2990f9a4bdf8eb4b21ef50e4851ca85ab661199821d510e"
 
 [[package]]
 name = "hashbrown"
@@ -2722,7 +2785,7 @@ dependencies = [
  "byteorder-lite",
  "color_quant",
  "exr",
- "gif 0.14.0",
+ "gif 0.14.1",
  "image-webp",
  "moxcms",
  "num-traits",
@@ -2733,7 +2796,7 @@ dependencies = [
  "rgb",
  "tiff",
  "zune-core 0.5.0",
- "zune-jpeg 0.5.5",
+ "zune-jpeg 0.5.6",
 ]
 
 [[package]]
@@ -2870,7 +2933,7 @@ version = "0.1.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9afb3de4395d6b3e67a780b6de64b51c978ecf11cb9a462c66be7d4ca9039d33"
 dependencies = [
- "getrandom",
+ "getrandom 0.3.4",
  "libc",
 ]
 
@@ -2989,6 +3052,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightning"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ffe63f56b10d214be1ade8698ee80af82d981237cae3e581e7a631f5f4959f3"
+dependencies = [
+ "bech32",
+ "bitcoin",
+ "dnssec-prover",
+ "hashbrown 0.13.2",
+ "libm",
+ "lightning-invoice",
+ "lightning-types",
+ "possiblyrandom",
+]
+
+[[package]]
+name = "lightning-invoice"
+version = "0.33.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11209f386879b97198b2bfc9e9c1e5d42870825c6bd4376f17f95357244d6600"
+dependencies = [
+ "bech32",
+ "bitcoin",
+ "lightning-types",
+]
+
+[[package]]
+name = "lightning-types"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2cd84d4e71472035903e43caded8ecc123066ce466329ccd5ae537a8d5488c7"
+dependencies = [
+ "bitcoin",
+]
+
+[[package]]
 name = "linebender_resource_handle"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3044,9 +3143,9 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 
 [[package]]
 name = "log"
-version = "0.4.28"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "loop9"
@@ -3172,6 +3271,17 @@ checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "mio"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a69bcab0ad47271a0234d9422b131806bf3968021e5dc9328caf2d4cd58557fc"
+dependencies = [
+ "libc",
+ "wasi",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3940,6 +4050,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "possiblyrandom"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b122a615d72104fb3d8b26523fdf9232cd8ee06949fb37e4ce3ff964d15dffd"
+dependencies = [
+ "getrandom 0.2.16",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4007,7 +4126,7 @@ dependencies = [
 [[package]]
 name = "psbt-v2"
 version = "0.2.0"
-source = "git+https://github.com/macgyver13/rust-psbt?branch=bip375-support#59f3c9e449348d759dbf88986382c3f2bb0a4152"
+source = "git+https://github.com/macgyver13/rust-psbt?branch=bip375-support#918aa6889156b0067f9db0d349ae4492000a6eac"
 dependencies = [
  "bitcoin",
  "bitcoin-internals 0.3.0",
@@ -4031,9 +4150,9 @@ dependencies = [
 
 [[package]]
 name = "pxfm"
-version = "0.1.26"
+version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3502d6155304a4173a5f2c34b52b7ed0dd085890326cb50fd625fdf39e86b3b"
+checksum = "7186d3822593aa4393561d186d1393b3923e9d6163d3fbfd6e825e3e6cf3e6a8"
 dependencies = [
  "num-traits",
 ]
@@ -4139,7 +4258,7 @@ version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
 dependencies = [
- "getrandom",
+ "getrandom 0.3.4",
 ]
 
 [[package]]
@@ -4508,7 +4627,7 @@ version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
- "bitcoin_hashes 0.14.0",
+ "bitcoin_hashes 0.14.1",
  "rand 0.8.5",
  "secp256k1-sys",
  "serde",
@@ -4624,9 +4743,9 @@ dependencies = [
 
 [[package]]
 name = "simd-adler32"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
+checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
 name = "simd_helpers"
@@ -4748,9 +4867,9 @@ dependencies = [
 
 [[package]]
 name = "slotmap"
-version = "1.0.7"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbff4acf519f630b3a3ddcfaea6c06b42174d9a44bc70c620e9ed1649d58b82a"
+checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
 dependencies = [
  "version_check",
 ]
@@ -4847,6 +4966,16 @@ checksum = "3498b0a27f93ef1402f20eefacfaa1691272ac4eca1cdc8c596cb0a245d6cbf5"
 dependencies = [
  "borsh",
  "serde_core",
+]
+
+[[package]]
+name = "socket2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17129e116933cf371d018bb80ae557e889637989d8638274fb25622827b03881"
+dependencies = [
+ "libc",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5007,7 +5136,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d31c77bdf42a745371d260a26ca7163f1e0924b64afa0b688e61b5a9fa02f16"
 dependencies = [
  "fastrand",
- "getrandom",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
  "windows-sys 0.61.2",
@@ -5157,6 +5286,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
+name = "tokio"
+version = "1.48.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff360e02eab121e0bc37a2d3b4d4dc622e6eda3a8e5253d5435ecf5bd4c68408"
+dependencies = [
+ "bytes",
+ "libc",
+ "mio",
+ "pin-project-lite",
+ "socket2",
+ "tokio-macros",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tokio-macros"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af407857209536a95c8e56f8231ef2c2e2aff839b22e07a1ffcbc617e9db9fa5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "toml"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5191,9 +5346,9 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.23.7"
+version = "0.23.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6485ef6d0d9b5d0ec17244ff7eb05310113c3f316f2d14200d4de56b3cb98f8d"
+checksum = "5d7cbc3b4b49633d57a0509303158ca50de80ae32c265093b24c414705807832"
 dependencies = [
  "indexmap",
  "toml_datetime",
@@ -5266,9 +5421,9 @@ dependencies = [
 
 [[package]]
 name = "typed-index-collections"
-version = "3.3.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fd393dbd1e7b23e0cab7396570309b4068aa504e9dac2cd41d827583b4e9ab7"
+checksum = "5318ee4ce62a4e948a33915574021a7a953d83e84fba6e25c72ffcfd7dad35ff"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -5347,9 +5502,9 @@ checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
 
 [[package]]
 name = "unicode-script"
-version = "0.5.7"
+version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fb421b350c9aff471779e262955939f565ec18b86c15364e6bdf0d662ca7c1f"
+checksum = "383ad40bb927465ec0ce7720e033cb4ca06912855fc35db31b5755d0de75b1ee"
 
 [[package]]
 name = "unicode-segmentation"
@@ -5615,6 +5770,12 @@ dependencies = [
  "same-file",
  "winapi-util",
 ]
+
+[[package]]
+name = "wasi"
+version = "0.11.1+wasi-snapshot-preview1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasip2"
@@ -6887,9 +7048,9 @@ dependencies = [
 
 [[package]]
 name = "zune-jpeg"
-version = "0.5.5"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc6fb7703e32e9a07fb3f757360338b3a567a5054f21b5f52a666752e333d58e"
+checksum = "f520eebad972262a1dde0ec455bce4f8b298b1e5154513de58c114c4c54303e8"
 dependencies = [
  "zune-core 0.5.0",
 ]
