@@ -138,22 +138,28 @@ impl Utxo {
 // ============================================================================
 
 #[derive(Clone)]
+pub enum OutputRecipient {
+    SilentPayment { address: SilentPaymentAddress },
+    Address { script_pubkey: Vec<u8> },
+}
+
+#[derive(Clone)]
 pub struct Output {
     pub amount: u64,
-    pub script_pubkey: Option<Vec<u8>>,
-    pub sp_address: Option<SilentPaymentAddress>,
+    pub recipient: OutputRecipient,
 }
 
 impl Output {
     pub fn to_core(&self) -> Result<core::types::Output, Bip375Error> {
         use bitcoin::Amount;
 
-        let recipient = if let Some(ref addr) = self.sp_address {
-            core::types::OutputRecipient::SilentPayment(addr.to_core()?)
-        } else if let Some(ref script) = self.script_pubkey {
-            core::types::OutputRecipient::Address(bitcoin::ScriptBuf::from_bytes(script.clone()))
-        } else {
-            return Err(Bip375Error::InvalidData);
+        let recipient = match &self.recipient {
+            OutputRecipient::SilentPayment { address } => {
+                core::types::OutputRecipient::SilentPayment(address.to_core()?)
+            }
+            OutputRecipient::Address { script_pubkey } => core::types::OutputRecipient::Address(
+                bitcoin::ScriptBuf::from_bytes(script_pubkey.clone()),
+            ),
         };
 
         Ok(core::types::Output {
@@ -264,6 +270,17 @@ impl SilentPaymentPsbt {
         }
     }
 
+    pub fn create(num_inputs: u32, num_outputs: u32) -> Result<Self, Bip375Error> {
+        let psbt = bip375_roles::creator::create_psbt(num_inputs as usize, num_outputs as usize)?;
+
+        Ok(Self::from_core(psbt))
+    }
+
+    pub fn load(path: String) -> Result<Self, Bip375Error> {
+        let (psbt, _metadata) = bip375_io::file_io::load_psbt(std::path::Path::new(&path))?;
+        Ok(Self::from_core(psbt))
+    }
+
     // Internal constructor for wrapping a core PSBT
     pub(crate) fn from_core(psbt: bip375_core::SilentPaymentPsbt) -> Self {
         Self {
@@ -274,6 +291,7 @@ impl SilentPaymentPsbt {
     pub fn deserialize(data: Vec<u8>) -> Result<Self, Bip375Error> {
         let psbt = bip375_core::SilentPaymentPsbt::deserialize(&data)
             .map_err(|_| Bip375Error::SerializationError)?;
+
         Ok(Self {
             inner: Arc::new(Mutex::new(psbt)),
         })
@@ -281,7 +299,16 @@ impl SilentPaymentPsbt {
 
     pub fn serialize(&self) -> Result<Vec<u8>, Bip375Error> {
         let psbt = self.inner.lock().unwrap();
+
         Ok(psbt.serialize())
+    }
+
+    pub fn save(&self, path: String, metadata: Option<PsbtMetadata>) -> Result<(), Bip375Error> {
+        self.with_inner(|p| {
+            let meta = metadata.map(|m| m.to_core());
+            bip375_io::file_io::save_psbt(p, meta, std::path::Path::new(&path))
+        })?;
+        Ok(())
     }
 
     pub fn num_inputs(&self) -> u32 {
@@ -298,6 +325,7 @@ impl SilentPaymentPsbt {
         }
 
         let shares = psbt.get_input_ecdh_shares(idx);
+
         Ok(shares.iter().map(EcdhShare::from_core).collect())
     }
 
@@ -343,6 +371,107 @@ impl SilentPaymentPsbt {
     pub fn get_global_ecdh_shares(&self) -> Result<Vec<EcdhShare>, Bip375Error> {
         // Note: This method doesn't exist in core yet, so we return empty for now
         Ok(Vec::new())
+    }
+
+    pub fn add_inputs(&self, inputs: Vec<Utxo>) -> Result<(), Bip375Error> {
+        let core_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_core()).collect();
+        let core_inputs = core_inputs?;
+
+        self.with_inner(|p| bip375_roles::constructor::add_inputs(p, &core_inputs))?;
+
+        Ok(())
+    }
+
+    pub fn add_outputs(&self, outputs: Vec<Output>) -> Result<(), Bip375Error> {
+        let core_outputs: Result<Vec<_>, _> = outputs.iter().map(|o| o.to_core()).collect();
+        let core_outputs = core_outputs?;
+
+        self.with_inner(|p| bip375_roles::constructor::add_outputs(p, &core_outputs))?;
+
+        Ok(())
+    }
+
+    pub fn add_ecdh_shares_full(
+        &self,
+        inputs: Vec<Utxo>,
+        scan_keys: Vec<Vec<u8>>,
+    ) -> Result<(), Bip375Error> {
+        use secp256k1::{PublicKey, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let core_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_core()).collect();
+        let core_inputs = core_inputs?;
+
+        let core_scan_keys: Result<Vec<PublicKey>, _> =
+            scan_keys.iter().map(|k| PublicKey::from_slice(k)).collect();
+        let core_scan_keys = core_scan_keys.map_err(|_| Bip375Error::InvalidKey)?;
+
+        self.with_inner(|p| {
+            bip375_roles::signer::add_ecdh_shares_full(
+                &secp,
+                p,
+                &core_inputs,
+                &core_scan_keys,
+                true,
+            )
+        })?;
+
+        Ok(())
+    }
+
+    pub fn sign_inputs(&self, inputs: Vec<Utxo>) -> Result<(), Bip375Error> {
+        let secp = secp256k1::Secp256k1::new();
+        let core_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_core()).collect();
+        let core_inputs = core_inputs?;
+        self.with_inner(|p| bip375_roles::signer::sign_inputs(&secp, p, &core_inputs))?;
+
+        Ok(())
+    }
+
+    pub fn add_ecdh_shares_partial(
+        &self,
+        input_indices: Vec<u32>,
+        inputs: Vec<Utxo>,
+        scan_keys: Vec<Vec<u8>>,
+        include_dleq: bool,
+    ) -> Result<(), Bip375Error> {
+        use secp256k1::{PublicKey, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let core_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_core()).collect();
+        let core_inputs = core_inputs?;
+
+        let core_scan_keys: Result<Vec<PublicKey>, _> =
+            scan_keys.iter().map(|k| PublicKey::from_slice(k)).collect();
+        let core_scan_keys = core_scan_keys.map_err(|_| Bip375Error::InvalidKey)?;
+
+        let indices: Vec<usize> = input_indices.iter().map(|&i| i as usize).collect();
+
+        self.with_inner(|p| {
+            bip375_roles::signer::add_ecdh_shares_partial(
+                &secp,
+                p,
+                &core_inputs,
+                &core_scan_keys,
+                &indices,
+                include_dleq,
+            )
+        })?;
+
+        Ok(())
+    }
+
+    pub fn finalize_inputs(&self) -> Result<(), Bip375Error> {
+        let secp = secp256k1::Secp256k1::new();
+        self.with_inner(|p| bip375_roles::input_finalizer::finalize_inputs(&secp, p, None))?;
+        Ok(())
+    }
+
+    pub fn extract_transaction(&self) -> Result<Vec<u8>, Bip375Error> {
+        use bitcoin::consensus::serialize;
+
+        let tx = self.with_inner(|p| bip375_roles::extractor::extract_transaction(p))?;
+        Ok(serialize(&tx))
     }
 
     // Internal access for other modules

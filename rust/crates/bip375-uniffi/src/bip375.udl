@@ -1,34 +1,10 @@
 namespace bip375 {
   // ============================================================================
-  // Role Functions
-  // ============================================================================
-  [Throws=Bip375Error]
-  SilentPaymentPsbt roles_create_psbt(sequence<Utxo> inputs, sequence<Output> outputs);
-  
-  [Throws=Bip375Error]
-  void roles_add_inputs(SilentPaymentPsbt psbt, sequence<Utxo> inputs);
-  
-  [Throws=Bip375Error]
-  void roles_add_outputs(SilentPaymentPsbt psbt, sequence<Output> outputs);
-  
-  [Throws=Bip375Error]
-  void roles_add_ecdh_shares_full(SilentPaymentPsbt psbt, sequence<Utxo> inputs, sequence<bytes> scan_keys);
-
-  [Throws=Bip375Error]
-  void roles_sign_inputs(SilentPaymentPsbt psbt, sequence<Utxo> inputs);
-  
-  [Throws=Bip375Error]
-  void roles_finalize_inputs(SilentPaymentPsbt psbt);
-  
-  [Throws=Bip375Error]
-  bytes roles_extract_transaction(SilentPaymentPsbt psbt);
-  
-  // ============================================================================
   // BIP-352 Cryptographic Functions
   // ============================================================================
   [Throws=Bip375Error]
   bytes bip352_compute_ecdh_share(bytes privkey, bytes pubkey);
-  
+
   // ============================================================================
   // BIP-374 DLEQ Proof Functions
   // ============================================================================
@@ -37,18 +13,6 @@ namespace bip375 {
 
   [Throws=Bip375Error]
   boolean dleq_verify_proof(bytes pubkey_a, bytes pubkey_b, bytes pubkey_c, bytes proof);
-
-  // ============================================================================
-  // File I/O Functions
-  // ============================================================================
-  [Throws=Bip375Error]
-  SilentPaymentPsbt file_io_load_psbt(string path);
-
-  [Throws=Bip375Error]
-  void file_io_save_psbt(SilentPaymentPsbt psbt, PsbtMetadata? metadata, string path);
-
-  [Throws=Bip375Error]
-  void file_io_save_psbt(SilentPaymentPsbt psbt, PsbtMetadata? metadata, string path);
 };
 
 [Error]
@@ -80,10 +44,15 @@ dictionary Utxo {
   u32? sequence;
 };
 
+[Enum]
+interface OutputRecipient {
+  SilentPayment(SilentPaymentAddress address);
+  Address(bytes script_pubkey);
+};
+
 dictionary Output {
   u64 amount;
-  bytes? script_pubkey;
-  SilentPaymentAddress? sp_address;
+  OutputRecipient recipient;
 };
 
 dictionary EcdhShare {
@@ -103,11 +72,20 @@ dictionary PsbtMetadata {
 interface SilentPaymentPsbt {
   constructor();
   
+  [Name=create, Throws=Bip375Error]
+  constructor(u32 num_inputs, u32 num_outputs);
+  
   [Name=deserialize, Throws=Bip375Error]
   constructor(bytes data);
+
+  [Name=load, Throws=Bip375Error]
+  constructor(string path);
   
   [Throws=Bip375Error]
   bytes serialize();
+
+  [Throws=Bip375Error]
+  void save(string path, PsbtMetadata? metadata);
   
   u32 num_inputs();
   u32 num_outputs();
@@ -116,5 +94,29 @@ interface SilentPaymentPsbt {
   sequence<EcdhShare> get_input_ecdh_shares(u32 input_index);
 
   [Throws=Bip375Error]
+  SilentPaymentAddress? get_output_sp_address(u32 output_index);
+
+  [Throws=Bip375Error]
   bytes get_output_script(u32 output_index);
+
+  [Throws=Bip375Error]
+  void add_inputs(sequence<Utxo> inputs);
+
+  [Throws=Bip375Error]
+  void add_outputs(sequence<Output> outputs);
+
+  [Throws=Bip375Error]
+  void add_ecdh_shares_full(sequence<Utxo> inputs, sequence<bytes> scan_keys);
+
+  [Throws=Bip375Error]
+  void add_ecdh_shares_partial(sequence<u32> input_indices, sequence<Utxo> inputs, sequence<bytes> scan_keys, boolean include_dleq);
+
+  [Throws=Bip375Error]
+  void sign_inputs(sequence<Utxo> inputs);
+
+  [Throws=Bip375Error]
+  void finalize_inputs();
+
+  [Throws=Bip375Error]
+  bytes extract_transaction();
 };

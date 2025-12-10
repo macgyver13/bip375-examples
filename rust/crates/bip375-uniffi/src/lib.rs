@@ -4,8 +4,6 @@
 // mod aggregation;
 mod crypto;
 mod errors;
-mod file_io;
-mod roles;
 mod types;
 
 // Re-export public types
@@ -13,8 +11,6 @@ pub use crypto::*;
 pub use types::*;
 // pub use aggregation::*;
 pub use errors::*;
-pub use file_io::*;
-pub use roles::*;
 
 // UniFFI setup
 uniffi::include_scaffolding!("bip375");

@@ -15,23 +15,14 @@ import bip375
 
 # Import the role functions directly from bip375
 from bip375 import (
-    roles_create_psbt,
-    roles_add_inputs, 
-    roles_add_outputs,
-    roles_finalize_inputs,
-    roles_extract_transaction,
     bip352_compute_ecdh_share,
     dleq_generate_proof,
     dleq_verify_proof,
-    roles_add_ecdh_shares_full,
-    roles_sign_inputs,
-    roles_finalize_inputs,
-    roles_extract_transaction,
-    file_io_save_psbt,
-    file_io_load_psbt,
     Utxo,
     Output,
-    SilentPaymentAddress
+    SilentPaymentAddress,
+    OutputRecipient,
+    SilentPaymentPsbt
 )
 
 def main():
@@ -64,22 +55,23 @@ def main():
     outputs = [
         Output(
             amount=90000,  # 90,000 sats (10k fee)
-            script_pubkey=None,
-            sp_address=SilentPaymentAddress(
-                scan_key=scan_key,
-                spend_key=spend_key,
-                label=None,
+            recipient=OutputRecipient.SILENT_PAYMENT(
+                SilentPaymentAddress(
+                    scan_key=scan_key,
+                    spend_key=spend_key,
+                    label=None,
+                )
             ),
         )
     ]
 
     # Create PSBT
-    psbt = roles_create_psbt(inputs, outputs)
+    psbt = SilentPaymentPsbt.create(len(inputs), len(outputs))
     print(f"✓ Created PSBT")
     
     # Add inputs and outputs to the PSBT
-    roles_add_inputs(psbt, inputs)
-    roles_add_outputs(psbt, outputs)
+    psbt.add_inputs(inputs)
+    psbt.add_outputs(outputs)
     print(f"✓ Added {len(inputs)} input(s) and {len(outputs)} output(s)")
 
     print("\n2. Computing ECDH shares")
@@ -103,7 +95,7 @@ def main():
 
     # Add ECDH shares for all inputs (with DLEQ proofs)
     scan_keys = [scan_key]
-    roles_add_ecdh_shares_full(psbt, inputs, scan_keys)
+    psbt.add_ecdh_shares_full(inputs, scan_keys)
     print("✓ ECDH shares added to PSBT")
 
     # Check ECDH shares were added
@@ -132,14 +124,14 @@ def main():
     print("\n5. Signing inputs")
     print("-" * 50)
 
-    roles_sign_inputs(psbt, inputs)
+    psbt.sign_inputs(inputs)
     print("✓ All inputs signed")
 
     print("\n6. Finalizing PSBT")
     print("-" * 50)
 
     # Finalize (compute output scripts from silent payment addresses)
-    roles_finalize_inputs(psbt)
+    psbt.finalize_inputs()
     print("✓ PSBT finalized (output scripts computed)")
 
     # Check output script was computed
@@ -151,7 +143,7 @@ def main():
     print("-" * 50)
 
     # Extract final transaction
-    tx_bytes = roles_extract_transaction(psbt)
+    tx_bytes = psbt.extract_transaction()
     print(f"✓ Transaction extracted: {len(tx_bytes)} bytes")
     print(f"  Transaction (hex): {tx_bytes.hex()}")
 
@@ -169,11 +161,11 @@ def main():
 
     # Save as JSON with metadata
     json_path = "transfer.json"
-    file_io_save_psbt(psbt, metadata, json_path)
+    psbt.save(json_path, metadata)
     print(f"✓ Saved PSBT with metadata to {json_path}")
 
     # Load back
-    loaded_psbt = file_io_load_psbt(json_path)
+    loaded_psbt = SilentPaymentPsbt.load(json_path)
     print(f"✓ Loaded PSBT: {loaded_psbt.num_inputs()} inputs, {loaded_psbt.num_outputs()} outputs")
 
 
