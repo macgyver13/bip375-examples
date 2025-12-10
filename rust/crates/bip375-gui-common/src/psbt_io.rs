@@ -16,12 +16,12 @@ pub fn import_from_base64(base64_str: &str) -> Result<SilentPaymentPsbt, String>
 
     // Decode base64
     use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(&cleaned)
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&cleaned)
         .map_err(|e| format!("Base64 decode error: {}", e))?;
 
     // Parse PSBT
-    SilentPaymentPsbt::deserialize(&bytes)
-        .map_err(|e| format!("PSBT parse error: {:?}", e))
+    SilentPaymentPsbt::deserialize(&bytes).map_err(|e| format!("PSBT parse error: {:?}", e))
 }
 
 /// Export a PSBT to a base64-encoded string
@@ -38,9 +38,10 @@ pub fn export_to_base64(psbt: &SilentPaymentPsbt) -> Result<String, String> {
 ///
 /// # Errors
 /// Returns an error if the file cannot be read or parsed.
-pub fn load_from_file(path: &str) -> Result<(SilentPaymentPsbt, Option<bip375_io::PsbtMetadata>), String> {
-    bip375_io::load_psbt_with_metadata(path)
-        .map_err(|e| format!("File load error: {}", e))
+pub fn load_from_file(
+    path: &str,
+) -> Result<(SilentPaymentPsbt, Option<bip375_io::PsbtMetadata>), String> {
+    bip375_io::load_psbt_with_metadata(path).map_err(|e| format!("File load error: {}", e))
 }
 
 /// Export a PSBT to a JSON file
@@ -67,12 +68,12 @@ pub fn export_to_clipboard(base64_str: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to spawn pbcopy: {}", e))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(base64_str.as_bytes())
+        stdin
+            .write_all(base64_str.as_bytes())
             .map_err(|e| format!("Failed to write to pbcopy: {}", e))?;
     }
 
-    child.wait()
-        .map_err(|e| format!("pbcopy failed: {}", e))?;
+    child.wait().map_err(|e| format!("pbcopy failed: {}", e))?;
 
     Ok(())
 }

@@ -4,7 +4,7 @@
 
 use bip375_core::{Error, Result, SilentPaymentPsbt};
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
-use bitcoin::{EcdsaSighashType};
+use bitcoin::EcdsaSighashType;
 use psbt_v2::PsbtSighashType;
 
 /// BIP32 derivation information
@@ -32,11 +32,15 @@ pub fn add_input_bip32_derivation(
     pubkey: &secp256k1::PublicKey,
     derivation: &Bip32Derivation,
 ) -> Result<()> {
-    let input = psbt.inputs.get_mut(input_index)
+    let input = psbt
+        .inputs
+        .get_mut(input_index)
         .ok_or(Error::InvalidInputIndex(input_index))?;
 
     let fingerprint = Fingerprint::from(derivation.master_fingerprint);
-    let path: DerivationPath = derivation.path.iter()
+    let path: DerivationPath = derivation
+        .path
+        .iter()
         .map(|&i| ChildNumber::from(i))
         .collect();
 
@@ -52,15 +56,21 @@ pub fn add_output_bip32_derivation(
     pubkey: &secp256k1::PublicKey,
     derivation: &Bip32Derivation,
 ) -> Result<()> {
-    let output = psbt.outputs.get_mut(output_index)
+    let output = psbt
+        .outputs
+        .get_mut(output_index)
         .ok_or(Error::InvalidOutputIndex(output_index))?;
 
     let fingerprint = Fingerprint::from(derivation.master_fingerprint);
-    let path: DerivationPath = derivation.path.iter()
+    let path: DerivationPath = derivation
+        .path
+        .iter()
         .map(|&i| ChildNumber::from(i))
         .collect();
 
-    output.bip32_derivations.insert(*pubkey, (fingerprint, path));
+    output
+        .bip32_derivations
+        .insert(*pubkey, (fingerprint, path));
 
     Ok(())
 }
@@ -71,7 +81,9 @@ pub fn add_input_sighash_type(
     input_index: usize,
     sighash_type: u32,
 ) -> Result<()> {
-    let input = psbt.inputs.get_mut(input_index)
+    let input = psbt
+        .inputs
+        .get_mut(input_index)
         .ok_or(Error::InvalidInputIndex(input_index))?;
 
     let sighash = EcdsaSighashType::from_consensus(sighash_type);
@@ -100,7 +112,7 @@ mod tests {
         // Verify derivation was added
         let input = &psbt.inputs[0];
         assert!(input.bip32_derivations.contains_key(&pubkey));
-        
+
         let (fp, path) = input.bip32_derivations.get(&pubkey).unwrap();
         assert_eq!(fp.as_bytes(), &[0xAA, 0xBB, 0xCC, 0xDD]);
         assert_eq!(path.len(), 1);

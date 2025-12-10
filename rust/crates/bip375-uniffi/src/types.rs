@@ -53,7 +53,7 @@ pub struct EcdhShare {
 }
 
 impl EcdhShare {
-    pub fn from_core(share: &core::types::EcdhShare) -> Self {
+    pub fn from_core(share: &core::types::EcdhShareData) -> Self {
         Self {
             scan_key: share.scan_key.serialize().to_vec(),
             share_point: share.share.serialize().to_vec(),
@@ -61,7 +61,7 @@ impl EcdhShare {
         }
     }
 
-    pub fn to_core(&self) -> Result<core::types::EcdhShare, Bip375Error> {
+    pub fn to_core(&self) -> Result<core::types::EcdhShareData, Bip375Error> {
         use secp256k1::PublicKey;
 
         let scan_key =
@@ -80,7 +80,7 @@ impl EcdhShare {
             None
         };
 
-        Ok(core::types::EcdhShare {
+        Ok(core::types::EcdhShareData {
             scan_key,
             share,
             dleq_proof,

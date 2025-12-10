@@ -2,10 +2,10 @@
 //!
 //! Aggregates ECDH shares and computes final output scripts for silent payments.
 
-use bip375_core::{
-    Error, Result, SilentPaymentPsbt, aggregate_ecdh_shares, Bip375PsbtExt,
+use bip375_core::{aggregate_ecdh_shares, Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
+use bip375_crypto::{
+    apply_label_to_spend_key, derive_silent_payment_output_pubkey, pubkey_to_p2tr_script,
 };
-use bip375_crypto::{apply_label_to_spend_key, derive_silent_payment_output_pubkey, pubkey_to_p2tr_script};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 
@@ -43,24 +43,25 @@ pub fn finalize_inputs(
 
         // Check for label and apply if present and we have scan private key
         let mut spend_key_to_use = sp_address.spend_key;
-        
+
         if let Some(label) = psbt.get_output_sp_label(output_idx) {
             // If we have the scan private key, apply the label tweak to spend key
             if let Some(privkeys) = scan_privkeys {
                 if let Some(scan_privkey) = privkeys.get(&sp_address.scan_key) {
-                    spend_key_to_use = apply_label_to_spend_key(
-                        secp,
-                        &sp_address.spend_key,
-                        scan_privkey,
-                        label,
-                    ).map_err(|e| Error::Other(format!("Failed to apply label tweak: {}", e)))?;
+                    spend_key_to_use =
+                        apply_label_to_spend_key(secp, &sp_address.spend_key, scan_privkey, label)
+                            .map_err(|e| {
+                                Error::Other(format!("Failed to apply label tweak: {}", e))
+                            })?;
                 }
             }
         }
-        
+
         // Get or initialize the output index for this scan key
-        let k = *scan_key_output_indices.get(&sp_address.scan_key).unwrap_or(&0);
-        
+        let k = *scan_key_output_indices
+            .get(&sp_address.scan_key)
+            .unwrap_or(&0);
+
         // Derive the output public key using BIP-352
         let ecdh_secret = aggregated_share.serialize();
         let output_pubkey = derive_silent_payment_output_pubkey(
@@ -92,9 +93,9 @@ pub fn finalize_inputs(
 mod tests {
     use super::*;
     use crate::{constructor::add_outputs, creator::create_psbt, signer::add_ecdh_shares_full};
-    use bip375_core::{Output, Utxo, SilentPaymentAddress};
-    use bitcoin::{Amount, ScriptBuf, Sequence, Txid};
+    use bip375_core::{Output, SilentPaymentAddress, Utxo};
     use bitcoin::hashes::Hash;
+    use bitcoin::{Amount, ScriptBuf, Sequence, Txid};
     use secp256k1::SecretKey;
 
     #[test]
@@ -148,7 +149,7 @@ mod tests {
         // Verify output script was added
         let script = &psbt.outputs[0].script_pubkey;
         assert!(!script.is_empty());
-        
+
         // P2TR scripts are 34 bytes: OP_1 + 32-byte x-only pubkey
         assert_eq!(script.len(), 34);
         assert!(script.is_p2tr());
@@ -202,7 +203,10 @@ mod tests {
         let mut psbt = create_psbt(2, 1).unwrap();
 
         // Verify initial tx_modifiable_flags is non-zero
-        assert_ne!(psbt.global.tx_modifiable_flags, 0x00, "Initial flags should be non-zero");
+        assert_ne!(
+            psbt.global.tx_modifiable_flags, 0x00,
+            "Initial flags should be non-zero"
+        );
 
         // Create scan and spend keys
         let scan_privkey = SecretKey::from_slice(&[10u8; 32]).unwrap();

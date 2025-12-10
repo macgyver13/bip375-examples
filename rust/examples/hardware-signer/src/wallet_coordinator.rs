@@ -7,7 +7,7 @@
 //! - Detects attacks (wrong scan keys)
 //! - Finalizes and extracts transactions
 
-use crate::shared_utils::{*};
+use crate::shared_utils::*;
 use bip375_core::Bip375PsbtExt;
 use bip375_gui_common::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use bip375_io::PsbtMetadata;
@@ -18,9 +18,9 @@ use bip375_roles::{
     input_finalizer::finalize_inputs,
     validation::{validate_psbt, ValidationLevel},
 };
-use secp256k1::{PublicKey,Secp256k1};
-use std::collections::HashSet;
 use common::*;
+use secp256k1::Secp256k1;
+use std::collections::HashSet;
 
 pub struct WalletCoordinator;
 
@@ -29,7 +29,10 @@ impl WalletCoordinator {
     ///
     /// Roles: CREATOR + CONSTRUCTOR + UPDATER
     pub fn create_psbt(auto_continue: bool) -> Result<(), Box<dyn std::error::Error>> {
-        print_step_header("Step 1: Create PSBT Structure", "WALLET COORDINATOR (Online)");
+        print_step_header(
+            "Step 1: Create PSBT Structure",
+            "WALLET COORDINATOR (Online)",
+        );
 
         println!("  CREATOR + CONSTRUCTOR + UPDATER: Setting up transaction...\n");
 
@@ -91,14 +94,16 @@ impl WalletCoordinator {
                 outputs.len()
             )),
             creator: Some("wallet_coordinator".to_string()),
-            created_at: Some(std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()),
+            created_at: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            ),
             ..Default::default()
         };
 
-        save_psbt(&psbt, Some(metadata))?;  // Use CLI path (persistent)
+        save_psbt(&psbt, Some(metadata))?; // Use CLI path (persistent)
 
         // Display air-gap transfer instructions
         display_air_gap_instructions(
@@ -150,9 +155,10 @@ impl WalletCoordinator {
         }
 
         // Verify PSBT is actually signed
-        let has_signatures = psbt.inputs.iter().any(|input| {
-            !input.partial_sigs.is_empty()
-        });
+        let has_signatures = psbt
+            .inputs
+            .iter()
+            .any(|input| !input.partial_sigs.is_empty());
 
         if !has_signatures {
             return Err("PSBT is not signed yet! Hardware device must sign first.".into());
@@ -187,21 +193,17 @@ impl WalletCoordinator {
         // Collect scan keys from input DLEQ proofs
         psbt.inputs.iter().for_each(|input| {
             for key in input.sp_dleq_proofs.keys() {
-                found_scan_keys.insert(key.to_vec());
+                found_scan_keys.insert(key.to_bytes().to_vec());
             }
         });
 
         // Collect scan keys from global DLEQ proofs
-        for scan_key_bytes in psbt.global.sp_dleq_proofs.keys() {
-            if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes.as_ref()) {
-                found_scan_keys.insert(scan_key.serialize().to_vec());
-            }
+        for scan_key_compressed in psbt.global.sp_dleq_proofs.keys() {
+            found_scan_keys.insert(scan_key_compressed.to_bytes().to_vec());
         }
 
         // ATTACK DETECTION: Check for unexpected scan keys
-        let unexpected_keys: Vec<_> = found_scan_keys
-            .difference(&expected_scan_keys)
-            .collect();
+        let unexpected_keys: Vec<_> = found_scan_keys.difference(&expected_scan_keys).collect();
 
         if !unexpected_keys.is_empty() {
             println!("🚨 ATTACK DETECTED: DLEQ proofs for unexpected scan keys!");
@@ -221,8 +223,14 @@ impl WalletCoordinator {
                 println!("     PASSED: All validation checks");
                 println!("      - ECDH coverage complete ({} inputs)", inputs.len());
                 println!("      - All DLEQ proofs verified");
-                println!("      - Change scan key:    {}", hex::encode(hw_scan_key.serialize()));
-                println!("      - Recipient scan key: {}", hex::encode(recipient_scan_key.serialize()));
+                println!(
+                    "      - Change scan key:    {}",
+                    hex::encode(hw_scan_key.serialize())
+                );
+                println!(
+                    "      - Recipient scan key: {}",
+                    hex::encode(recipient_scan_key.serialize())
+                );
                 println!("      - All inputs signed");
                 println!("      - Output scripts computed");
             }
@@ -255,15 +263,15 @@ impl WalletCoordinator {
 
         // Finalize inputs to compute output scripts
         println!("\n INPUT FINALIZER: Computing silent payment output scripts...");
-        
+
         // For change outputs with labels, we need the scan private key to apply label tweaks
         // In this demo, the hardware wallet's scan private key is needed for the change output
         let hw_wallet = get_hardware_wallet();
         let (scan_privkey, scan_pubkey) = hw_wallet.scan_key_pair();
-        
+
         let mut scan_privkeys = std::collections::HashMap::new();
         scan_privkeys.insert(scan_pubkey, scan_privkey);
-        
+
         finalize_inputs(&secp, &mut psbt, Some(&scan_privkeys))?;
         println!("     Silent payment output scripts computed\n");
 
@@ -271,10 +279,12 @@ impl WalletCoordinator {
         let finalized_metadata = PsbtMetadata {
             description: Some("Finalized PSBT with computed output scripts".to_string()),
             creator: Some("wallet_coordinator".to_string()),
-            modified_at: Some(std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()),
+            modified_at: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            ),
             ..Default::default()
         };
         save_psbt(&psbt, Some(finalized_metadata))?;
@@ -289,7 +299,6 @@ impl WalletCoordinator {
         println!("   TxID: {}", final_tx.compute_txid());
         println!("   Size: {} bytes", tx_bytes.len());
         println!("   Weight: {} WU\n", final_tx.weight().to_wu());
-
 
         save_txn(&tx_bytes)?;
 

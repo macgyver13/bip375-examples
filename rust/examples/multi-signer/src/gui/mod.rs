@@ -7,8 +7,8 @@ pub mod app_state;
 pub mod workflow_orchestrator;
 
 use app_state::*;
-use workflow_orchestrator::WorkflowOrchestrator;
 use std::rc::Rc;
+use workflow_orchestrator::WorkflowOrchestrator;
 
 slint::include_modules!();
 
@@ -66,16 +66,20 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
     });
 
     // Update input states
-    let slint_input_states: Vec<InputState> = state.input_states.iter().map(|s| {
-        InputState {
+    let slint_input_states: Vec<InputState> = state
+        .input_states
+        .iter()
+        .map(|s| InputState {
             index: s.index as i32,
             signer_name: s.signer_name().into(),
             has_ecdh: s.has_ecdh_share,
             has_dleq: s.has_dleq_proof,
             has_sig: s.has_signature,
-        }
-    }).collect();
-    window.set_input_states(slint::ModelRc::new(slint::VecModel::from(slint_input_states)));
+        })
+        .collect();
+    window.set_input_states(slint::ModelRc::new(slint::VecModel::from(
+        slint_input_states,
+    )));
 
     // Update validation results
     if let Some(validation) = &state.validation_summary {

@@ -195,7 +195,12 @@ mod tests {
 
         // Wrong message should fail
         let wrong_message = [3u8; 32];
-        assert!(!verify_signature(&secp, &pubkey, &wrong_message, &signature));
+        assert!(!verify_signature(
+            &secp,
+            &pubkey,
+            &wrong_message,
+            &signature
+        ));
     }
 
     #[test]

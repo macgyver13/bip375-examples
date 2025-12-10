@@ -16,7 +16,7 @@ pub fn compute_label_tweak(scan_privkey: &SecretKey, label: u32) -> Result<Scala
     // BIP 352 tagged hash: tag_hash || tag_hash || data
     let tag = b"BIP0352/Label";
     let tag_hash = sha256::Hash::hash(tag);
-    
+
     let mut engine = sha256::Hash::engine();
     engine.input(tag_hash.as_ref());
     engine.input(tag_hash.as_ref());
@@ -65,8 +65,9 @@ pub fn compute_shared_secret_tweak(ecdh_secret: &[u8; 33], k: u32) -> Result<Sca
     engine.input(&k.to_be_bytes());
     let hash = sha256::Hash::from_engine(engine);
 
-    Scalar::from_be_bytes(hash.to_byte_array())
-        .map_err(|_| CryptoError::Other("Failed to create scalar from shared secret tweak".to_string()))
+    Scalar::from_be_bytes(hash.to_byte_array()).map_err(|_| {
+        CryptoError::Other("Failed to create scalar from shared secret tweak".to_string())
+    })
 }
 
 /// Apply label to spend public key
@@ -82,7 +83,8 @@ pub fn apply_label_to_spend_key(
     let label_tweak_key = SecretKey::from_slice(&label_tweak.to_be_bytes())?;
     let label_point = PublicKey::from_secret_key(secp, &label_tweak_key);
 
-    spend_key.combine(&label_point)
+    spend_key
+        .combine(&label_point)
         .map_err(|e| CryptoError::Other(format!("Failed to apply label: {}", e)))
 }
 
@@ -99,7 +101,8 @@ pub fn derive_silent_payment_output_pubkey(
     let tweak_key = SecretKey::from_slice(&tweak.to_be_bytes())?;
     let tweak_point = PublicKey::from_secret_key(secp, &tweak_key);
 
-    spend_key.combine(&tweak_point)
+    spend_key
+        .combine(&tweak_point)
         .map_err(|e| CryptoError::Other(format!("Failed to derive output pubkey: {}", e)))
 }
 
@@ -191,16 +194,22 @@ mod tests {
         let mut ecdh_secret: [u8; 33] = [0; 33];
         ecdh_secret.copy_from_slice(&hex::decode(ecdh_secret_hex).unwrap());
 
-        let output_pubkey = derive_silent_payment_output_pubkey(&secp, &spend_key, &ecdh_secret, 0).unwrap();
+        let output_pubkey =
+            derive_silent_payment_output_pubkey(&secp, &spend_key, &ecdh_secret, 0).unwrap();
 
         let xonly = output_pubkey.x_only_public_key().0;
         let xonly_hex = hex::encode(xonly.serialize());
 
         println!("Derived x-only: {}", xonly_hex);
-        println!("Expected x-only: ae19fbee2730a1a952d7d2598cc703fddf3b972b25148b1ed1a79ae8739d5e07");
+        println!(
+            "Expected x-only: ae19fbee2730a1a952d7d2598cc703fddf3b972b25148b1ed1a79ae8739d5e07"
+        );
 
         // This should match the test vector
-        assert_eq!(xonly_hex, "ae19fbee2730a1a952d7d2598cc703fddf3b972b25148b1ed1a79ae8739d5e07");
+        assert_eq!(
+            xonly_hex,
+            "ae19fbee2730a1a952d7d2598cc703fddf3b972b25148b1ed1a79ae8739d5e07"
+        );
     }
 
     #[test]

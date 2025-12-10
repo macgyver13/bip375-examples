@@ -42,8 +42,8 @@ pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str 
             0x04 => "PSBT_GLOBAL_INPUT_COUNT",
             0x05 => "PSBT_GLOBAL_OUTPUT_COUNT",
             0x06 => "PSBT_GLOBAL_TX_MODIFIABLE",
-            0x07 => "PSBT_GLOBAL_SP_ECDH_SHARE",  // BIP-375
-            0x08 => "PSBT_GLOBAL_SP_DLEQ",        // BIP-375
+            0x07 => "PSBT_GLOBAL_SP_ECDH_SHARE", // BIP-375
+            0x08 => "PSBT_GLOBAL_SP_DLEQ",       // BIP-375
             0xfb => "PSBT_GLOBAL_VERSION",
             0xfc => "PSBT_GLOBAL_PROPRIETARY",
             _ => "PSBT_GLOBAL_UNKNOWN",
@@ -77,8 +77,8 @@ pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str 
             0x1a => "PSBT_IN_MUSIG2_PARTICIPANT_PUBKEYS",
             0x1b => "PSBT_IN_MUSIG2_PUB_NONCE",
             0x1c => "PSBT_IN_MUSIG2_PARTIAL_SIG",
-            0x1d => "PSBT_IN_SP_ECDH_SHARE",  // BIP-375
-            0x1e => "PSBT_IN_SP_DLEQ",        // BIP-375
+            0x1d => "PSBT_IN_SP_ECDH_SHARE", // BIP-375
+            0x1e => "PSBT_IN_SP_DLEQ",       // BIP-375
             0x1f => "PSBT_IN_SP_TWEAK",
             _ => "PSBT_IN_UNKNOWN",
         },
@@ -92,9 +92,9 @@ pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str 
             0x06 => "PSBT_OUT_TAP_TREE",
             0x07 => "PSBT_OUT_TAP_BIP32_DERIVATION",
             0x08 => "PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS",
-            0x09 => "PSBT_OUT_SP_V0_INFO",    // BIP-375
-            0x0a => "PSBT_OUT_SP_V0_LABEL",   // BIP-375
-            PSBT_OUT_DNSSEC_PROOF => "PSBT_OUT_DNSSEC_PROOF",  // BIP-353
+            0x09 => "PSBT_OUT_SP_V0_INFO",  // BIP-375
+            0x0a => "PSBT_OUT_SP_V0_LABEL", // BIP-375
+            PSBT_OUT_DNSSEC_PROOF => "PSBT_OUT_DNSSEC_PROOF", // BIP-353
             _ => "PSBT_OUT_UNKNOWN",
         },
     }
@@ -133,8 +133,13 @@ pub fn format_value_preview(data: &[u8]) -> String {
     // Keep total length under 80 characters by eliding from the center
     if hex.len() > 80 {
         let start_len = 38; // First 19 bytes
-        let end_len = 38;   // Last 19 bytes
-        format!("{}...{} ({} bytes)", &hex[..start_len], &hex[hex.len()-end_len..], data.len())
+        let end_len = 38; // Last 19 bytes
+        format!(
+            "{}...{} ({} bytes)",
+            &hex[..start_len],
+            &hex[hex.len() - end_len..],
+            data.len()
+        )
     } else {
         format!("{} ({} bytes)", hex, data.len())
     }

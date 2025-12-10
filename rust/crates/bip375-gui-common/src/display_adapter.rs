@@ -2,12 +2,12 @@
 //!
 //! Unifies the logic for extracting and formatting PSBT fields for display.
 
-use crate::field_identifier::FieldIdentifier;
-use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
-use crate::display_formatting::FieldCategory;
-use bip375_core::SilentPaymentPsbt;
-use std::collections::HashSet;
 use crate::display_formatting;
+use crate::display_formatting::FieldCategory;
+use crate::field_identifier::FieldIdentifier;
+use bip375_core::SilentPaymentPsbt;
+use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
+use std::collections::HashSet;
 
 /// A generic representation of a PSBT field for display
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +29,7 @@ pub fn extract_display_fields(
     let global_fields = extract_global_fields(psbt, highlighted_fields);
     let input_fields = extract_input_fields(psbt, highlighted_fields);
     let output_fields = extract_output_fields(psbt, highlighted_fields);
-    
+
     (global_fields, input_fields, output_fields)
 }
 
@@ -38,13 +38,13 @@ fn extract_global_fields(
     highlighted_fields: &HashSet<FieldIdentifier>,
 ) -> Vec<DisplayField> {
     let mut fields = Vec::new();
-    
+
     for (field_type, key_data, value_data) in psbt.global.iter_global_fields() {
         let identifier = FieldIdentifier::Global {
             field_type,
             key_data: key_data.clone(),
         };
-        
+
         fields.push(create_display_field(
             identifier,
             field_type,
@@ -55,7 +55,7 @@ fn extract_global_fields(
             FieldCategory::Global,
         ));
     }
-    
+
     fields
 }
 
@@ -64,7 +64,7 @@ fn extract_input_fields(
     highlighted_fields: &HashSet<FieldIdentifier>,
 ) -> Vec<DisplayField> {
     let mut fields = Vec::new();
-    
+
     for (idx, input) in psbt.inputs.iter().enumerate() {
         for (field_type, key_data, value_data) in input.iter_input_fields() {
             let identifier = FieldIdentifier::Input {
@@ -72,7 +72,7 @@ fn extract_input_fields(
                 field_type,
                 key_data: key_data.clone(),
             };
-            
+
             fields.push(create_display_field(
                 identifier,
                 field_type,
@@ -84,7 +84,7 @@ fn extract_input_fields(
             ));
         }
     }
-    
+
     fields
 }
 
@@ -93,7 +93,7 @@ fn extract_output_fields(
     highlighted_fields: &HashSet<FieldIdentifier>,
 ) -> Vec<DisplayField> {
     let mut fields = Vec::new();
-    
+
     for (idx, output) in psbt.outputs.iter().enumerate() {
         for (field_type, key_data, value_data) in output.iter_output_fields() {
             let identifier = FieldIdentifier::Output {
@@ -101,7 +101,7 @@ fn extract_output_fields(
                 field_type,
                 key_data: key_data.clone(),
             };
-            
+
             fields.push(create_display_field(
                 identifier,
                 field_type,
@@ -113,7 +113,7 @@ fn extract_output_fields(
             ));
         }
     }
-    
+
     fields
 }
 

@@ -93,7 +93,15 @@ pub struct ValidationResults {
 /// Modal dialog types
 #[derive(Clone, Debug)]
 pub enum ModalType {
-    HardwareApproval { transaction_summary: String },
-    AirGapTransfer { from: String, to: String, filename: String },
-    ValidationError { error_message: String },
+    HardwareApproval {
+        transaction_summary: String,
+    },
+    AirGapTransfer {
+        from: String,
+        to: String,
+        filename: String,
+    },
+    ValidationError {
+        error_message: String,
+    },
 }

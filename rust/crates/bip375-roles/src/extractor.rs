@@ -4,8 +4,7 @@
 
 use bip375_core::{Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
 use bitcoin::{
-    absolute::LockTime, Amount, OutPoint,
-    ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
+    absolute::LockTime, Amount, OutPoint, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Witness,
 };
 
 /// Extract the final signed transaction from a PSBT
@@ -36,7 +35,9 @@ pub fn extract_transaction(psbt: &SilentPaymentPsbt) -> Result<Transaction> {
 
 /// Extract a single input from the PSBT
 fn extract_input(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<TxIn> {
-    let input = psbt.inputs.get(input_idx)
+    let input = psbt
+        .inputs
+        .get(input_idx)
         .ok_or(Error::InvalidInputIndex(input_idx))?;
 
     // Build witness from partial signatures
@@ -87,7 +88,9 @@ fn extract_witness(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<Witness
 
 /// Extract a single output from the PSBT
 fn extract_output(psbt: &SilentPaymentPsbt, output_idx: usize) -> Result<TxOut> {
-    let output = psbt.outputs.get(output_idx)
+    let output = psbt
+        .outputs
+        .get(output_idx)
         .ok_or(Error::InvalidOutputIndex(output_idx))?;
 
     Ok(TxOut {

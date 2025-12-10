@@ -87,7 +87,11 @@ pub fn dleq_generate_proof(
     // Get generator G
     let g_point = PublicKey::from_secret_key(
         secp,
-        &SecretKey::from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]).unwrap()
+        &SecretKey::from_slice(&[
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 1,
+        ])
+        .unwrap(),
     );
 
     // Compute t = a XOR H_aux(r)
@@ -133,7 +137,9 @@ pub fn dleq_generate_proof(
 
     // Verify the proof before returning
     if !dleq_verify_proof(secp, &a_point, b, &c_point, &proof, m)? {
-        return Err(CryptoError::DleqGenerationFailed("Self-verification failed".to_string()));
+        return Err(CryptoError::DleqGenerationFailed(
+            "Self-verification failed".to_string(),
+        ));
     }
 
     Ok(proof)
@@ -164,15 +170,17 @@ pub fn dleq_verify_proof(
     e_bytes.copy_from_slice(&proof[0..32]);
     s_bytes.copy_from_slice(&proof[32..64]);
 
-    let e = Scalar::from_be_bytes(e_bytes)
-        .map_err(|_| CryptoError::DleqVerificationFailed)?;
-    let s = Scalar::from_be_bytes(s_bytes)
-        .map_err(|_| CryptoError::DleqVerificationFailed)?;
+    let e = Scalar::from_be_bytes(e_bytes).map_err(|_| CryptoError::DleqVerificationFailed)?;
+    let s = Scalar::from_be_bytes(s_bytes).map_err(|_| CryptoError::DleqVerificationFailed)?;
 
     // Get generator G
     let g_point = PublicKey::from_secret_key(
         secp,
-        &SecretKey::from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]).unwrap()
+        &SecretKey::from_slice(&[
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 1,
+        ])
+        .unwrap(),
     );
 
     // Compute R1 = s*G - e*A
@@ -182,14 +190,16 @@ pub fn dleq_verify_proof(
     let e_key = SecretKey::from_slice(&e.to_be_bytes())?;
     let e_a = a.mul_tweak(secp, &e_key.into())?;
 
-    let r1 = s_g.combine(&e_a.negate(secp))
+    let r1 = s_g
+        .combine(&e_a.negate(secp))
         .map_err(|_| CryptoError::DleqVerificationFailed)?;
 
     // Compute R2 = s*B - e*C
     let s_b = b.mul_tweak(secp, &s)?;
     let e_c = c.mul_tweak(secp, &e)?;
 
-    let r2 = s_b.combine(&e_c.negate(secp))
+    let r2 = s_b
+        .combine(&e_c.negate(secp))
         .map_err(|_| CryptoError::DleqVerificationFailed)?;
 
     // Verify challenge
@@ -243,7 +253,8 @@ mod tests {
         // Test with message
         let message = [4u8; 32];
         let proof_with_msg = dleq_generate_proof(&secp, &a, &b, &rand_aux, Some(&message)).unwrap();
-        let valid_with_msg = dleq_verify_proof(&secp, &a_pub, &b, &c, &proof_with_msg, Some(&message)).unwrap();
+        let valid_with_msg =
+            dleq_verify_proof(&secp, &a_pub, &b, &c, &proof_with_msg, Some(&message)).unwrap();
         assert!(valid_with_msg);
 
         // Verify that proof without message doesn't verify with message

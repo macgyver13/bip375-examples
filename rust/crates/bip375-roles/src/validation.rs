@@ -2,9 +2,7 @@
 //!
 //! Validates PSBTs according to BIP-375 rules.
 
-use bip375_core::{
-    Error, Result, SilentPaymentPsbt, Bip375PsbtExt,
-};
+use bip375_core::{Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
 use bip375_crypto::dleq_verify_proof;
 use secp256k1::{PublicKey, Secp256k1};
 use std::collections::HashSet;
@@ -30,11 +28,10 @@ pub fn validate_psbt(
     validate_psbt_version(psbt)?;
     validate_input_fields(psbt)?;
     validate_output_fields(psbt)?;
-    
+
     // Check if this PSBT has silent payment outputs
-    let has_sp_outputs = (0..psbt.num_outputs())
-        .any(|i| psbt.get_output_sp_address(i).is_some());
-    
+    let has_sp_outputs = (0..psbt.num_outputs()).any(|i| psbt.get_output_sp_address(i).is_some());
+
     if has_sp_outputs {
         // Rule 6: Segwit version restrictions (must be v0 or v1 for silent payments)
         validate_segwit_versions(psbt)?;
@@ -74,12 +71,9 @@ fn validate_psbt_version(psbt: &SilentPaymentPsbt) -> Result<()> {
 fn validate_input_fields(psbt: &SilentPaymentPsbt) -> Result<()> {
     for (i, input) in psbt.inputs.iter().enumerate() {
         // previous_txid and spent_output_index are mandatory in struct
-        
+
         if input.sequence.is_none() {
-            return Err(Error::MissingField(format!(
-                "Input {} missing sequence",
-                i
-            )));
+            return Err(Error::MissingField(format!("Input {} missing sequence", i)));
         }
 
         // SegWit inputs require WITNESS_UTXO
@@ -130,12 +124,12 @@ fn validate_segwit_versions(psbt: &SilentPaymentPsbt) -> Result<()> {
     for (i, input) in psbt.inputs.iter().enumerate() {
         if let Some(witness_utxo) = &input.witness_utxo {
             let script = &witness_utxo.script_pubkey;
-            
+
             if let Some(version) = script.witness_version() {
                 // version is WitnessVersion enum.
                 use bitcoin::WitnessVersion;
                 match version {
-                    WitnessVersion::V0 | WitnessVersion::V1 => {},
+                    WitnessVersion::V0 | WitnessVersion::V1 => {}
                     _ => {
                         return Err(Error::InvalidFieldData(format!(
                             "Input {} uses segwit version {:?} (incompatible with silent payments)",
@@ -159,7 +153,8 @@ fn validate_sighash_types(psbt: &SilentPaymentPsbt) -> Result<()> {
             if sighash_type.to_u32() != 0x01 {
                 return Err(Error::InvalidFieldData(format!(
                     "Input {} uses non-SIGHASH_ALL (0x{:02x}) with silent payments",
-                    i, sighash_type.to_u32()
+                    i,
+                    sighash_type.to_u32()
                 )));
             }
         }
@@ -183,7 +178,7 @@ fn validate_ecdh_coverage(psbt: &SilentPaymentPsbt) -> Result<()> {
     for scan_key in scan_keys {
         // Check for global share first
         let global_shares = psbt.get_global_ecdh_shares();
-        
+
         if global_shares.iter().any(|s| s.scan_key == scan_key) {
             continue;
         }
@@ -204,10 +199,17 @@ fn validate_ecdh_coverage(psbt: &SilentPaymentPsbt) -> Result<()> {
 }
 
 /// Validate that output scripts match computed silent payment addresses
-fn validate_output_scripts(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymentPsbt) -> Result<()> {
-    use bip375_core::psbt_accessors::{get_input_outpoint_bytes, get_input_bip32_pubkeys, get_output_sp_keys};
+fn validate_output_scripts(
+    secp: &Secp256k1<secp256k1::All>,
+    psbt: &SilentPaymentPsbt,
+) -> Result<()> {
     use bip375_core::aggregate_ecdh_shares;
-    use bip375_crypto::{derive_silent_payment_output_pubkey, compute_input_hash, pubkey_to_p2tr_script};
+    use bip375_core::psbt_accessors::{
+        get_input_bip32_pubkeys, get_input_outpoint_bytes, get_output_sp_keys,
+    };
+    use bip375_crypto::{
+        compute_input_hash, derive_silent_payment_output_pubkey, pubkey_to_p2tr_script,
+    };
     use std::collections::HashMap;
 
     // First, collect outpoints and public keys for input_hash computation
@@ -220,7 +222,10 @@ fn validate_output_scripts(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymen
 
         let bip32_pubkeys = get_input_bip32_pubkeys(psbt, input_idx);
         if bip32_pubkeys.is_empty() {
-            eprintln!("Warning: Input {} has no BIP32 derivation, skipping output script validation", input_idx);
+            eprintln!(
+                "Warning: Input {} has no BIP32 derivation, skipping output script validation",
+                input_idx
+            );
             return Ok(());
         }
         input_pubkeys.push(bip32_pubkeys[0]);
@@ -232,11 +237,13 @@ fn validate_output_scripts(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymen
 
     let mut summed_pubkey = input_pubkeys[0];
     for pubkey in &input_pubkeys[1..] {
-        summed_pubkey = summed_pubkey.combine(pubkey)
+        summed_pubkey = summed_pubkey
+            .combine(pubkey)
             .map_err(|e| Error::Other(format!("Failed to sum input pubkeys: {}", e)))?;
     }
 
-    let smallest_outpoint = outpoints.iter()
+    let smallest_outpoint = outpoints
+        .iter()
         .min()
         .ok_or_else(|| Error::Other("No inputs found".to_string()))?;
 
@@ -247,8 +254,15 @@ fn validate_output_scripts(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymen
 
     let mut shared_secrets: HashMap<PublicKey, PublicKey> = HashMap::new();
     for (scan_key, aggregated_share_data) in aggregated_shares.iter() {
-        let shared_secret = aggregated_share_data.aggregated_share.mul_tweak(secp, &input_hash)
-            .map_err(|e| Error::Other(format!("Failed to multiply ECDH share by input_hash: {}", e)))?;
+        let shared_secret = aggregated_share_data
+            .aggregated_share
+            .mul_tweak(secp, &input_hash)
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to multiply ECDH share by input_hash: {}",
+                    e
+                ))
+            })?;
         shared_secrets.insert(*scan_key, shared_secret);
     }
 
@@ -265,21 +279,19 @@ fn validate_output_scripts(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymen
             Err(_) => continue,
         };
 
-        let shared_secret = shared_secrets.get(&scan_key)
-            .ok_or_else(|| Error::Other(format!(
+        let shared_secret = shared_secrets.get(&scan_key).ok_or_else(|| {
+            Error::Other(format!(
                 "Output {} missing shared secret for scan key",
                 output_idx
-            )))?;
+            ))
+        })?;
 
         let k = *scan_key_output_indices.get(&scan_key).unwrap_or(&0);
 
         let shared_secret_bytes = shared_secret.serialize();
-        let expected_pubkey = derive_silent_payment_output_pubkey(
-            secp,
-            &spend_key,
-            &shared_secret_bytes,
-            k,
-        ).map_err(|e| Error::Other(format!("Failed to derive output pubkey: {}", e)))?;
+        let expected_pubkey =
+            derive_silent_payment_output_pubkey(secp, &spend_key, &shared_secret_bytes, k)
+                .map_err(|e| Error::Other(format!("Failed to derive output pubkey: {}", e)))?;
 
         let expected_script = pubkey_to_p2tr_script(&expected_pubkey);
 
@@ -304,14 +316,16 @@ fn validate_dleq_proofs(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymentPs
     let global_shares = psbt.get_global_ecdh_shares();
     for share in global_shares {
         if share.dleq_proof.is_none() {
-             // Global shares MUST have DLEQ proofs?
-             // BIP-375 says DLEQ proof is required.
-             // But my EcdhShare struct has Option<proof>.
-             // If it's missing, it's invalid.
-             return Err(Error::Other("Global ECDH share missing DLEQ proof".to_string()));
+            // Global shares MUST have DLEQ proofs?
+            // BIP-375 says DLEQ proof is required.
+            // But my EcdhShare struct has Option<proof>.
+            // If it's missing, it's invalid.
+            return Err(Error::Other(
+                "Global ECDH share missing DLEQ proof".to_string(),
+            ));
         }
     }
-    
+
     // Validate per-input ECDH shares
     for input_idx in 0..psbt.num_inputs() {
         let shares = psbt.get_input_ecdh_shares(input_idx);
@@ -380,8 +394,8 @@ mod tests {
     };
     use bip375_core::{Output, SilentPaymentAddress, Utxo};
     use bip375_crypto::pubkey_to_p2wpkh_script;
-    use bitcoin::{Amount, Sequence, Txid};
     use bitcoin::hashes::Hash;
+    use bitcoin::{Amount, Sequence, Txid};
     use secp256k1::SecretKey;
 
     #[test]
@@ -428,7 +442,7 @@ mod tests {
 
         assert!(validate_output_fields(&psbt).is_ok());
     }
-    
+
     #[test]
     fn test_validate_ecdh_coverage() {
         use bip375_core::{Bip375PsbtExt, EcdhShareData};
@@ -441,7 +455,7 @@ mod tests {
         let scan_pub = PublicKey::from_secret_key(&secp, &scan_priv);
         let spend_priv = SecretKey::from_slice(&[3u8; 32]).unwrap();
         let spend_pub = PublicKey::from_secret_key(&secp, &spend_priv);
-        
+
         let sp_addr = SilentPaymentAddress::new(scan_pub, spend_pub, None);
 
         // Add SP output
@@ -452,8 +466,22 @@ mod tests {
         let input_priv = SecretKey::from_slice(&[1u8; 32]).unwrap();
         let input_pub = PublicKey::from_secret_key(&secp, &input_priv);
         let inputs = vec![
-            Utxo::new(Txid::all_zeros(), 0, Amount::from_sat(10000), pubkey_to_p2wpkh_script(&input_pub), Some(input_priv), Sequence::MAX),
-            Utxo::new(Txid::all_zeros(), 1, Amount::from_sat(10000), pubkey_to_p2wpkh_script(&input_pub), Some(input_priv), Sequence::MAX),
+            Utxo::new(
+                Txid::all_zeros(),
+                0,
+                Amount::from_sat(10000),
+                pubkey_to_p2wpkh_script(&input_pub),
+                Some(input_priv),
+                Sequence::MAX,
+            ),
+            Utxo::new(
+                Txid::all_zeros(),
+                1,
+                Amount::from_sat(10000),
+                pubkey_to_p2wpkh_script(&input_pub),
+                Some(input_priv),
+                Sequence::MAX,
+            ),
         ];
         add_inputs(&mut psbt, &inputs).unwrap();
 
@@ -464,36 +492,39 @@ mod tests {
         {
             let mut psbt_global = psbt.clone();
             // Create a dummy share
-            let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
+            let share_point =
+                PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
             let share = EcdhShareData::without_proof(scan_pub, share_point);
             psbt_global.add_global_ecdh_share(&share).unwrap();
-            
+
             assert!(validate_ecdh_coverage(&psbt_global).is_ok());
         }
 
         // Case 3: Per-input shares for ALL inputs -> Valid
         {
             let mut psbt_inputs = psbt.clone();
-            let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
+            let share_point =
+                PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
             let share = EcdhShareData::without_proof(scan_pub, share_point);
-            
+
             // Add to all inputs
             for i in 0..psbt_inputs.num_inputs() {
                 psbt_inputs.add_input_ecdh_share(i, &share).unwrap();
             }
-            
+
             assert!(validate_ecdh_coverage(&psbt_inputs).is_ok());
         }
 
         // Case 4: Per-input shares for SOME inputs -> Invalid
         {
             let mut psbt_partial = psbt.clone();
-            let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
+            let share_point =
+                PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
             let share = EcdhShareData::without_proof(scan_pub, share_point);
-            
+
             // Add to only first input
             psbt_partial.add_input_ecdh_share(0, &share).unwrap();
-            
+
             assert!(validate_ecdh_coverage(&psbt_partial).is_err());
         }
 

@@ -3,10 +3,10 @@
 //! Creates the initial PSBT structure.
 
 use bip375_core::{Result, SilentPaymentPsbt};
-use bitcoin::transaction::Version;
 use bitcoin::hashes::Hash;
+use bitcoin::transaction::Version;
 use bitcoin::Txid;
-use psbt_v2::v2::{Psbt as PsbtV2, Global};
+use psbt_v2::v2::{Global, Psbt as PsbtV2};
 
 /// Create a new PSBT with specified number of inputs and outputs
 pub fn create_psbt(num_inputs: usize, num_outputs: usize) -> Result<SilentPaymentPsbt> {

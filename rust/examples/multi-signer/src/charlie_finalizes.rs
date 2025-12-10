@@ -21,16 +21,16 @@
 //! - Output scripts:   Computed
 //! - Transaction:   Complete
 
+use crate::shared_utils::*;
 use bip375_core::{Bip375PsbtExt, Result};
-use bip375_io::{PsbtMetadata};
+use bip375_io::PsbtMetadata;
 use bip375_roles::{
     extractor::extract_transaction,
     input_finalizer::finalize_inputs,
     signer::{add_ecdh_shares_partial, sign_inputs},
     validation::{validate_psbt, ValidationLevel},
 };
-use crate::shared_utils::*;
-use common::{load_psbt,save_psbt,save_txn};
+use common::{load_psbt, save_psbt, save_txn};
 use secp256k1::Secp256k1;
 
 pub fn charlie_finalizes() -> Result<()> {
@@ -67,7 +67,10 @@ pub fn charlie_finalizes() -> Result<()> {
             inputs_with_ecdh_before += 1;
         }
     }
-    println!("   ECDH Coverage: {}/{} inputs", inputs_with_ecdh_before, num_inputs);
+    println!(
+        "   ECDH Coverage: {}/{} inputs",
+        inputs_with_ecdh_before, num_inputs
+    );
 
     let secp = Secp256k1::new();
 
@@ -93,7 +96,14 @@ pub fn charlie_finalizes() -> Result<()> {
     let charlie_controlled_inputs = [2];
 
     // Add ECDH shares for Charlie's input
-    add_ecdh_shares_partial(&secp, &mut psbt, &inputs, &scan_keys, &charlie_controlled_inputs, true)?;
+    add_ecdh_shares_partial(
+        &secp,
+        &mut psbt,
+        &inputs,
+        &scan_keys,
+        &charlie_controlled_inputs,
+        true,
+    )?;
 
     // Print final ECDH coverage
     println!("\n  Final ECDH coverage (after Charlie):");
@@ -104,10 +114,16 @@ pub fn charlie_finalizes() -> Result<()> {
             inputs_with_ecdh_after += 1;
         }
     }
-    println!("   ECDH Coverage: {}/{} inputs", inputs_with_ecdh_after, num_inputs);
+    println!(
+        "   ECDH Coverage: {}/{} inputs",
+        inputs_with_ecdh_after, num_inputs
+    );
     println!("   Covered inputs: [0, 1, 2]");
     let is_complete = inputs_with_ecdh_after == num_inputs;
-    println!("   Complete: {}", if is_complete { "  YES" } else { "❌ NO" });
+    println!(
+        "   Complete: {}",
+        if is_complete { "  YES" } else { "❌ NO" }
+    );
 
     if is_complete {
         println!("\n  Complete ECDH coverage achieved!");
@@ -119,7 +135,9 @@ pub fn charlie_finalizes() -> Result<()> {
 
         println!("     Silent payment output scripts computed");
     } else {
-        return Err(bip375_core::Error::Other("ECDH coverage incomplete".to_string()));
+        return Err(bip375_core::Error::Other(
+            "ECDH coverage incomplete".to_string(),
+        ));
     }
 
     // Sign Charlie's input
@@ -133,16 +151,21 @@ pub fn charlie_finalizes() -> Result<()> {
     let transaction = extract_transaction(&psbt)?;
     let transaction_bytes = bitcoin::consensus::serialize(&transaction);
 
-    println!("   Transaction extracted successfully ({} bytes)", transaction_bytes.len());
+    println!(
+        "   Transaction extracted successfully ({} bytes)",
+        transaction_bytes.len()
+    );
 
     save_txn(&transaction_bytes)
         .map_err(|e| bip375_core::Error::Other(format!("Failed to save transaction: {}", e)))?;
 
     // Save final PSBT state
-    let mut metadata = PsbtMetadata::with_description("Charlie completed the workflow and extracted final transaction");
+    let mut metadata = PsbtMetadata::with_description(
+        "Charlie completed the workflow and extracted final transaction",
+    );
     metadata.set_counts(num_inputs, psbt.num_outputs());
     metadata.update_timestamps();
-    
+
     save_psbt(&psbt, Some(metadata))
         .map_err(|e| bip375_core::Error::Other(format!("Failed to save PSBT: {}", e)))?;
 

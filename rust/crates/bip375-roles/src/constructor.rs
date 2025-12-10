@@ -2,10 +2,7 @@
 //!
 //! Adds inputs and outputs to the PSBT.
 
-use bip375_core::{
-    Error, Output, OutputRecipient, Result, SilentPaymentPsbt, Utxo,
-    Bip375PsbtExt,
-};
+use bip375_core::{Bip375PsbtExt, Error, Output, OutputRecipient, Result, SilentPaymentPsbt, Utxo};
 
 /// Add inputs to the PSBT
 pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
@@ -19,11 +16,11 @@ pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
 
     for (i, utxo) in inputs.iter().enumerate() {
         let psbt_input = &mut psbt.inputs[i];
-        
+
         psbt_input.previous_txid = utxo.txid;
         psbt_input.spent_output_index = utxo.vout;
         psbt_input.sequence = Some(utxo.sequence);
-        
+
         // Add PSBT_IN_WITNESS_UTXO (required for SegWit inputs)
         let witness_utxo = psbt_v2::bitcoin::TxOut {
             value: psbt_v2::bitcoin::Amount::from_sat(utxo.amount.to_sat()),

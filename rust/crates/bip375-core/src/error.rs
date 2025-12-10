@@ -53,6 +53,9 @@ pub enum Error {
     #[error("Invalid output index: {0}")]
     InvalidOutputIndex(usize),
 
+    #[error("Invalid public key (must be compressed)")]
+    InvalidPublicKey,
+
     #[error("Bitcoin error: {0}")]
     Bitcoin(#[from] bitcoin::consensus::encode::Error),
 

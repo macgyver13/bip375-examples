@@ -2,7 +2,7 @@
 //!
 //! Adds ECDH shares and signatures to the PSBT.
 
-use bip375_core::{Error, Result, SilentPaymentPsbt, Utxo, Bip375PsbtExt, EcdhShareData};
+use bip375_core::{Bip375PsbtExt, EcdhShareData, Error, Result, SilentPaymentPsbt, Utxo};
 use bip375_crypto::{compute_ecdh_share, dleq_generate_proof, sign_p2wpkh_input};
 use bitcoin::ScriptBuf;
 use secp256k1::{PublicKey, Secp256k1};
@@ -18,7 +18,10 @@ pub fn add_ecdh_shares_full(
 ) -> Result<()> {
     for (input_idx, utxo) in inputs.iter().enumerate() {
         let Some(privkey) = &utxo.private_key else {
-            return Err(Error::Other(format!("Input {} missing private key", input_idx)));
+            return Err(Error::Other(format!(
+                "Input {} missing private key",
+                input_idx
+            )));
         };
 
         for scan_key in scan_keys {
@@ -27,12 +30,14 @@ pub fn add_ecdh_shares_full(
 
             let dleq_proof = if include_dleq {
                 let rand_aux = [input_idx as u8; 32];
-                Some(dleq_generate_proof(secp, privkey, scan_key, &rand_aux, None)
-                    .map_err(|e| Error::Other(format!("DLEQ generation failed: {}", e)))?)
+                Some(
+                    dleq_generate_proof(secp, privkey, scan_key, &rand_aux, None)
+                        .map_err(|e| Error::Other(format!("DLEQ generation failed: {}", e)))?,
+                )
             } else {
                 None
             };
-            
+
             let ecdh_share = EcdhShareData::new(*scan_key, share_point, dleq_proof);
             psbt.add_input_ecdh_share(input_idx, &ecdh_share)?;
         }
@@ -57,7 +62,10 @@ pub fn add_ecdh_shares_partial(
         }
 
         let Some(privkey) = &utxo.private_key else {
-            return Err(Error::Other(format!("Controlled input {} missing private key", input_idx)));
+            return Err(Error::Other(format!(
+                "Controlled input {} missing private key",
+                input_idx
+            )));
         };
 
         for scan_key in scan_keys {
@@ -66,8 +74,10 @@ pub fn add_ecdh_shares_partial(
 
             let dleq_proof = if include_dleq {
                 let rand_aux = [input_idx as u8; 32];
-                Some(dleq_generate_proof(secp, privkey, scan_key, &rand_aux, None)
-                    .map_err(|e| Error::Other(format!("DLEQ generation failed: {}", e)))?)
+                Some(
+                    dleq_generate_proof(secp, privkey, scan_key, &rand_aux, None)
+                        .map_err(|e| Error::Other(format!("DLEQ generation failed: {}", e)))?,
+                )
             } else {
                 None
             };
@@ -104,21 +114,20 @@ pub fn sign_inputs(
 
         let pubkey = PublicKey::from_secret_key(secp, privkey);
         let bitcoin_pubkey = bitcoin::PublicKey::new(pubkey);
-        
+
         let sig = bitcoin::ecdsa::Signature::from_slice(&signature)
             .map_err(|e| Error::Other(format!("Invalid signature DER: {}", e)))?;
-            
-        psbt.inputs[input_idx].partial_sigs.insert(bitcoin_pubkey, sig);
+
+        psbt.inputs[input_idx]
+            .partial_sigs
+            .insert(bitcoin_pubkey, sig);
     }
     Ok(())
 }
 
 /// Extract transaction data needed for signing
 fn extract_tx_for_signing(psbt: &SilentPaymentPsbt) -> Result<bitcoin::Transaction> {
-    use bitcoin::{
-        absolute::LockTime, OutPoint,
-        Sequence, Transaction, TxIn, TxOut,
-    };
+    use bitcoin::{absolute::LockTime, OutPoint, Sequence, Transaction, TxIn, TxOut};
 
     let global = &psbt.global;
     let version = global.tx_version; // Already Version type
@@ -157,7 +166,7 @@ fn extract_tx_for_signing(psbt: &SilentPaymentPsbt) -> Result<bitcoin::Transacti
 mod tests {
     use super::*;
     use crate::{constructor::add_inputs, creator::create_psbt};
-    use bitcoin::{Amount, Sequence, Txid, hashes::Hash};
+    use bitcoin::{hashes::Hash, Amount, Sequence, Txid};
     use secp256k1::SecretKey;
 
     #[test]

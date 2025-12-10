@@ -15,7 +15,11 @@ use crate::{
     error::{Error, Result},
     types::{EcdhShareData, SilentPaymentAddress},
 };
-use psbt_v2::{raw::Key, v2::{bip375::{DleqProof, EcdhShare, ScanKey}, Psbt}};
+use bitcoin::CompressedPublicKey;
+use psbt_v2::{
+    raw::Key,
+    v2::{dleq::DleqProof, Psbt},
+};
 use secp256k1::PublicKey;
 
 /// Extension trait for BIP-375 silent payment fields on PSBT v2
@@ -82,8 +86,7 @@ pub trait Bip375PsbtExt {
     /// # Arguments
     /// * `input_index` - Index of the input
     /// * `scan_key` - The scan key to look up
-    fn get_input_dleq_proof(&self, input_index: usize, scan_key: &PublicKey)
-        -> Option<[u8; 64]>;
+    fn get_input_dleq_proof(&self, input_index: usize, scan_key: &PublicKey) -> Option<[u8; 64]>;
 
     /// Add a DLEQ proof to a specific input
     ///
@@ -155,50 +158,66 @@ pub trait Bip375PsbtExt {
     /// # Arguments
     /// * `input_index` - Index of the input
     /// * `field` - The field to add
-    fn add_input_field(&mut self, input_index: usize, field: crate::field::PsbtField) -> Result<()>;
+    fn add_input_field(&mut self, input_index: usize, field: crate::field::PsbtField)
+        -> Result<()>;
 
     /// Get an input field by type
     ///
     /// # Arguments
     /// * `input_index` - Index of the input
     /// * `field_type` - The field type to look up
-    fn get_input_field(&self, input_index: usize, field_type: u8) -> Option<crate::field::PsbtField>;
+    fn get_input_field(
+        &self,
+        input_index: usize,
+        field_type: u8,
+    ) -> Option<crate::field::PsbtField>;
 
     /// Add an output field
     ///
     /// # Arguments
     /// * `output_index` - Index of the output
     /// * `field` - The field to add
-    fn add_output_field(&mut self, output_index: usize, field: crate::field::PsbtField) -> Result<()>;
+    fn add_output_field(
+        &mut self,
+        output_index: usize,
+        field: crate::field::PsbtField,
+    ) -> Result<()>;
 
     /// Get an output field by type
     ///
     /// # Arguments
     /// * `output_index` - Index of the output
     /// * `field_type` - The field type to look up
-    fn get_output_field(&self, output_index: usize, field_type: u8) -> Option<crate::field::PsbtField>;
+    fn get_output_field(
+        &self,
+        output_index: usize,
+        field_type: u8,
+    ) -> Option<crate::field::PsbtField>;
 }
 
 impl Bip375PsbtExt for Psbt {
     fn get_global_ecdh_shares(&self) -> Vec<EcdhShareData> {
         let mut shares = Vec::new();
 
-        for (scan_key, share_bytes) in &self.global.sp_ecdh_shares {
-            if let Ok(scan_key_pk) = PublicKey::from_slice(scan_key.as_ref()) {
-                if let Ok(share_point) = PublicKey::from_slice(share_bytes.as_ref()) {
-                    // Look for corresponding DLEQ proof
-                    let dleq_proof = self.get_global_dleq_proof(&scan_key_pk);
-                    shares.push(EcdhShareData::new(scan_key_pk, share_point, dleq_proof));
-                }
-            }
+        for (scan_key_compressed, share_compressed) in &self.global.sp_ecdh_shares {
+            // Convert CompressedPublicKey to secp256k1::PublicKey via the inner field
+            let scan_key_pk = scan_key_compressed.0;
+            let share_point = share_compressed.0;
+
+            // Look for corresponding DLEQ proof
+            let dleq_proof = self.get_global_dleq_proof(&scan_key_pk);
+            shares.push(EcdhShareData::new(scan_key_pk, share_point, dleq_proof));
         }
 
         shares
     }
 
     fn add_global_ecdh_share(&mut self, share: &EcdhShareData) -> Result<()> {
-        let scan_key = ScanKey::new(share.scan_key.serialize());
-        let ecdh_share = EcdhShare::new(share.share.serialize());
+        // Convert secp256k1::PublicKey -> bitcoin::PublicKey -> CompressedPublicKey
+        let scan_key = CompressedPublicKey::try_from(bitcoin::PublicKey::new(share.scan_key))
+            .map_err(|_| Error::InvalidPublicKey)?;
+        let ecdh_share = CompressedPublicKey::try_from(bitcoin::PublicKey::new(share.share))
+            .map_err(|_| Error::InvalidPublicKey)?;
 
         self.global.sp_ecdh_shares.insert(scan_key, ecdh_share);
 
@@ -217,16 +236,16 @@ impl Bip375PsbtExt for Psbt {
 
         let mut shares = Vec::new();
 
-        for (scan_key, share_bytes) in &input.sp_ecdh_shares {
-            if let Ok(scan_key_pk) = PublicKey::from_slice(scan_key.as_ref()) {
-                if let Ok(share_point) = PublicKey::from_slice(share_bytes.as_ref()) {
-                    // Look for DLEQ proof (input-specific or global)
-                    let dleq_proof = self
-                        .get_input_dleq_proof(input_index, &scan_key_pk)
-                        .or_else(|| self.get_global_dleq_proof(&scan_key_pk));
-                    shares.push(EcdhShareData::new(scan_key_pk, share_point, dleq_proof));
-                }
-            }
+        for (scan_key_compressed, share_compressed) in &input.sp_ecdh_shares {
+            // Convert CompressedPublicKey to secp256k1::PublicKey via the inner field
+            let scan_key_pk = scan_key_compressed.0;
+            let share_point = share_compressed.0;
+
+            // Look for DLEQ proof (input-specific or global)
+            let dleq_proof = self
+                .get_input_dleq_proof(input_index, &scan_key_pk)
+                .or_else(|| self.get_global_dleq_proof(&scan_key_pk));
+            shares.push(EcdhShareData::new(scan_key_pk, share_point, dleq_proof));
         }
 
         shares
@@ -238,8 +257,11 @@ impl Bip375PsbtExt for Psbt {
             .get_mut(input_index)
             .ok_or(Error::InvalidInputIndex(input_index))?;
 
-        let scan_key = ScanKey::new(share.scan_key.serialize());
-        let ecdh_share = EcdhShare::new(share.share.serialize());
+        // Convert secp256k1::PublicKey -> bitcoin::PublicKey -> CompressedPublicKey
+        let scan_key = CompressedPublicKey::try_from(bitcoin::PublicKey::new(share.scan_key))
+            .map_err(|_| Error::InvalidPublicKey)?;
+        let ecdh_share = CompressedPublicKey::try_from(bitcoin::PublicKey::new(share.share))
+            .map_err(|_| Error::InvalidPublicKey)?;
 
         input.sp_ecdh_shares.insert(scan_key, ecdh_share);
 
@@ -252,28 +274,35 @@ impl Bip375PsbtExt for Psbt {
     }
 
     fn get_global_dleq_proof(&self, scan_key: &PublicKey) -> Option<[u8; 64]> {
-        let scan_key_typed = ScanKey::new(scan_key.serialize());
-        self.global.sp_dleq_proofs.get(&scan_key_typed).map(|proof| *proof.as_bytes())
+        let scan_key_compressed =
+            CompressedPublicKey::try_from(bitcoin::PublicKey::new(*scan_key)).ok()?;
+        self.global
+            .sp_dleq_proofs
+            .get(&scan_key_compressed)
+            .map(|proof| *proof.as_bytes())
     }
 
     fn add_global_dleq_proof(&mut self, scan_key: &PublicKey, proof: [u8; 64]) -> Result<()> {
-        let scan_key_typed = ScanKey::new(scan_key.serialize());
+        let scan_key_compressed = CompressedPublicKey::try_from(bitcoin::PublicKey::new(*scan_key))
+            .map_err(|_| Error::InvalidPublicKey)?;
         let dleq_proof = DleqProof::new(proof);
 
-        self.global.sp_dleq_proofs.insert(scan_key_typed, dleq_proof);
+        self.global
+            .sp_dleq_proofs
+            .insert(scan_key_compressed, dleq_proof);
 
         Ok(())
     }
 
-    fn get_input_dleq_proof(
-        &self,
-        input_index: usize,
-        scan_key: &PublicKey,
-    ) -> Option<[u8; 64]> {
+    fn get_input_dleq_proof(&self, input_index: usize, scan_key: &PublicKey) -> Option<[u8; 64]> {
         let input = self.inputs.get(input_index)?;
-        let scan_key_typed = ScanKey::new(scan_key.serialize());
+        let scan_key_compressed =
+            CompressedPublicKey::try_from(bitcoin::PublicKey::new(*scan_key)).ok()?;
 
-        input.sp_dleq_proofs.get(&scan_key_typed).map(|proof| *proof.as_bytes())
+        input
+            .sp_dleq_proofs
+            .get(&scan_key_compressed)
+            .map(|proof| *proof.as_bytes())
     }
 
     fn add_input_dleq_proof(
@@ -287,10 +316,11 @@ impl Bip375PsbtExt for Psbt {
             .get_mut(input_index)
             .ok_or(Error::InvalidInputIndex(input_index))?;
 
-        let scan_key_typed = ScanKey::new(scan_key.serialize());
+        let scan_key_compressed = CompressedPublicKey::try_from(bitcoin::PublicKey::new(*scan_key))
+            .map_err(|_| Error::InvalidPublicKey)?;
         let dleq_proof = DleqProof::new(proof);
 
-        input.sp_dleq_proofs.insert(scan_key_typed, dleq_proof);
+        input.sp_dleq_proofs.insert(scan_key_compressed, dleq_proof);
 
         Ok(())
     }
@@ -353,7 +383,9 @@ impl Bip375PsbtExt for Psbt {
 
     fn get_input_partial_sigs(&self, input_index: usize) -> Vec<(Vec<u8>, Vec<u8>)> {
         if let Some(input) = self.inputs.get(input_index) {
-            input.partial_sigs.iter()
+            input
+                .partial_sigs
+                .iter()
                 .map(|(pk, sig)| (pk.inner.serialize().to_vec(), sig.to_vec()))
                 .collect()
         } else {
@@ -362,8 +394,14 @@ impl Bip375PsbtExt for Psbt {
     }
 
     // TODO: Replace with native rust-psbt fields or remove?
-    fn add_input_field(&mut self, input_index: usize, field: crate::field::PsbtField) -> Result<()> {
-        let input = self.inputs.get_mut(input_index)
+    fn add_input_field(
+        &mut self,
+        input_index: usize,
+        field: crate::field::PsbtField,
+    ) -> Result<()> {
+        let input = self
+            .inputs
+            .get_mut(input_index)
             .ok_or(Error::InvalidInputIndex(input_index))?;
 
         let key = Key {
@@ -375,7 +413,11 @@ impl Bip375PsbtExt for Psbt {
     }
 
     // TODO: Replace with native rust-psbt fields or remove?
-    fn get_input_field(&self, input_index: usize, field_type: u8) -> Option<crate::field::PsbtField> {
+    fn get_input_field(
+        &self,
+        input_index: usize,
+        field_type: u8,
+    ) -> Option<crate::field::PsbtField> {
         let input = self.inputs.get(input_index)?;
 
         for (key, value) in &input.unknowns {
@@ -391,8 +433,14 @@ impl Bip375PsbtExt for Psbt {
     }
 
     // TODO: Replace with native rust-psbt fields or remove?
-    fn add_output_field(&mut self, output_index: usize, field: crate::field::PsbtField) -> Result<()> {
-        let output = self.outputs.get_mut(output_index)
+    fn add_output_field(
+        &mut self,
+        output_index: usize,
+        field: crate::field::PsbtField,
+    ) -> Result<()> {
+        let output = self
+            .outputs
+            .get_mut(output_index)
             .ok_or(Error::InvalidOutputIndex(output_index))?;
 
         let key = Key {
@@ -404,7 +452,11 @@ impl Bip375PsbtExt for Psbt {
     }
 
     // TODO: Replace with native rust-psbt fields or remove?
-    fn get_output_field(&self, output_index: usize, field_type: u8) -> Option<crate::field::PsbtField> {
+    fn get_output_field(
+        &self,
+        output_index: usize,
+        field_type: u8,
+    ) -> Option<crate::field::PsbtField> {
         let output = self.outputs.get(output_index)?;
 
         for (key, value) in &output.unknowns {
@@ -533,13 +585,21 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
         // PSBT_GLOBAL_SP_ECDH_SHARE = 0x07 - BIP-375, can have multiple entries
         for (scan_key, ecdh_share) in &self.sp_ecdh_shares {
             let field_type = 0x07;
-            fields.push((field_type, scan_key.to_vec(), ecdh_share.to_vec()));
+            fields.push((
+                field_type,
+                scan_key.to_bytes().to_vec(),
+                ecdh_share.to_bytes().to_vec(),
+            ));
         }
 
         // PSBT_GLOBAL_SP_DLEQ = 0x08 - BIP-375, can have multiple entries
         for (scan_key, dleq_proof) in &self.sp_dleq_proofs {
             let field_type = 0x08;
-            fields.push((field_type, scan_key.to_vec(), dleq_proof.to_vec()));
+            fields.push((
+                field_type,
+                scan_key.to_bytes().to_vec(),
+                dleq_proof.as_bytes().to_vec(),
+            ));
         }
 
         // PSBT_GLOBAL_VERSION = 0xFB - Always present
@@ -693,13 +753,21 @@ impl InputFieldsExt for psbt_v2::v2::Input {
         // PSBT_IN_SP_ECDH_SHARE (0x1d) - BIP-375, multiple entries possible
         for (scan_key, ecdh_share) in &self.sp_ecdh_shares {
             let field_type = 0x1d;
-            fields.push((field_type, scan_key.to_vec(), ecdh_share.to_vec()));
+            fields.push((
+                field_type,
+                scan_key.to_bytes().to_vec(),
+                ecdh_share.to_bytes().to_vec(),
+            ));
         }
 
         // PSBT_IN_SP_DLEQ (0x1e) - BIP-375, multiple entries possible
         for (scan_key, dleq_proof) in &self.sp_dleq_proofs {
             let field_type = 0x1e;
-            fields.push((field_type, scan_key.to_vec(), dleq_proof.to_vec()));
+            fields.push((
+                field_type,
+                scan_key.to_bytes().to_vec(),
+                dleq_proof.as_bytes().to_vec(),
+            ));
         }
 
         // PSBT_IN_PROPRIETARY (0xFC) - Multiple entries possible
@@ -813,8 +881,6 @@ impl OutputFieldsExt for psbt_v2::v2::Output {
         fields
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

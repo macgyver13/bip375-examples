@@ -12,7 +12,7 @@ use bip375_core::{Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt};
 use bip375_gui_common::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
-use common::{save_psbt,load_psbt};
+use common::{load_psbt, save_psbt};
 use secp256k1::{PublicKey, Secp256k1};
 use std::io::{self, Write};
 
@@ -24,10 +24,7 @@ impl HardwareDevice {
         auto_read: bool,
         auto_continue: bool,
     ) -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), Box<dyn std::error::Error>> {
-        print_step_header(
-            "Step 2a: Receive PSBT",
-            "HARDWARE DEVICE (Air-gapped)",
-        );
+        print_step_header("Step 2a: Receive PSBT", "HARDWARE DEVICE (Air-gapped)");
 
         println!("  Receiving PSBT from wallet coordinator...\n");
 
@@ -37,7 +34,7 @@ impl HardwareDevice {
             io::stdin().read_line(&mut input)?;
         }
 
-        let (psbt, metadata) = load_psbt()  // Use CLI path (persistent)
+        let (psbt, metadata) = load_psbt() // Use CLI path (persistent)
             .map_err(|e| format!("Error loading PSBT: {}", e))?;
 
         if let Some(meta) = &metadata {
@@ -50,9 +47,10 @@ impl HardwareDevice {
         }
 
         // Verify PSBT is unsigned
-        let has_signatures = psbt.inputs.iter().any(|input| {
-            !input.partial_sigs.is_empty()
-        });
+        let has_signatures = psbt
+            .inputs
+            .iter()
+            .any(|input| !input.partial_sigs.is_empty());
 
         if has_signatures {
             return Err("PSBT is already signed!".into());
@@ -70,7 +68,10 @@ impl HardwareDevice {
     }
 
     /// Display transaction details and get user approval
-    pub fn verify_and_approve(auto_approve: bool, attack_mode: bool) -> Result<bool, Box<dyn std::error::Error>> {
+    pub fn verify_and_approve(
+        auto_approve: bool,
+        attack_mode: bool,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         print_step_header(
             "Step 2b: Verify Transaction",
             "HARDWARE DEVICE (Air-gapped)",
@@ -91,23 +92,40 @@ impl HardwareDevice {
                     // Try to validate the DNSSEC proof
                     match validate_dnssec_proof(value) {
                         Ok((dns_name, txt_records)) => {
-                            println!("   ✓ DNSSEC proof validated for output {}: {}", output_idx, dns_name);
+                            println!(
+                                "   ✓ DNSSEC proof validated for output {}: {}",
+                                output_idx, dns_name
+                            );
                             println!("     TXT records: {:?}", txt_records);
                             let proof_hex = hex::encode(value);
-                            dnssec_proofs.insert(output_idx, (format!("{} ✓", dns_name), proof_hex));
+                            dnssec_proofs
+                                .insert(output_idx, (format!("{} ✓", dns_name), proof_hex));
                         }
                         Err(e) => {
                             // Validation failed - try to decode at least the DNS name
                             match decode_dnssec_proof(value) {
                                 Ok((dns_name, _)) => {
-                                    eprintln!("   ⚠ DNSSEC validation FAILED for output {}: {}", output_idx, dns_name);
+                                    eprintln!(
+                                        "   ⚠ DNSSEC validation FAILED for output {}: {}",
+                                        output_idx, dns_name
+                                    );
                                     eprintln!("     Error: {}", e);
-                                    validation_failures.push((output_idx, dns_name.clone(), e.clone()));
+                                    validation_failures.push((
+                                        output_idx,
+                                        dns_name.clone(),
+                                        e.clone(),
+                                    ));
                                     let proof_hex = hex::encode(value);
-                                    dnssec_proofs.insert(output_idx, (format!("{} ⚠ UNVERIFIED", dns_name), proof_hex));
+                                    dnssec_proofs.insert(
+                                        output_idx,
+                                        (format!("{} ⚠ UNVERIFIED", dns_name), proof_hex),
+                                    );
                                 }
                                 Err(decode_err) => {
-                                    eprintln!("   ✗ Failed to decode DNSSEC proof for output {}: {}", output_idx, decode_err);
+                                    eprintln!(
+                                        "   ✗ Failed to decode DNSSEC proof for output {}: {}",
+                                        output_idx, decode_err
+                                    );
                                 }
                             }
                         }
@@ -118,7 +136,11 @@ impl HardwareDevice {
 
         // Display transaction summary with DNSSEC proofs inline
         let has_dnssec = !dnssec_proofs.is_empty();
-        display_transaction_summary_with_dnssec(if has_dnssec { Some(dnssec_proofs) } else { None });
+        display_transaction_summary_with_dnssec(if has_dnssec {
+            Some(dnssec_proofs)
+        } else {
+            None
+        });
 
         println!("  Review transaction carefully!");
         println!("   • Check recipient addresses");
@@ -172,10 +194,7 @@ impl HardwareDevice {
         mut psbt: SilentPaymentPsbt,
         attack_mode: bool,
     ) -> Result<SilentPaymentPsbt, Box<dyn std::error::Error>> {
-        print_step_header(
-            "Step 2c: Sign Transaction",
-            "HARDWARE DEVICE (Air-gapped)",
-        );
+        print_step_header("Step 2c: Sign Transaction", "HARDWARE DEVICE (Air-gapped)");
 
         println!("   SIGNER: Processing transaction with hardware keys...\n");
 
@@ -202,8 +221,14 @@ impl HardwareDevice {
             let recipient_address = get_recipient_address();
             let attacker_address = get_attacker_address();
 
-            println!("   Legitimate recipient: {}", hex::encode(recipient_address.scan_key.serialize()));
-            println!("   Malicious attacker:   {}", hex::encode(attacker_address.scan_key.serialize()));
+            println!(
+                "   Legitimate recipient: {}",
+                hex::encode(recipient_address.scan_key.serialize())
+            );
+            println!(
+                "   Malicious attacker:   {}",
+                hex::encode(attacker_address.scan_key.serialize())
+            );
             println!("   ⚠️  Funds would go to attacker if this succeeds!\n");
 
             // Replace recipient scan key with attacker's scan key
@@ -213,7 +238,10 @@ impl HardwareDevice {
                 scan_keys[1] = attacker_address.scan_key;
             }
         } else {
-            println!("   Extracted {} scan key(s) from PSBT outputs:", scan_keys.len());
+            println!(
+                "   Extracted {} scan key(s) from PSBT outputs:",
+                scan_keys.len()
+            );
             for (i, sk) in scan_keys.iter().enumerate() {
                 println!("     Scan key {}: {}", i, hex::encode(sk.serialize()));
             }
@@ -232,7 +260,10 @@ impl HardwareDevice {
         // Hardware wallet controls both inputs
         let hw_controlled_inputs = vec![0, 1];
 
-        println!("   Hardware wallet controls inputs: {:?}", hw_controlled_inputs);
+        println!(
+            "   Hardware wallet controls inputs: {:?}",
+            hw_controlled_inputs
+        );
 
         // Set private keys for hardware-controlled inputs
         for input_idx in &hw_controlled_inputs {
@@ -240,13 +271,18 @@ impl HardwareDevice {
             inputs[*input_idx].private_key = Some(privkey);
         }
 
-        println!("   Set private keys for inputs {:?}\n", hw_controlled_inputs);
+        println!(
+            "   Set private keys for inputs {:?}\n",
+            hw_controlled_inputs
+        );
 
         if attack_mode {
             println!("   🚨 Computing ECDH shares with MALICIOUS scan key...");
             println!("   🚨 Generating DLEQ proofs for WRONG scan key...");
             println!("   ✓  Signing inputs with CORRECT private keys...\n");
-            println!("   ⚠️  This attack tries to redirect funds while maintaining valid signatures");
+            println!(
+                "   ⚠️  This attack tries to redirect funds while maintaining valid signatures"
+            );
             println!("   ⚠️  The coordinator should detect this via DLEQ proof verification!\n");
         } else {
             println!("   Computing ECDH shares...");
@@ -308,24 +344,29 @@ impl HardwareDevice {
     }
 
     /// Send signed PSBT back to coordinator
-    pub fn send_psbt(psbt: &SilentPaymentPsbt, auto_continue: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn send_psbt(
+        psbt: &SilentPaymentPsbt,
+        auto_continue: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         println!("\n{}", "=".repeat(60));
         println!("    Sending Signed PSBT");
         println!("{}\n", "=".repeat(60));
 
         let metadata = PsbtMetadata {
-            description: Some("Signed PSBT with ECDH shares, DLEQ proofs, and signatures".to_string()),
+            description: Some(
+                "Signed PSBT with ECDH shares, DLEQ proofs, and signatures".to_string(),
+            ),
             creator: Some("hardware_device".to_string()),
-            modified_at: Some(std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()),
+            modified_at: Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            ),
             ..Default::default()
         };
 
-        save_psbt(psbt, Some(metadata))?;  // Use CLI path (persistent)
-
-        
+        save_psbt(psbt, Some(metadata))?; // Use CLI path (persistent)
 
         display_air_gap_instructions(
             "Hardware Device (Air-gapped)",

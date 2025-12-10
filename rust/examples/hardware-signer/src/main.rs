@@ -8,9 +8,9 @@ mod hw_device;
 mod shared_utils;
 mod wallet_coordinator;
 
-use wallet_coordinator::WalletCoordinator;
 use hw_device::HardwareDevice;
 use std::io::{self, Write};
+use wallet_coordinator::WalletCoordinator;
 
 /// Demo state machine
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,7 +72,10 @@ fn run_normal_flow(auto_read: bool, auto_approve: bool) -> Result<(), Box<dyn st
 }
 
 /// Run attack simulation
-fn run_attack_simulation(auto_read: bool, auto_approve: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn run_attack_simulation(
+    auto_read: bool,
+    auto_approve: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("=== ATTACK SIMULATION ===\n");
 
     // Step 1: Create PSBT

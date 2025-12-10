@@ -7,8 +7,8 @@ pub mod app_state;
 pub mod workflow_orchestrator;
 
 use app_state::*;
-use workflow_orchestrator::WorkflowOrchestrator;
 use std::rc::Rc;
+use workflow_orchestrator::WorkflowOrchestrator;
 
 slint::include_modules!();
 

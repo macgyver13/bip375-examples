@@ -3,10 +3,10 @@
 //! Provides functions for extracting field information from PSBTs,
 //! computing differences between PSBT states, and identifying field types.
 
-use crate::field_identifier::{FieldIdentifier, TransactionSummary};
-use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
-use bip375_core::SilentPaymentPsbt;
 use crate::display_formatting::PSBT_OUT_DNSSEC_PROOF;
+use crate::field_identifier::{FieldIdentifier, TransactionSummary};
+use bip375_core::SilentPaymentPsbt;
+use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
 use std::collections::HashSet;
 
 /// Extract all field identifiers from a PSBT
@@ -155,9 +155,9 @@ fn decode_dnssec_proof(proof_bytes: &[u8]) -> Result<String, String> {
 /// Returns (dns_name, txt_records) if validation succeeds, or an error if it fails.
 /// This performs cryptographic validation of the DNSSEC chain.
 fn validate_dnssec_proof(proof_bytes: &[u8]) -> Result<(String, Vec<String>), String> {
-    use dnssec_prover::validation::verify_rr_stream;
-    use dnssec_prover::rr::{RR, Name};
+    use dnssec_prover::rr::{Name, RR};
     use dnssec_prover::ser::parse_rr_stream;
+    use dnssec_prover::validation::verify_rr_stream;
 
     // First decode to get DNS name and RFC 9102 proof data
     if proof_bytes.is_empty() {
@@ -181,12 +181,12 @@ fn validate_dnssec_proof(proof_bytes: &[u8]) -> Result<(String, Vec<String>), St
     }
 
     // Parse RFC 9102 proof
-    let rrs = parse_rr_stream(rfc9102_proof)
-        .map_err(|_| "Failed to parse RFC 9102 proof".to_string())?;
+    let rrs =
+        parse_rr_stream(rfc9102_proof).map_err(|_| "Failed to parse RFC 9102 proof".to_string())?;
 
     // Verify DNSSEC chain
-    let verified_rrs = verify_rr_stream(&rrs)
-        .map_err(|_| "DNSSEC validation failed".to_string())?;
+    let verified_rrs =
+        verify_rr_stream(&rrs).map_err(|_| "DNSSEC validation failed".to_string())?;
 
     // Extract TXT records
     let dns_query_name = if dns_name.contains('@') {

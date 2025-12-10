@@ -58,7 +58,9 @@ impl SilentPaymentAddress {
             .map_err(|e| crate::Error::InvalidAddress(e.to_string()))?;
 
         let label = if bytes.len() == 70 {
-            Some(u32::from_le_bytes([bytes[66], bytes[67], bytes[68], bytes[69]]))
+            Some(u32::from_le_bytes([
+                bytes[66], bytes[67], bytes[68], bytes[69],
+            ]))
         } else {
             None
         };
@@ -264,8 +266,10 @@ mod tests {
     #[test]
     fn test_silent_payment_address_serialization() {
         let secp = Secp256k1::new();
-        let scan_key = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[1u8; 32]).unwrap());
-        let spend_key = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[2u8; 32]).unwrap());
+        let scan_key =
+            PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[1u8; 32]).unwrap());
+        let spend_key =
+            PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[2u8; 32]).unwrap());
 
         let addr = SilentPaymentAddress::new(scan_key, spend_key, Some(42));
         let bytes = addr.to_bytes();
@@ -277,7 +281,8 @@ mod tests {
     #[test]
     fn test_ecdh_share_serialization() {
         let secp = Secp256k1::new();
-        let scan_key = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[1u8; 32]).unwrap());
+        let scan_key =
+            PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[1u8; 32]).unwrap());
         let share = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[2u8; 32]).unwrap());
 
         let ecdh = EcdhShareData::without_proof(scan_key, share);

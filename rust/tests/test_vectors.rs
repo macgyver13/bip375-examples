@@ -12,7 +12,7 @@
 
 use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
 use bip375_roles::validation::{validate_psbt, ValidationLevel};
-use secp256k1::{Secp256k1, PublicKey};
+use secp256k1::{PublicKey, Secp256k1};
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -93,10 +93,8 @@ struct ExpectedOutput {
 
 /// Load test vectors from JSON file
 fn load_test_vectors() -> TestVectors {
-    let content = fs::read_to_string(TEST_VECTORS_FILE)
-        .expect("Failed to read test vectors file");
-    serde_json::from_str(&content)
-        .expect("Failed to parse test vectors JSON")
+    let content = fs::read_to_string(TEST_VECTORS_FILE).expect("Failed to read test vectors file");
+    serde_json::from_str(&content).expect("Failed to parse test vectors JSON")
 }
 
 /// Decode a hex string to bytes
@@ -106,7 +104,7 @@ fn hex_to_bytes(hex: &str) -> Vec<u8> {
 
 /// Decode a base64 string to bytes
 fn base64_to_bytes(b64: &str) -> Vec<u8> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     STANDARD.decode(b64).expect("Invalid base64 string")
 }
 
@@ -121,7 +119,10 @@ fn test_invalid_vectors() {
     let vectors = load_test_vectors();
     let secp = Secp256k1::new();
 
-    println!("\n=== Testing {} Invalid Vectors ===\n", vectors.invalid.len());
+    println!(
+        "\n=== Testing {} Invalid Vectors ===\n",
+        vectors.invalid.len()
+    );
 
     for (i, vector) in vectors.invalid.iter().enumerate() {
         println!("Invalid Test {}: {}", i + 1, vector.description);
@@ -139,7 +140,11 @@ fn test_invalid_vectors() {
             }
         };
 
-        println!("  PSBT parsed. Inputs: {}, Outputs: {}", psbt.num_inputs(), psbt.num_outputs());
+        println!(
+            "  PSBT parsed. Inputs: {}, Outputs: {}",
+            psbt.num_inputs(),
+            psbt.num_outputs()
+        );
 
         // Debug: Check for BIP-375 dedicated fields
         for i in 0..psbt.num_inputs() {
@@ -160,7 +165,10 @@ fn test_invalid_vectors() {
         // PSBT parsed, but validation should fail
         match validate_psbt(&secp, &psbt, ValidationLevel::Full) {
             Ok(_) => {
-                panic!("  ❌ Test failed: PSBT validation should have failed for: {}", vector.description);
+                panic!(
+                    "  ❌ Test failed: PSBT validation should have failed for: {}",
+                    vector.description
+                );
             }
             Err(e) => {
                 println!("    Validation failed (expected): {}", e);
@@ -168,7 +176,10 @@ fn test_invalid_vectors() {
         }
     }
 
-    println!("\n  All {} invalid vectors handled correctly\n", vectors.invalid.len());
+    println!(
+        "\n  All {} invalid vectors handled correctly\n",
+        vectors.invalid.len()
+    );
 }
 
 #[test]
@@ -194,7 +205,11 @@ fn test_valid_vectors() {
         };
 
         println!("    PSBT parsed successfully");
-        println!("     Inputs: {}, Outputs: {}", psbt.num_inputs(), psbt.num_outputs());
+        println!(
+            "     Inputs: {}, Outputs: {}",
+            psbt.num_inputs(),
+            psbt.num_outputs()
+        );
 
         // Validate PSBT structure (basic validation - test vectors don't have signatures)
         match validate_psbt(&secp, &psbt, ValidationLevel::Full) {
@@ -232,14 +247,21 @@ fn verify_ecdh_shares(psbt: &SilentPaymentPsbt, expected: &[EcdhShare]) {
                 let shares = psbt.get_input_ecdh_shares(i);
                 if let Some(share) = shares.iter().find(|s| s.scan_key == scan_key) {
                     let expected_ecdh = hex_to_bytes(&exp.ecdh_result);
-                    assert_eq!(share.share.serialize().to_vec(), expected_ecdh,
-                        "Global ECDH share mismatch");
+                    assert_eq!(
+                        share.share.serialize().to_vec(),
+                        expected_ecdh,
+                        "Global ECDH share mismatch"
+                    );
 
                     if let Some(expected_proof) = &exp.dleq_proof {
                         let proof_bytes = hex_to_bytes(expected_proof);
-                        let proof_array: [u8; 64] = proof_bytes.try_into()
-                            .expect("DLEQ proof must be 64 bytes");
-                        assert_eq!(share.dleq_proof, Some(proof_array), "Global DLEQ proof mismatch");
+                        let proof_array: [u8; 64] =
+                            proof_bytes.try_into().expect("DLEQ proof must be 64 bytes");
+                        assert_eq!(
+                            share.dleq_proof,
+                            Some(proof_array),
+                            "Global DLEQ proof mismatch"
+                        );
                     }
 
                     found = true;
@@ -250,24 +272,35 @@ fn verify_ecdh_shares(psbt: &SilentPaymentPsbt, expected: &[EcdhShare]) {
             println!("      Global ECDH share verified");
         } else {
             // Check per-input ECDH share
-            let input_idx = exp.input_index.expect("Missing input_index for per-input share");
+            let input_idx = exp
+                .input_index
+                .expect("Missing input_index for per-input share");
             let shares = psbt.get_input_ecdh_shares(input_idx);
 
             // Find the share for this scan key
-            let share = shares.iter()
+            let share = shares
+                .iter()
                 .find(|s| s.scan_key == scan_key)
                 .expect("Missing per-input ECDH share");
 
             let expected_ecdh = hex_to_bytes(&exp.ecdh_result);
-            assert_eq!(share.share.serialize().to_vec(), expected_ecdh,
-                "Input {} ECDH share mismatch", input_idx);
+            assert_eq!(
+                share.share.serialize().to_vec(),
+                expected_ecdh,
+                "Input {} ECDH share mismatch",
+                input_idx
+            );
 
             if let Some(expected_proof) = &exp.dleq_proof {
                 let proof_bytes = hex_to_bytes(expected_proof);
-                let proof_array: [u8; 64] = proof_bytes.try_into()
-                    .expect("DLEQ proof must be 64 bytes");
-                assert_eq!(share.dleq_proof, Some(proof_array),
-                    "Input {} DLEQ proof mismatch", input_idx);
+                let proof_array: [u8; 64] =
+                    proof_bytes.try_into().expect("DLEQ proof must be 64 bytes");
+                assert_eq!(
+                    share.dleq_proof,
+                    Some(proof_array),
+                    "Input {} DLEQ proof mismatch",
+                    input_idx
+                );
             }
 
             println!("      Input {} ECDH share verified", input_idx);
@@ -283,8 +316,11 @@ fn verify_outputs(psbt: &SilentPaymentPsbt, expected: &[ExpectedOutput]) {
         // Verify amount (PSBT_OUT_AMOUNT)
         if let Some(amount_field) = psbt.get_output_field(exp.output_index, PSBT_OUT_AMOUNT) {
             let amount = u64::from_le_bytes(amount_field.value_data[0..8].try_into().unwrap());
-            assert_eq!(amount, exp.amount,
-                "Output {} amount mismatch", exp.output_index);
+            assert_eq!(
+                amount, exp.amount,
+                "Output {} amount mismatch",
+                exp.output_index
+            );
         } else {
             panic!("Missing PSBT_OUT_AMOUNT for output {}", exp.output_index);
         }
@@ -292,8 +328,11 @@ fn verify_outputs(psbt: &SilentPaymentPsbt, expected: &[ExpectedOutput]) {
         // Verify script (PSBT_OUT_SCRIPT)
         if let Some(script_field) = psbt.get_output_field(exp.output_index, PSBT_OUT_SCRIPT) {
             let expected_script = hex_to_bytes(&exp.script);
-            assert_eq!(script_field.value_data, expected_script,
-                "Output {} script mismatch", exp.output_index);
+            assert_eq!(
+                script_field.value_data, expected_script,
+                "Output {} script mismatch",
+                exp.output_index
+            );
         } else {
             panic!("Missing PSBT_OUT_SCRIPT for output {}", exp.output_index);
         }
@@ -302,28 +341,42 @@ fn verify_outputs(psbt: &SilentPaymentPsbt, expected: &[ExpectedOutput]) {
         if exp.is_silent_payment {
             if let Some(exp_info) = &exp.sp_info {
                 // Get SP_V0_INFO field (BIP-375 field type 0x09)
-                let sp_info_field = psbt.get_output_field(exp.output_index, PSBT_OUT_SP_V0_INFO)
+                let sp_info_field = psbt
+                    .get_output_field(exp.output_index, PSBT_OUT_SP_V0_INFO)
                     .expect("Missing PSBT_OUT_SP_V0_INFO for silent payment output");
 
                 let expected_info = hex_to_bytes(exp_info);
-                assert_eq!(sp_info_field.value_data, expected_info,
-                    "Output {} PSBT_OUT_SP_V0_INFO mismatch", exp.output_index);
+                assert_eq!(
+                    sp_info_field.value_data, expected_info,
+                    "Output {} PSBT_OUT_SP_V0_INFO mismatch",
+                    exp.output_index
+                );
 
                 // Note: Labels in the test vectors refer to BIP-352 labels within the silent payment address,
                 // not a separate PSBT field. The label is encoded in the silent payment address itself.
             }
         }
 
-        println!("      Output {} verified ({} sats, {})",
-            exp.output_index, exp.amount,
-            if exp.is_silent_payment { "silent payment" } else { "regular" });
+        println!(
+            "      Output {} verified ({} sats, {})",
+            exp.output_index,
+            exp.amount,
+            if exp.is_silent_payment {
+                "silent payment"
+            } else {
+                "regular"
+            }
+        );
     }
 }
 
 #[test]
 fn test_vector_file_exists() {
-    assert!(std::path::Path::new(TEST_VECTORS_FILE).exists(),
-        "Test vectors file not found: {}", TEST_VECTORS_FILE);
+    assert!(
+        std::path::Path::new(TEST_VECTORS_FILE).exists(),
+        "Test vectors file not found: {}",
+        TEST_VECTORS_FILE
+    );
 }
 
 #[test]
@@ -335,8 +388,15 @@ fn test_vector_count() {
     println!("Description: {}", vectors.description);
     println!("Invalid vectors: {}", vectors.invalid.len());
     println!("Valid vectors: {}", vectors.valid.len());
-    println!("Total vectors: {}", vectors.invalid.len() + vectors.valid.len());
+    println!(
+        "Total vectors: {}",
+        vectors.invalid.len() + vectors.valid.len()
+    );
 
-    assert_eq!(vectors.invalid.len(), 13, "Expected 13 invalid test vectors");
+    assert_eq!(
+        vectors.invalid.len(),
+        13,
+        "Expected 13 invalid test vectors"
+    );
     assert_eq!(vectors.valid.len(), 4, "Expected 4 valid test vectors");
 }

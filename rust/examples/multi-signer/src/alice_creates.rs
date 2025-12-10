@@ -44,7 +44,11 @@ pub fn alice_creates() -> Result<()> {
     println!("🔨 CONSTRUCTOR: Adding transaction inputs and outputs...");
     add_inputs(&mut psbt, &inputs)?;
     add_outputs(&mut psbt, &outputs)?;
-    println!("   Created PSBT with {} inputs and {} outputs", inputs.len(), outputs.len());
+    println!(
+        "   Created PSBT with {} inputs and {} outputs",
+        inputs.len(),
+        outputs.len()
+    );
 
     // Set Alice's private key for input 0
     let alice_private_key = get_alice_private_key();
@@ -71,7 +75,14 @@ pub fn alice_creates() -> Result<()> {
     let alice_controlled_inputs = [0];
 
     // Add ECDH shares for Alice's input
-    add_ecdh_shares_partial(&secp, &mut psbt, &inputs, &scan_keys, &alice_controlled_inputs, true)?;
+    add_ecdh_shares_partial(
+        &secp,
+        &mut psbt,
+        &inputs,
+        &scan_keys,
+        &alice_controlled_inputs,
+        true,
+    )?;
 
     // Sign Alice's input
     sign_inputs(&secp, &mut psbt, &inputs)?;
@@ -86,10 +97,16 @@ pub fn alice_creates() -> Result<()> {
             inputs_with_ecdh += 1;
         }
     }
-    println!("   ECDH Coverage: {}/{} inputs", inputs_with_ecdh, num_inputs);
+    println!(
+        "   ECDH Coverage: {}/{} inputs",
+        inputs_with_ecdh, num_inputs
+    );
     println!("   Covered inputs: {:?}", alice_controlled_inputs);
     let is_complete = inputs_with_ecdh == num_inputs;
-    println!("   Complete: {}", if is_complete { "  YES" } else { "❌ NO" });
+    println!(
+        "   Complete: {}",
+        if is_complete { "  YES" } else { "❌ NO" }
+    );
 
     // Save PSBT (uses memory storage in GUI mode, file storage in CLI mode)
     let mut metadata = PsbtMetadata::with_description("Alice created PSBT and processed input 0");

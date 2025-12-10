@@ -10,7 +10,9 @@ use secp256k1::PublicKey;
 
 /// Get the transaction ID (TXID) for an input
 pub fn get_input_txid(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<Txid> {
-    let input = psbt.inputs.get(input_idx)
+    let input = psbt
+        .inputs
+        .get(input_idx)
         .ok_or_else(|| Error::InvalidInputIndex(input_idx))?;
 
     // PSBT v2 inputs have explicit previous_txid field
@@ -19,7 +21,9 @@ pub fn get_input_txid(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<Txid
 
 /// Get the output index (vout) for an input
 pub fn get_input_vout(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<u32> {
-    let input = psbt.inputs.get(input_idx)
+    let input = psbt
+        .inputs
+        .get(input_idx)
         .ok_or_else(|| Error::InvalidInputIndex(input_idx))?;
 
     Ok(input.spent_output_index)
@@ -59,7 +63,9 @@ pub fn get_input_bip32_pubkeys(psbt: &SilentPaymentPsbt, input_idx: usize) -> Ve
 
 /// Get input public key from PSBT fields
 pub fn get_input_pubkey(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<PublicKey> {
-    let input = psbt.inputs.get(input_idx)
+    let input = psbt
+        .inputs
+        .get(input_idx)
         .ok_or_else(|| Error::InvalidInputIndex(input_idx))?;
 
     // Method 1: Extract from BIP32 derivation field (HIGHEST PRIORITY)
@@ -76,7 +82,7 @@ pub fn get_input_pubkey(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<Pu
         // We need to convert to secp256k1::PublicKey (even y)
         // bitcoin::XOnlyPublicKey has into_inner() -> secp256k1::XOnlyPublicKey
         let x_only = tap_key;
-        
+
         // Convert x-only to full pubkey (assumes even y - prefix 0x02)
         let mut pubkey_bytes = vec![0x02];
         pubkey_bytes.extend_from_slice(&x_only.serialize());
@@ -104,11 +110,9 @@ pub fn get_output_sp_keys(
     output_idx: usize,
 ) -> Result<(PublicKey, PublicKey)> {
     // Use the extension trait method via SilentPaymentPsbt wrapper
-    let address = psbt.get_output_sp_address(output_idx)
-        .ok_or_else(|| Error::MissingField(format!(
-            "Output {} missing PSBT_OUT_SP_V0_INFO",
-            output_idx
-        )))?;
+    let address = psbt.get_output_sp_address(output_idx).ok_or_else(|| {
+        Error::MissingField(format!("Output {} missing PSBT_OUT_SP_V0_INFO", output_idx))
+    })?;
 
     Ok((address.scan_key, address.spend_key))
 }

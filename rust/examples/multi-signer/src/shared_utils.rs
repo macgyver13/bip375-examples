@@ -11,10 +11,8 @@
 use bip375_core::{Output, OutputRecipient, SilentPaymentAddress, Utxo};
 use bip375_crypto::pubkey_to_p2wpkh_script;
 use bitcoin::{hashes::Hash, Amount, Sequence, Txid};
-use secp256k1::SecretKey;
 use common::SimpleWallet;
-
-
+use secp256k1::SecretKey;
 
 /// Get the silent payment recipient address (same for all signers)
 pub fn get_recipient_address() -> SilentPaymentAddress {
@@ -42,8 +40,11 @@ pub fn get_transaction_inputs() -> Vec<Utxo> {
     vec![
         // Alice's input (index 0)
         Utxo::new(
-            Txid::from_slice(&hex::decode("a1b2c3d4e5f6789012345678901234567890123456789012345678901234567a").unwrap())
-                .expect("valid txid"),
+            Txid::from_slice(
+                &hex::decode("a1b2c3d4e5f6789012345678901234567890123456789012345678901234567a")
+                    .unwrap(),
+            )
+            .expect("valid txid"),
             0,
             Amount::from_sat(100_000),
             pubkey_to_p2wpkh_script(&alice_pubkey),
@@ -52,8 +53,11 @@ pub fn get_transaction_inputs() -> Vec<Utxo> {
         ),
         // Bob's input (index 1)
         Utxo::new(
-            Txid::from_slice(&hex::decode("b1c2d3e4f5f6789012345678901234567890123456789012345678901234567b").unwrap())
-                .expect("valid txid"),
+            Txid::from_slice(
+                &hex::decode("b1c2d3e4f5f6789012345678901234567890123456789012345678901234567b")
+                    .unwrap(),
+            )
+            .expect("valid txid"),
             1,
             Amount::from_sat(150_000),
             pubkey_to_p2wpkh_script(&bob_pubkey),
@@ -62,8 +66,11 @@ pub fn get_transaction_inputs() -> Vec<Utxo> {
         ),
         // Charlie's input (index 2)
         Utxo::new(
-            Txid::from_slice(&hex::decode("c1d2e3f4f5f6789012345678901234567890123456789012345678901234567c").unwrap())
-                .expect("valid txid"),
+            Txid::from_slice(
+                &hex::decode("c1d2e3f4f5f6789012345678901234567890123456789012345678901234567c")
+                    .unwrap(),
+            )
+            .expect("valid txid"),
             2,
             Amount::from_sat(200_000),
             pubkey_to_p2wpkh_script(&charlie_pubkey),
@@ -136,9 +143,11 @@ pub fn print_scenario_overview() {
     let parties = ["Alice", "Bob", "Charlie"];
     for (i, (utxo, party)) in inputs.iter().zip(parties.iter()).enumerate() {
         println!("   Input {} ({}): {} sats", i, party, utxo.amount.to_sat());
-        println!("      TXID: {}...{}",
+        println!(
+            "      TXID: {}...{}",
             &utxo.txid.to_string()[..16],
-            &utxo.txid.to_string()[utxo.txid.to_string().len()-8..]);
+            &utxo.txid.to_string()[utxo.txid.to_string().len() - 8..]
+        );
         println!("      VOUT: {}", utxo.vout);
     }
 
@@ -150,9 +159,19 @@ pub fn print_scenario_overview() {
     for (i, output) in outputs.iter().enumerate() {
         match &output.recipient {
             OutputRecipient::SilentPayment(address) => {
-                println!("   Output {} (Silent Payment): {} sats", i, output.amount.to_sat());
-                println!("      Scan Key:  {}", hex::encode(address.scan_key.serialize()));
-                println!("      Spend Key: {}", hex::encode(address.spend_key.serialize()));
+                println!(
+                    "   Output {} (Silent Payment): {} sats",
+                    i,
+                    output.amount.to_sat()
+                );
+                println!(
+                    "      Scan Key:  {}",
+                    hex::encode(address.scan_key.serialize())
+                );
+                println!(
+                    "      Spend Key: {}",
+                    hex::encode(address.spend_key.serialize())
+                );
             }
             OutputRecipient::Address(script_pubkey) => {
                 println!("   Output {} (Change): {} sats", i, output.amount.to_sat());

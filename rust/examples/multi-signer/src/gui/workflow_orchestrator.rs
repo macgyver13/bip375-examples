@@ -6,7 +6,7 @@ use super::app_state::*;
 use crate::alice_creates::alice_creates;
 use crate::bob_signs::bob_signs;
 use crate::charlie_finalizes::charlie_finalizes;
-use bip375_core::{Bip375PsbtExt, {SilentPaymentPsbt}};
+use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
 use bip375_gui_common::psbt_analyzer;
 use common::load_psbt;
 
@@ -20,8 +20,7 @@ impl WorkflowOrchestrator {
         let before_psbt = state.current_psbt.clone();
 
         // Execute Alice's workflow
-        alice_creates()
-            .map_err(|e| format!("Alice creates failed: {}", e))?;
+        alice_creates().map_err(|e| format!("Alice creates failed: {}", e))?;
 
         // Load the PSBT and update state
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
@@ -38,8 +37,7 @@ impl WorkflowOrchestrator {
         let before_psbt = state.current_psbt.clone();
 
         // Execute Bob's workflow
-        bob_signs()
-            .map_err(|e| format!("Bob signs failed: {}", e))?;
+        bob_signs().map_err(|e| format!("Bob signs failed: {}", e))?;
 
         // Load the PSBT and update state
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
@@ -56,8 +54,7 @@ impl WorkflowOrchestrator {
         let before_psbt = state.current_psbt.clone();
 
         // Execute Charlie's workflow
-        charlie_finalizes()
-            .map_err(|e| format!("Charlie finalizes failed: {}", e))?;
+        charlie_finalizes().map_err(|e| format!("Charlie finalizes failed: {}", e))?;
 
         // Load the PSBT and update state
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
@@ -131,9 +128,10 @@ impl WorkflowOrchestrator {
         let dleq_proofs_valid = input_states.iter().all(|s| s.has_dleq_proof);
 
         // Check if output scripts have been computed (outputs have script_pubkey set)
-        let output_scripts_computed = psbt.outputs.iter().any(|output| {
-            !output.script_pubkey.is_empty()
-        });
+        let output_scripts_computed = psbt
+            .outputs
+            .iter()
+            .any(|output| !output.script_pubkey.is_empty());
 
         // Check if transaction has been extracted (TX_MODIFIABLE flag in global)
         let transaction_extracted = psbt.global.tx_modifiable_flags == 0;
@@ -147,10 +145,12 @@ impl WorkflowOrchestrator {
     }
 
     /// Load PSBT and update state
-    pub fn load_psbt_and_update(state: &mut AppState, before_psbt: Option<&SilentPaymentPsbt>) -> Result<(), String> {
+    pub fn load_psbt_and_update(
+        state: &mut AppState,
+        before_psbt: Option<&SilentPaymentPsbt>,
+    ) -> Result<(), String> {
         // Load PSBT from transfer file
-        let (psbt, _metadata) = load_psbt()
-            .map_err(|e| format!("Failed to load PSBT: {}", e))?;
+        let (psbt, _metadata) = load_psbt().map_err(|e| format!("Failed to load PSBT: {}", e))?;
 
         // Compute new fields
         let new_fields = psbt_analyzer::compute_field_diff(before_psbt, &psbt);

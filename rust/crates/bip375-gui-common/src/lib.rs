@@ -26,11 +26,11 @@
 //! }
 //! ```
 
+pub mod display_adapter;
 pub mod display_formatting;
 pub mod field_identifier;
 pub mod psbt_analyzer;
 pub mod psbt_io;
-pub mod display_adapter;
 
 // Re-export commonly used types
 pub use field_identifier::{FieldIdentifier, PsbtSnapshot, TransactionSummary};

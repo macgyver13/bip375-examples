@@ -15,13 +15,13 @@
 //! - Input 1:   Bob (ECDH + signature)
 //! - Input 2:   Waiting for Charlie
 
+use crate::shared_utils::*;
 use bip375_core::{Bip375PsbtExt, Result};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     signer::{add_ecdh_shares_partial, sign_inputs},
     validation::{validate_psbt, ValidationLevel},
 };
-use crate::shared_utils::*;
 use common::{load_psbt, save_psbt};
 use secp256k1::Secp256k1;
 
@@ -59,7 +59,10 @@ pub fn bob_signs() -> Result<()> {
             inputs_with_ecdh_before += 1;
         }
     }
-    println!("   ECDH Coverage: {}/{} inputs", inputs_with_ecdh_before, num_inputs);
+    println!(
+        "   ECDH Coverage: {}/{} inputs",
+        inputs_with_ecdh_before, num_inputs
+    );
 
     let secp = Secp256k1::new();
 
@@ -84,7 +87,14 @@ pub fn bob_signs() -> Result<()> {
     let bob_controlled_inputs = [1];
 
     // Add ECDH shares for Bob's input
-    add_ecdh_shares_partial(&secp, &mut psbt, &inputs, &scan_keys, &bob_controlled_inputs, true)?;
+    add_ecdh_shares_partial(
+        &secp,
+        &mut psbt,
+        &inputs,
+        &scan_keys,
+        &bob_controlled_inputs,
+        true,
+    )?;
 
     // Sign Bob's input
     sign_inputs(&secp, &mut psbt, &inputs)?;
@@ -98,13 +108,20 @@ pub fn bob_signs() -> Result<()> {
             inputs_with_ecdh_after += 1;
         }
     }
-    println!("   ECDH Coverage: {}/{} inputs", inputs_with_ecdh_after, num_inputs);
+    println!(
+        "   ECDH Coverage: {}/{} inputs",
+        inputs_with_ecdh_after, num_inputs
+    );
     println!("   Covered inputs: [0, 1]");
     let is_complete = inputs_with_ecdh_after == num_inputs;
-    println!("   Complete: {}", if is_complete { "  YES" } else { "❌ NO" });
+    println!(
+        "   Complete: {}",
+        if is_complete { "  YES" } else { "❌ NO" }
+    );
 
     // Save PSBT to files
-    let mut metadata = PsbtMetadata::with_description("Bob verified Alice's work and processed input 1");
+    let mut metadata =
+        PsbtMetadata::with_description("Bob verified Alice's work and processed input 1");
     metadata.set_counts(num_inputs, psbt.num_outputs());
     metadata.update_timestamps();
 

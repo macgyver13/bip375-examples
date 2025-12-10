@@ -1,10 +1,10 @@
+use bip375_core::SilentPaymentPsbt;
+use bip375_io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
+use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
-use bip375_io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
-use bip375_core::SilentPaymentPsbt;
-use std::cell::RefCell;
 
 /// File paths for PSBT transfer
 pub const TRANSFER_FILE: &str = "output/transfer.json";
@@ -28,10 +28,10 @@ thread_local! {
 /// Save PSBT wrapper - uses memory for GUI, files for CLI
 pub fn save_psbt(
     psbt: &SilentPaymentPsbt,
-    metadata: Option<PsbtMetadata>
+    metadata: Option<PsbtMetadata>,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
-    
+
     if use_memory {
         // Store in thread-local memory
         PSBT_MEMORY.with(|pm| {
@@ -48,9 +48,10 @@ pub fn save_psbt(
 }
 
 /// Load PSBT wrapper - uses memory for GUI, files for CLI
-pub fn load_psbt() -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), Box<dyn std::error::Error>> {
+pub fn load_psbt() -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), Box<dyn std::error::Error>>
+{
     let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
-    
+
     if use_memory {
         // Load from thread-local memory
         PSBT_MEMORY.with(|pm| {
@@ -142,13 +143,11 @@ impl SimpleWallet {
         (spend_privkey, spend_pubkey)
     }
 
-
     /// Get scan and spend public keys (convenience method)
     pub fn scan_spend_keys(&self) -> (PublicKey, PublicKey) {
         (self.scan_key_pair().1, self.spend_key_pair().1)
     }
 }
-
 
 /// Verify a file exists
 pub fn verify_file_exists(filename: &str) -> Result<(), String> {
