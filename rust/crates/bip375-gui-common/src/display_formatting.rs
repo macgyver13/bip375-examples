@@ -36,14 +36,16 @@ pub enum FieldCategory {
 pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str {
     match category {
         FieldCategory::Global => match field_type {
-            0x00 => "PSBT_GLOBAL_XPUB",
-            0x01 => "PSBT_GLOBAL_TX_VERSION",
-            0x02 => "PSBT_GLOBAL_FALLBACK_LOCKTIME",
-            0x03 => "PSBT_GLOBAL_INPUT_COUNT",
-            0x04 => "PSBT_GLOBAL_OUTPUT_COUNT",
-            0x05 => "PSBT_GLOBAL_TX_MODIFIABLE",
-            0x06 => "PSBT_GLOBAL_VERSION",
+            0x01 => "PSBT_GLOBAL_XPUB",
+            0x02 => "PSBT_GLOBAL_TX_VERSION",
+            0x03 => "PSBT_GLOBAL_FALLBACK_LOCKTIME",
+            0x04 => "PSBT_GLOBAL_INPUT_COUNT",
+            0x05 => "PSBT_GLOBAL_OUTPUT_COUNT",
+            0x06 => "PSBT_GLOBAL_TX_MODIFIABLE",
             0x07 => "PSBT_GLOBAL_SP_ECDH_SHARE",  // BIP-375
+            0x08 => "PSBT_GLOBAL_SP_DLEQ",        // BIP-375
+            0xfb => "PSBT_GLOBAL_VERSION",
+            0xfc => "PSBT_GLOBAL_PROPRIETARY",
             _ => "PSBT_GLOBAL_UNKNOWN",
         },
         FieldCategory::Input => match field_type {
@@ -77,6 +79,7 @@ pub fn field_type_name(category: FieldCategory, field_type: u8) -> &'static str 
             0x1c => "PSBT_IN_MUSIG2_PARTIAL_SIG",
             0x1d => "PSBT_IN_SP_ECDH_SHARE",  // BIP-375
             0x1e => "PSBT_IN_SP_DLEQ",        // BIP-375
+            0x1f => "PSBT_IN_SP_TWEAK",
             _ => "PSBT_IN_UNKNOWN",
         },
         FieldCategory::Output => match field_type {

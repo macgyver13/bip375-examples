@@ -13,9 +13,9 @@
 
 use crate::{
     error::{Error, Result},
-    types::{EcdhShare, SilentPaymentAddress},
+    types::{EcdhShareData, SilentPaymentAddress},
 };
-use psbt_v2::{raw::Key, v2::Psbt};
+use psbt_v2::{raw::Key, v2::{bip375::{DleqProof, EcdhShare, ScanKey}, Psbt}};
 use secp256k1::PublicKey;
 
 /// Extension trait for BIP-375 silent payment fields on PSBT v2
@@ -32,13 +32,13 @@ pub trait Bip375PsbtExt {
     ///
     /// Global shares are used when one party knows all input private keys.
     /// Field type: PSBT_GLOBAL_SP_ECDH_SHARE (0x07)
-    fn get_global_ecdh_shares(&self) -> Vec<EcdhShare>;
+    fn get_global_ecdh_shares(&self) -> Vec<EcdhShareData>;
 
     /// Add a global ECDH share
     ///
     /// # Arguments
     /// * `share` - The ECDH share to add
-    fn add_global_ecdh_share(&mut self, share: &EcdhShare) -> Result<()>;
+    fn add_global_ecdh_share(&mut self, share: &EcdhShareData) -> Result<()>;
 
     // ===== Per-Input ECDH Shares =====
 
@@ -49,14 +49,14 @@ pub trait Bip375PsbtExt {
     ///
     /// # Arguments
     /// * `input_index` - Index of the input
-    fn get_input_ecdh_shares(&self, input_index: usize) -> Vec<EcdhShare>;
+    fn get_input_ecdh_shares(&self, input_index: usize) -> Vec<EcdhShareData>;
 
     /// Add an ECDH share to a specific input
     ///
     /// # Arguments
     /// * `input_index` - Index of the input
     /// * `share` - The ECDH share to add
-    fn add_input_ecdh_share(&mut self, input_index: usize, share: &EcdhShare) -> Result<()>;
+    fn add_input_ecdh_share(&mut self, input_index: usize, share: &EcdhShareData) -> Result<()>;
 
     // ===== DLEQ Proofs =====
 
@@ -180,15 +180,15 @@ pub trait Bip375PsbtExt {
 }
 
 impl Bip375PsbtExt for Psbt {
-    fn get_global_ecdh_shares(&self) -> Vec<EcdhShare> {
+    fn get_global_ecdh_shares(&self) -> Vec<EcdhShareData> {
         let mut shares = Vec::new();
 
-        for (scan_key_bytes, share_bytes) in &self.global.sp_ecdh_shares {
-            if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes) {
-                if let Ok(share_point) = PublicKey::from_slice(share_bytes) {
+        for (scan_key, share_bytes) in &self.global.sp_ecdh_shares {
+            if let Ok(scan_key_pk) = PublicKey::from_slice(scan_key.as_ref()) {
+                if let Ok(share_point) = PublicKey::from_slice(share_bytes.as_ref()) {
                     // Look for corresponding DLEQ proof
-                    let dleq_proof = self.get_global_dleq_proof(&scan_key);
-                    shares.push(EcdhShare::new(scan_key, share_point, dleq_proof));
+                    let dleq_proof = self.get_global_dleq_proof(&scan_key_pk);
+                    shares.push(EcdhShareData::new(scan_key_pk, share_point, dleq_proof));
                 }
             }
         }
@@ -196,11 +196,11 @@ impl Bip375PsbtExt for Psbt {
         shares
     }
 
-    fn add_global_ecdh_share(&mut self, share: &EcdhShare) -> Result<()> {
-        self.global.sp_ecdh_shares.insert(
-            share.scan_key.serialize().to_vec(),
-            share.share.serialize().to_vec(),
-        );
+    fn add_global_ecdh_share(&mut self, share: &EcdhShareData) -> Result<()> {
+        let scan_key = ScanKey::new(share.scan_key.serialize());
+        let ecdh_share = EcdhShare::new(share.share.serialize());
+
+        self.global.sp_ecdh_shares.insert(scan_key, ecdh_share);
 
         // Add DLEQ proof if present
         if let Some(proof) = share.dleq_proof {
@@ -210,21 +210,21 @@ impl Bip375PsbtExt for Psbt {
         Ok(())
     }
 
-    fn get_input_ecdh_shares(&self, input_index: usize) -> Vec<EcdhShare> {
+    fn get_input_ecdh_shares(&self, input_index: usize) -> Vec<EcdhShareData> {
         let Some(input) = self.inputs.get(input_index) else {
             return Vec::new();
         };
 
         let mut shares = Vec::new();
 
-        for (scan_key_bytes, share_bytes) in &input.sp_ecdh_shares {
-            if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes) {
-                if let Ok(share_point) = PublicKey::from_slice(share_bytes) {
+        for (scan_key, share_bytes) in &input.sp_ecdh_shares {
+            if let Ok(scan_key_pk) = PublicKey::from_slice(scan_key.as_ref()) {
+                if let Ok(share_point) = PublicKey::from_slice(share_bytes.as_ref()) {
                     // Look for DLEQ proof (input-specific or global)
                     let dleq_proof = self
-                        .get_input_dleq_proof(input_index, &scan_key)
-                        .or_else(|| self.get_global_dleq_proof(&scan_key));
-                    shares.push(EcdhShare::new(scan_key, share_point, dleq_proof));
+                        .get_input_dleq_proof(input_index, &scan_key_pk)
+                        .or_else(|| self.get_global_dleq_proof(&scan_key_pk));
+                    shares.push(EcdhShareData::new(scan_key_pk, share_point, dleq_proof));
                 }
             }
         }
@@ -232,16 +232,16 @@ impl Bip375PsbtExt for Psbt {
         shares
     }
 
-    fn add_input_ecdh_share(&mut self, input_index: usize, share: &EcdhShare) -> Result<()> {
+    fn add_input_ecdh_share(&mut self, input_index: usize, share: &EcdhShareData) -> Result<()> {
         let input = self
             .inputs
             .get_mut(input_index)
             .ok_or(Error::InvalidInputIndex(input_index))?;
 
-        input.sp_ecdh_shares.insert(
-            share.scan_key.serialize().to_vec(),
-            share.share.serialize().to_vec(),
-        );
+        let scan_key = ScanKey::new(share.scan_key.serialize());
+        let ecdh_share = EcdhShare::new(share.share.serialize());
+
+        input.sp_ecdh_shares.insert(scan_key, ecdh_share);
 
         // Add DLEQ proof if present
         if let Some(proof) = share.dleq_proof {
@@ -252,23 +252,15 @@ impl Bip375PsbtExt for Psbt {
     }
 
     fn get_global_dleq_proof(&self, scan_key: &PublicKey) -> Option<[u8; 64]> {
-        let scan_key_bytes = scan_key.serialize().to_vec();
-        self.global.sp_dleq_proofs.get(&scan_key_bytes).and_then(|value| {
-            if value.len() == 64 {
-                let mut proof = [0u8; 64];
-                proof.copy_from_slice(value);
-                Some(proof)
-            } else {
-                None
-            }
-        })
+        let scan_key_typed = ScanKey::new(scan_key.serialize());
+        self.global.sp_dleq_proofs.get(&scan_key_typed).map(|proof| *proof.as_bytes())
     }
 
     fn add_global_dleq_proof(&mut self, scan_key: &PublicKey, proof: [u8; 64]) -> Result<()> {
-        self.global.sp_dleq_proofs.insert(
-            scan_key.serialize().to_vec(),
-            proof.to_vec(),
-        );
+        let scan_key_typed = ScanKey::new(scan_key.serialize());
+        let dleq_proof = DleqProof::new(proof);
+
+        self.global.sp_dleq_proofs.insert(scan_key_typed, dleq_proof);
 
         Ok(())
     }
@@ -279,17 +271,9 @@ impl Bip375PsbtExt for Psbt {
         scan_key: &PublicKey,
     ) -> Option<[u8; 64]> {
         let input = self.inputs.get(input_index)?;
-        let scan_key_bytes = scan_key.serialize().to_vec();
+        let scan_key_typed = ScanKey::new(scan_key.serialize());
 
-        if let Some(value) = input.sp_dleq_proofs.get(&scan_key_bytes) {
-            if value.len() == 64 {
-                let mut proof = [0u8; 64];
-                proof.copy_from_slice(value);
-                return Some(proof);
-            }
-        }
-
-        None
+        input.sp_dleq_proofs.get(&scan_key_typed).map(|proof| *proof.as_bytes())
     }
 
     fn add_input_dleq_proof(
@@ -303,10 +287,10 @@ impl Bip375PsbtExt for Psbt {
             .get_mut(input_index)
             .ok_or(Error::InvalidInputIndex(input_index))?;
 
-        input.sp_dleq_proofs.insert(
-            scan_key.serialize().to_vec(),
-            proof.to_vec(),
-        );
+        let scan_key_typed = ScanKey::new(scan_key.serialize());
+        let dleq_proof = DleqProof::new(proof);
+
+        input.sp_dleq_proofs.insert(scan_key_typed, dleq_proof);
 
         Ok(())
     }
@@ -549,13 +533,13 @@ impl GlobalFieldsExt for psbt_v2::v2::Global {
         // PSBT_GLOBAL_SP_ECDH_SHARE = 0x07 - BIP-375, can have multiple entries
         for (scan_key, ecdh_share) in &self.sp_ecdh_shares {
             let field_type = 0x07;
-            fields.push((field_type, scan_key.clone(), ecdh_share.clone()));
+            fields.push((field_type, scan_key.to_vec(), ecdh_share.to_vec()));
         }
 
         // PSBT_GLOBAL_SP_DLEQ = 0x08 - BIP-375, can have multiple entries
         for (scan_key, dleq_proof) in &self.sp_dleq_proofs {
             let field_type = 0x08;
-            fields.push((field_type, scan_key.clone(), dleq_proof.clone()));
+            fields.push((field_type, scan_key.to_vec(), dleq_proof.to_vec()));
         }
 
         // PSBT_GLOBAL_VERSION = 0xFB - Always present
@@ -709,13 +693,13 @@ impl InputFieldsExt for psbt_v2::v2::Input {
         // PSBT_IN_SP_ECDH_SHARE (0x1d) - BIP-375, multiple entries possible
         for (scan_key, ecdh_share) in &self.sp_ecdh_shares {
             let field_type = 0x1d;
-            fields.push((field_type, scan_key.clone(), ecdh_share.clone()));
+            fields.push((field_type, scan_key.to_vec(), ecdh_share.to_vec()));
         }
 
         // PSBT_IN_SP_DLEQ (0x1e) - BIP-375, multiple entries possible
         for (scan_key, dleq_proof) in &self.sp_dleq_proofs {
             let field_type = 0x1e;
-            fields.push((field_type, scan_key.clone(), dleq_proof.clone()));
+            fields.push((field_type, scan_key.to_vec(), dleq_proof.to_vec()));
         }
 
         // PSBT_IN_PROPRIETARY (0xFC) - Multiple entries possible
@@ -856,7 +840,7 @@ mod tests {
         let share_point =
             PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[2u8; 32]).unwrap());
 
-        let share = EcdhShare::without_proof(scan_key, share_point);
+        let share = EcdhShareData::without_proof(scan_key, share_point);
 
         // Add share
         psbt.add_global_ecdh_share(&share).unwrap();

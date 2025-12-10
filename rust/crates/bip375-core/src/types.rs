@@ -73,7 +73,7 @@ impl SilentPaymentAddress {
 
 /// ECDH share for a silent payment output
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EcdhShare {
+pub struct EcdhShareData {
     /// Scan public key this share is for (33 bytes)
     pub scan_key: PublicKey,
     /// ECDH share value (33 bytes compressed public key)
@@ -82,7 +82,7 @@ pub struct EcdhShare {
     pub dleq_proof: Option<[u8; 64]>,
 }
 
-impl EcdhShare {
+impl EcdhShareData {
     /// Create a new ECDH share
     pub fn new(scan_key: PublicKey, share: PublicKey, dleq_proof: Option<[u8; 64]>) -> Self {
         Self {
@@ -280,9 +280,9 @@ mod tests {
         let scan_key = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[1u8; 32]).unwrap());
         let share = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[2u8; 32]).unwrap());
 
-        let ecdh = EcdhShare::without_proof(scan_key, share);
+        let ecdh = EcdhShareData::without_proof(scan_key, share);
         let bytes = ecdh.to_bytes();
-        let decoded = EcdhShare::from_bytes(&bytes).unwrap();
+        let decoded = EcdhShareData::from_bytes(&bytes).unwrap();
 
         assert_eq!(ecdh.scan_key, decoded.scan_key);
         assert_eq!(ecdh.share, decoded.share);

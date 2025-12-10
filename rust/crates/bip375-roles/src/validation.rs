@@ -431,7 +431,7 @@ mod tests {
     
     #[test]
     fn test_validate_ecdh_coverage() {
-        use bip375_core::{Bip375PsbtExt, EcdhShare};
+        use bip375_core::{Bip375PsbtExt, EcdhShareData};
 
         let secp = Secp256k1::new();
         let mut psbt = create_psbt(2, 1).unwrap(); // 2 inputs, 1 output
@@ -465,7 +465,7 @@ mod tests {
             let mut psbt_global = psbt.clone();
             // Create a dummy share
             let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
-            let share = EcdhShare::without_proof(scan_pub, share_point);
+            let share = EcdhShareData::without_proof(scan_pub, share_point);
             psbt_global.add_global_ecdh_share(&share).unwrap();
             
             assert!(validate_ecdh_coverage(&psbt_global).is_ok());
@@ -475,7 +475,7 @@ mod tests {
         {
             let mut psbt_inputs = psbt.clone();
             let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
-            let share = EcdhShare::without_proof(scan_pub, share_point);
+            let share = EcdhShareData::without_proof(scan_pub, share_point);
             
             // Add to all inputs
             for i in 0..psbt_inputs.num_inputs() {
@@ -489,7 +489,7 @@ mod tests {
         {
             let mut psbt_partial = psbt.clone();
             let share_point = PublicKey::from_secret_key(&secp, &SecretKey::from_slice(&[4u8; 32]).unwrap());
-            let share = EcdhShare::without_proof(scan_pub, share_point);
+            let share = EcdhShareData::without_proof(scan_pub, share_point);
             
             // Add to only first input
             psbt_partial.add_input_ecdh_share(0, &share).unwrap();

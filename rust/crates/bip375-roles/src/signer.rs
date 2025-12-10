@@ -2,7 +2,7 @@
 //!
 //! Adds ECDH shares and signatures to the PSBT.
 
-use bip375_core::{Error, Result, SilentPaymentPsbt, Utxo, Bip375PsbtExt, types::EcdhShare};
+use bip375_core::{Error, Result, SilentPaymentPsbt, Utxo, Bip375PsbtExt, EcdhShareData};
 use bip375_crypto::{compute_ecdh_share, dleq_generate_proof, sign_p2wpkh_input};
 use bitcoin::ScriptBuf;
 use secp256k1::{PublicKey, Secp256k1};
@@ -33,7 +33,7 @@ pub fn add_ecdh_shares_full(
                 None
             };
             
-            let ecdh_share = EcdhShare::new(*scan_key, share_point, dleq_proof);
+            let ecdh_share = EcdhShareData::new(*scan_key, share_point, dleq_proof);
             psbt.add_input_ecdh_share(input_idx, &ecdh_share)?;
         }
     }
@@ -72,7 +72,7 @@ pub fn add_ecdh_shares_partial(
                 None
             };
 
-            let ecdh_share = EcdhShare::new(*scan_key, share_point, dleq_proof);
+            let ecdh_share = EcdhShareData::new(*scan_key, share_point, dleq_proof);
             psbt.add_input_ecdh_share(input_idx, &ecdh_share)?;
         }
     }

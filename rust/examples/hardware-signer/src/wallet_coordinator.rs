@@ -187,13 +187,13 @@ impl WalletCoordinator {
         // Collect scan keys from input DLEQ proofs
         psbt.inputs.iter().for_each(|input| {
             for key in input.sp_dleq_proofs.keys() {
-                found_scan_keys.insert(key.clone());
+                found_scan_keys.insert(key.to_vec());
             }
         });
 
         // Collect scan keys from global DLEQ proofs
         for scan_key_bytes in psbt.global.sp_dleq_proofs.keys() {
-            if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes) {
+            if let Ok(scan_key) = PublicKey::from_slice(scan_key_bytes.as_ref()) {
                 found_scan_keys.insert(scan_key.serialize().to_vec());
             }
         }
