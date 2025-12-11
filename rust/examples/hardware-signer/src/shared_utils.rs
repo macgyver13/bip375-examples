@@ -477,3 +477,64 @@ pub fn validate_dnssec_proof(proof_bytes: &[u8]) -> Result<(String, Vec<String>)
 
     Ok((dns_name, txt_records))
 }
+
+// =============================================================================
+// Silent Payment Tweak Storage (for spending)
+// =============================================================================
+
+use bitcoin::OutPoint;
+use std::collections::HashMap;
+
+/// Mock tweak database (simulates wallet scanning results)
+///
+/// In a real wallet implementation, this would be a persistent database
+/// that stores tweaks alongside UTXOs after scanning the blockchain.
+pub struct TweakDatabase {
+    tweaks: HashMap<OutPoint, [u8; 32]>,
+}
+
+impl TweakDatabase {
+    pub fn new() -> Self {
+        Self {
+            tweaks: HashMap::new(),
+        }
+    }
+
+    pub fn store(&mut self, outpoint: OutPoint, tweak: [u8; 32]) {
+        self.tweaks.insert(outpoint, tweak);
+    }
+
+    pub fn get(&self, outpoint: &OutPoint) -> Option<[u8; 32]> {
+        self.tweaks.get(outpoint).copied()
+    }
+
+    /// Create demo data for testing silent payment spending
+    ///
+    /// This simulates a wallet that has previously scanned the blockchain
+    /// and detected silent payment outputs, storing their tweaks for later spending.
+    pub fn demo() -> Self {
+        let mut db = Self::new();
+
+        // Mock: Previously scanned SP output with known tweak
+        // In production, this tweak would be: hash_BIP0352/SharedSecret(ecdh_secret || k)
+        // Using the same txid as input 0 in create_transaction_inputs()
+        let demo_outpoint = OutPoint {
+            txid: Txid::from_slice(
+                &hex::decode("a1b2c3d4e5f6789012345678901234567890123456789012345678901234567a")
+                    .unwrap(),
+            )
+            .expect("valid txid"),
+            vout: 0,
+        };
+        let demo_tweak = [0x11u8; 32]; // Mock tweak from scanning
+        db.store(demo_outpoint, demo_tweak);
+
+        db
+    }
+}
+
+impl Default for TweakDatabase {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -8,7 +8,7 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt};
+use bip375_core::{OutputRecipient, SilentPaymentPsbt};
 use bip375_gui_common::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
@@ -300,18 +300,51 @@ impl HardwareDevice {
             true, // generate DLEQ proofs
         )?;
 
-        // Sign inputs
+        // Sign inputs (legacy P2WPKH)
         sign_inputs(&secp, &mut psbt, &inputs)?;
 
+        // HARDWARE SIGNER: Sign silent payment inputs (Taproot with tweaks)
+        //
+        // This demonstrates spending silent payment outputs received by this wallet.
+        // The hardware device applies the tweak from PSBT_IN_SP_TWEAK to its spend key
+        // and creates a BIP-340 Schnorr signature.
+        use bip375_core::Bip375PsbtExt;
+        use bip375_roles::sp_spender::sign_silent_payment_inputs;
+
+        // Identify which inputs have SP tweaks
+        let mut sp_input_indices = Vec::new();
+        for idx in 0..inputs.len() {
+            if psbt.get_input_sp_tweak(idx).is_some() {
+                sp_input_indices.push(idx);
+            }
+        }
+
+        if !sp_input_indices.is_empty() {
+            let (spend_privkey, _) = hw_wallet.spend_key_pair();
+
+            sign_silent_payment_inputs(&secp, &mut psbt, &spend_privkey, &sp_input_indices)?;
+
+            println!("\n     Silent Payment Spending:");
+            println!(
+                "       Found {} SP input(s): {:?}",
+                sp_input_indices.len(),
+                sp_input_indices
+            );
+            println!("       Applied tweaks to spend key");
+            println!("       Created BIP-340 Schnorr signatures");
+            println!("       Note: PSBT_IN_SP_TWEAK retained (removal policy TBD)");
+        }
+
         if attack_mode {
-            println!("   🚨 ECDH shares computed with MALICIOUS scan key");
+            println!("\n   🚨 ECDH shares computed with MALICIOUS scan key");
             println!("   🚨 DLEQ proofs generated for WRONG scan key");
-            println!("   ✓  Inputs signed with correct private keys\n");
+            println!("   ✓  Inputs signed with correct private keys");
             println!("   Attack attempt complete - coordinator should reject this!");
         } else {
-            println!("     ECDH shares computed");
-            println!("     DLEQ proofs generated");
-            println!("     Inputs signed");
+            println!("\n     Standard Signing:");
+            println!("       ECDH shares computed");
+            println!("       DLEQ proofs generated");
+            println!("       P2WPKH inputs signed");
         }
 
         // Check ECDH coverage

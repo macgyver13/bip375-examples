@@ -8,7 +8,6 @@
 //! - Finalizes and extracts transactions
 
 use crate::shared_utils::*;
-use bip375_core::Bip375PsbtExt;
 use bip375_gui_common::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
@@ -55,6 +54,39 @@ impl WalletCoordinator {
             inputs.len(),
             outputs.len()
         );
+
+        // UPDATER ROLE: Add silent payment tweaks for spending (if any)
+        //
+        // This demonstrates spending silent payment outputs. The wallet coordinator
+        // maintains a database of tweaks discovered during blockchain scanning.
+        // When spending a silent payment UTXO, the coordinator adds PSBT_IN_SP_TWEAK
+        // so the hardware signer can apply the tweak to its spend key.
+        use crate::shared_utils::TweakDatabase;
+        use bip375_core::Bip375PsbtExt;
+
+        let tweak_db = TweakDatabase::demo(); // In production: read from wallet database
+        let mut sp_input_count = 0;
+
+        for (input_idx, utxo) in inputs.iter().enumerate() {
+            let outpoint = bitcoin::OutPoint {
+                txid: utxo.txid,
+                vout: utxo.vout,
+            };
+
+            // Check if this input is a silent payment output we previously received
+            if let Some(tweak) = tweak_db.get(&outpoint) {
+                psbt.set_input_sp_tweak(input_idx, tweak)?;
+                sp_input_count += 1;
+            }
+        }
+
+        if sp_input_count > 0 {
+            println!(
+                "  UPDATER: Added {} PSBT_IN_SP_TWEAK field(s) for spending",
+                sp_input_count
+            );
+            println!("   Note: Tweaks were stored during wallet scanning\n");
+        }
 
         // Add BIP-353 DNSSEC proof to recipient output (Output 1)
         //

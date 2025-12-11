@@ -13,6 +13,7 @@ pub mod creator;
 pub mod extractor;
 pub mod input_finalizer;
 pub mod signer;
+pub mod sp_spender;
 pub mod updater;
 pub mod validation;
 
@@ -21,5 +22,6 @@ pub use creator::*;
 pub use extractor::*;
 pub use input_finalizer::*;
 pub use signer::*;
+pub use sp_spender::*;
 pub use updater::*;
 pub use validation::*;

@@ -139,6 +139,63 @@ pub fn compute_ecdh_share(
     Ok(shared)
 }
 
+/// Apply tweak to spend private key for spending silent payment output
+///
+/// Computes: tweaked_privkey = spend_privkey + tweak
+///
+/// This is used by hardware signers to apply the output-specific tweak
+/// to the spend private key before signing.
+pub fn apply_tweak_to_privkey(spend_privkey: &SecretKey, tweak: &[u8; 32]) -> Result<SecretKey> {
+    let tweak_scalar = Scalar::from_be_bytes(*tweak)
+        .map_err(|_| CryptoError::Other("Invalid tweak scalar".to_string()))?;
+
+    let mut tweaked = *spend_privkey;
+    tweaked = tweaked
+        .add_tweak(&tweak_scalar)
+        .map_err(|e| CryptoError::Other(format!("Failed to apply tweak: {}", e)))?;
+
+    Ok(tweaked)
+}
+
+/// Sign a Taproot input with BIP-340 Schnorr signature
+///
+/// Creates a key path spend signature for a tweaked silent payment output.
+///
+/// # Arguments
+/// * `secp` - Secp256k1 context
+/// * `tx` - The transaction being signed
+/// * `input_index` - Index of the input to sign
+/// * `prevouts` - All previous outputs (needed for Taproot sighash)
+/// * `tweaked_privkey` - The private key with tweak already applied
+pub fn sign_p2tr_input(
+    secp: &Secp256k1<secp256k1::All>,
+    tx: &bitcoin::Transaction,
+    input_index: usize,
+    prevouts: &[bitcoin::TxOut],
+    tweaked_privkey: &SecretKey,
+) -> Result<bitcoin::taproot::Signature> {
+    use bitcoin::sighash::{Prevouts, SighashCache, TapSighashType};
+
+    let mut sighash_cache = SighashCache::new(tx);
+
+    let sighash = sighash_cache
+        .taproot_key_spend_signature_hash(
+            input_index,
+            &Prevouts::All(prevouts),
+            TapSighashType::Default,
+        )
+        .map_err(|e| CryptoError::Other(format!("Taproot sighash: {}", e)))?;
+
+    let message = secp256k1::Message::from_digest(sighash.to_byte_array());
+    let keypair = secp256k1::Keypair::from_secret_key(secp, tweaked_privkey);
+    let sig = secp.sign_schnorr_no_aux_rand(&message, &keypair);
+
+    Ok(bitcoin::taproot::Signature {
+        signature: sig,
+        sighash_type: TapSighashType::Default,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -137,6 +137,31 @@ pub trait Bip375PsbtExt {
     /// * `label` - The label value
     fn set_output_sp_label(&mut self, output_index: usize, label: u32) -> Result<()>;
 
+    // ===== Silent Payment Spending =====
+
+    /// Get silent payment tweak for an input
+    ///
+    /// Returns the 32-byte tweak that should be added to the spend private key
+    /// to spend this silent payment output.
+    ///
+    /// Field type: PSBT_IN_SP_TWEAK (0x19)
+    ///
+    /// # Arguments
+    /// * `input_index` - Index of the input
+    fn get_input_sp_tweak(&self, input_index: usize) -> Option<[u8; 32]>;
+
+    /// Set silent payment tweak for an input
+    ///
+    /// The tweak is derived from BIP-352 output derivation during wallet scanning.
+    /// Hardware signer uses this to compute: tweaked_privkey = spend_privkey + tweak
+    ///
+    /// Field type: PSBT_IN_SP_TWEAK (0x19)
+    ///
+    /// # Arguments
+    /// * `input_index` - Index of the input
+    /// * `tweak` - The 32-byte tweak
+    fn set_input_sp_tweak(&mut self, input_index: usize, tweak: [u8; 32]) -> Result<()>;
+
     // ===== Convenience Methods =====
 
     /// Get the number of inputs
@@ -347,7 +372,12 @@ impl Bip375PsbtExt for Psbt {
             .get_mut(output_index)
             .ok_or(Error::InvalidOutputIndex(output_index))?;
 
-        output.sp_v0_info = Some(address.to_bytes());
+        // PSBT_OUT_SP_V0_INFO contains only the keys (66 bytes)
+        // Label is stored separately in PSBT_OUT_SP_V0_LABEL
+        let mut bytes = Vec::with_capacity(66);
+        bytes.extend_from_slice(&address.scan_key.serialize());
+        bytes.extend_from_slice(&address.spend_key.serialize());
+        output.sp_v0_info = Some(bytes);
 
         Ok(())
     }
@@ -370,6 +400,38 @@ impl Bip375PsbtExt for Psbt {
 
         output.sp_v0_label = Some(label);
 
+        Ok(())
+    }
+
+    fn get_input_sp_tweak(&self, input_index: usize) -> Option<[u8; 32]> {
+        const PSBT_IN_SP_TWEAK: u8 = 0x19;
+
+        let input = self.inputs.get(input_index)?;
+
+        for (key, value) in &input.unknowns {
+            if key.type_value == PSBT_IN_SP_TWEAK && key.key.is_empty() && value.len() == 32 {
+                let mut tweak = [0u8; 32];
+                tweak.copy_from_slice(value);
+                return Some(tweak);
+            }
+        }
+        None
+    }
+
+    fn set_input_sp_tweak(&mut self, input_index: usize, tweak: [u8; 32]) -> Result<()> {
+        const PSBT_IN_SP_TWEAK: u8 = 0x19;
+
+        let input = self
+            .inputs
+            .get_mut(input_index)
+            .ok_or(Error::InvalidInputIndex(input_index))?;
+
+        let key = Key {
+            type_value: PSBT_IN_SP_TWEAK,
+            key: vec![],
+        };
+
+        input.unknowns.insert(key, tweak.to_vec());
         Ok(())
     }
 
