@@ -9,7 +9,7 @@
 //! - File-based transfer: Simulates QR codes or USB transfer
 
 use bip375_core::{Output, OutputRecipient, SilentPaymentAddress, Utxo};
-use bip375_crypto::pubkey_to_p2wpkh_script;
+use bip375_crypto::{pubkey_to_p2tr_script, pubkey_to_p2wpkh_script};
 use bitcoin::{hashes::Hash, Amount, Sequence, Txid};
 use common::SimpleWallet;
 
@@ -37,16 +37,34 @@ pub fn get_attacker_address() -> SilentPaymentAddress {
     SilentPaymentAddress::new(scan_key, spend_key, None)
 }
 
+pub const DEMO_TWEAK: [u8; 32] = [0x11u8; 32];
+
 /// Create transaction inputs for the hardware signer scenario
 ///
 /// 2 inputs controlled by the hardware wallet:
-/// - Input 0: 100,000 sats
-/// - Input 1: 200,000 sats
+/// - Input 0: 100,000 sats (Silent Payment - Tweaked Key)
+/// - Input 1: 200,000 sats (Standard P2WPKH)
 /// - Total: 300,000 sats
 pub fn create_transaction_inputs() -> Vec<Utxo> {
     let hw_wallet = get_hardware_wallet();
 
-    let pubkey0 = hw_wallet.input_key_pair(0).1;
+    // Input 0: Silent Payment input
+    // In a real scenario, this output was created using a tweaked public key.
+    // So we must derive the tweaked key here to create the correct P2TR script.
+    // This matches the tweak stored in TweakDatabase::demo().
+    // TODO: this is messy, figure out a better way
+    let (spend_privkey, _) = hw_wallet.spend_key_pair();
+    let tweaked_privkey = bip375_crypto::apply_tweak_to_privkey(&spend_privkey, &DEMO_TWEAK)
+        .expect("Failed to apply demo tweak");
+    let secp = secp256k1::Secp256k1::new();
+    let pubkey0 = bitcoin::PublicKey::from_private_key(
+        &secp,
+        &bitcoin::PrivateKey::new(tweaked_privkey, bitcoin::Network::Bitcoin),
+    );
+
+    // Convert to secp256k1::PublicKey for script generation
+    let pubkey0_secp = pubkey0.inner;
+
     let pubkey1 = hw_wallet.input_key_pair(1).1;
 
     vec![
@@ -58,7 +76,7 @@ pub fn create_transaction_inputs() -> Vec<Utxo> {
             .expect("valid txid"),
             0,
             Amount::from_sat(100_000),
-            pubkey_to_p2wpkh_script(&pubkey0),
+            pubkey_to_p2tr_script(&pubkey0_secp),
             None, // Private key set later by hardware device
             Sequence::from_consensus(0xfffffffe),
         ),
@@ -133,6 +151,15 @@ pub fn display_transaction_summary_with_dnssec(
             &utxo.txid.to_string()[utxo.txid.to_string().len() - 8..]
         );
         println!("      VOUT: {}", utxo.vout);
+        if utxo.script_pubkey.is_p2tr() {
+            println!("      Type: P2TR");
+        } else if utxo.script_pubkey.is_p2wpkh() {
+            println!("      Type: P2WPKH");
+        } else if utxo.script_pubkey.is_p2pkh() {
+            println!("      Type: P2PKH");
+        } else {
+            println!("      Type: Unknown");
+        }
     }
 
     let total_input: u64 = inputs.iter().map(|u| u.amount.to_sat()).sum();
@@ -526,8 +553,7 @@ impl TweakDatabase {
             .expect("valid txid"),
             vout: 0,
         };
-        let demo_tweak = [0x11u8; 32]; // Mock tweak from scanning
-        db.store(demo_outpoint, demo_tweak);
+        db.store(demo_outpoint, DEMO_TWEAK);
 
         db
     }

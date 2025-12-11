@@ -122,6 +122,51 @@ pub fn sign_p2wpkh_input(
     Ok(sig_bytes)
 }
 
+/// Sign a P2PKH input using ECDSA with SIGHASH_ALL
+///
+/// # Arguments
+/// * `secp` - Secp256k1 context
+/// * `tx` - The transaction being signed
+/// * `input_index` - Index of the input to sign
+/// * `script_pubkey` - The script pubkey of the UTXO being spent
+/// * `amount` - The amount of the UTXO being spent (not strictly needed for legacy, but good for API consistency)
+/// * `privkey` - Private key to sign with
+///
+/// # Returns
+/// Serialized signature with SIGHASH_ALL flag appended (DER + 0x01)
+pub fn sign_p2pkh_input(
+    secp: &Secp256k1<secp256k1::All>,
+    tx: &Transaction,
+    input_index: usize,
+    script_pubkey: &ScriptBuf,
+    _amount: Amount,
+    privkey: &SecretKey,
+) -> Result<Vec<u8>> {
+    // Create sighash cache
+    let mut sighash_cache = SighashCache::new(tx);
+
+    // Compute sighash for this input
+    let sighash = sighash_cache
+        .legacy_signature_hash(
+            input_index,
+            script_pubkey,
+            bitcoin::sighash::EcdsaSighashType::All.to_u32(),
+        )
+        .map_err(|e| CryptoError::Other(format!("Sighash computation failed: {}", e)))?;
+
+    // Convert sighash to message
+    let message = Message::from_digest(sighash.to_byte_array());
+
+    // Sign the message
+    let signature = secp.sign_ecdsa(&message, privkey);
+
+    // Serialize to DER format and append SIGHASH_ALL (0x01)
+    let mut sig_bytes = signature.serialize_der().to_vec();
+    sig_bytes.push(0x01); // SIGHASH_ALL
+
+    Ok(sig_bytes)
+}
+
 /// Sign a message hash with ECDSA (low-level function)
 ///
 /// This is a lower-level function that signs a raw 32-byte hash.

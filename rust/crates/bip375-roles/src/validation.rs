@@ -29,6 +29,10 @@ pub fn validate_psbt(
     validate_input_fields(psbt)?;
     validate_output_fields(psbt)?;
 
+    // TODO: is this correct?
+    // Validate SP tweak fields (if any inputs have them)
+    validate_sp_tweak_fields(psbt, false)?;
+
     // Check if this PSBT has silent payment outputs
     let has_sp_outputs = (0..psbt.num_outputs()).any(|i| psbt.get_output_sp_address(i).is_some());
 
@@ -113,6 +117,49 @@ fn validate_output_fields(psbt: &SilentPaymentPsbt) -> Result<()> {
                 "Output {} has label but missing SP address",
                 i
             )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate SP tweak fields on inputs
+///
+/// Checks that inputs with `PSBT_IN_SP_TWEAK` (0x1f) are properly configured:
+/// - Tweak must be exactly 32 bytes
+/// - Input must have `witness_utxo` that is P2TR (SegWit v1)
+/// - For pre-extraction validation: Input must have `tap_key_sig`
+fn validate_sp_tweak_fields(psbt: &SilentPaymentPsbt, require_signatures: bool) -> Result<()> {
+    for (input_idx, input) in psbt.inputs.iter().enumerate() {
+        // Check if this input has an SP tweak
+        if let Some(tweak) = psbt.get_input_sp_tweak(input_idx) {
+            // Tweak must be 32 bytes (already enforced by return type, but document it)
+            assert_eq!(tweak.len(), 32, "SP tweak must be 32 bytes");
+
+            // Input must have witness_utxo
+            let witness_utxo = input.witness_utxo.as_ref().ok_or_else(|| {
+                Error::Other(format!(
+                    "Input {} has PSBT_IN_SP_TWEAK but missing witness_utxo",
+                    input_idx
+                ))
+            })?;
+
+            // witness_utxo must be P2TR (SegWit v1)
+            let script = &witness_utxo.script_pubkey;
+            if !script.is_p2tr() {
+                return Err(Error::InvalidFieldData(format!(
+                    "Input {} has PSBT_IN_SP_TWEAK but witness_utxo is not P2TR (SegWit v1)",
+                    input_idx
+                )));
+            }
+
+            // If requiring signatures (pre-extraction), verify tap_key_sig exists
+            if require_signatures && input.tap_key_sig.is_none() {
+                return Err(Error::Other(format!(
+                    "Input {} has PSBT_IN_SP_TWEAK but missing tap_key_sig (not yet signed)",
+                    input_idx
+                )));
+            }
         }
     }
 
@@ -362,12 +409,25 @@ fn validate_dleq_proofs(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymentPs
 }
 
 /// Validate that a PSBT is ready for extraction
+///
+/// Checks that all inputs are signed (either P2WPKH with `partial_sigs` or P2TR with `tap_key_sig`)
+/// and all outputs have scripts.
+///
+/// For SP tweak inputs, validates that they have required signatures.
 pub fn validate_ready_for_extraction(psbt: &SilentPaymentPsbt) -> Result<()> {
+    // Validate SP tweak fields with signature requirement
+    validate_sp_tweak_fields(psbt, true)?;
+
     for input_idx in 0..psbt.num_inputs() {
-        let sigs = psbt.get_input_partial_sigs(input_idx);
-        if sigs.is_empty() {
+        let input = &psbt.inputs[input_idx];
+
+        // Check for either tap_key_sig (P2TR) or partial_sigs (P2WPKH)
+        let has_tap_sig = input.tap_key_sig.is_some();
+        let has_partial_sigs = !psbt.get_input_partial_sigs(input_idx).is_empty();
+
+        if !has_tap_sig && !has_partial_sigs {
             return Err(Error::ExtractionFailed(format!(
-                "Input {} is not signed",
+                "Input {} is not signed (no tap_key_sig or partial_sigs)",
                 input_idx
             )));
         }

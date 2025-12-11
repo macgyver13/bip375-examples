@@ -22,6 +22,7 @@ use psbt_v2::{
 };
 use secp256k1::PublicKey;
 
+const PSBT_IN_SP_TWEAK: u8 = 0x1f;
 /// Extension trait for BIP-375 silent payment fields on PSBT v2
 ///
 /// This trait adds methods to access and modify BIP-375 specific fields:
@@ -144,7 +145,7 @@ pub trait Bip375PsbtExt {
     /// Returns the 32-byte tweak that should be added to the spend private key
     /// to spend this silent payment output.
     ///
-    /// Field type: PSBT_IN_SP_TWEAK (0x19)
+    /// Field type: PSBT_IN_SP_TWEAK
     ///
     /// # Arguments
     /// * `input_index` - Index of the input
@@ -155,12 +156,23 @@ pub trait Bip375PsbtExt {
     /// The tweak is derived from BIP-352 output derivation during wallet scanning.
     /// Hardware signer uses this to compute: tweaked_privkey = spend_privkey + tweak
     ///
-    /// Field type: PSBT_IN_SP_TWEAK (0x19)
+    /// Field type: PSBT_IN_SP_TWEAK
     ///
     /// # Arguments
     /// * `input_index` - Index of the input
     /// * `tweak` - The 32-byte tweak
     fn set_input_sp_tweak(&mut self, input_index: usize, tweak: [u8; 32]) -> Result<()>;
+
+    /// Remove silent payment tweak from an input
+    ///
+    /// This is typically called after transaction extraction to clean up the PSBT.
+    /// Prevents accidental re-use of tweaks and keeps PSBTs cleaner.
+    ///
+    /// Field type: PSBT_IN_SP_TWEAK
+    ///
+    /// # Arguments
+    /// * `input_index` - Index of the input
+    fn remove_input_sp_tweak(&mut self, input_index: usize) -> Result<()>;
 
     // ===== Convenience Methods =====
 
@@ -404,8 +416,6 @@ impl Bip375PsbtExt for Psbt {
     }
 
     fn get_input_sp_tweak(&self, input_index: usize) -> Option<[u8; 32]> {
-        const PSBT_IN_SP_TWEAK: u8 = 0x19;
-
         let input = self.inputs.get(input_index)?;
 
         for (key, value) in &input.unknowns {
@@ -419,8 +429,6 @@ impl Bip375PsbtExt for Psbt {
     }
 
     fn set_input_sp_tweak(&mut self, input_index: usize, tweak: [u8; 32]) -> Result<()> {
-        const PSBT_IN_SP_TWEAK: u8 = 0x19;
-
         let input = self
             .inputs
             .get_mut(input_index)
@@ -432,6 +440,21 @@ impl Bip375PsbtExt for Psbt {
         };
 
         input.unknowns.insert(key, tweak.to_vec());
+        Ok(())
+    }
+
+    fn remove_input_sp_tweak(&mut self, input_index: usize) -> Result<()> {
+        let input = self
+            .inputs
+            .get_mut(input_index)
+            .ok_or(Error::InvalidInputIndex(input_index))?;
+
+        let key = Key {
+            type_value: PSBT_IN_SP_TWEAK,
+            key: vec![],
+        };
+
+        input.unknowns.remove(&key);
         Ok(())
     }
 

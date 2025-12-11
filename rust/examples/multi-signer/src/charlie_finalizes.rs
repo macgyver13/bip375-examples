@@ -148,7 +148,7 @@ pub fn charlie_finalizes() -> Result<()> {
     println!("\n📦 EXTRACTOR: Creating final transaction...");
 
     // Extract final transaction
-    let transaction = extract_transaction(&psbt)?;
+    let transaction = extract_transaction(&mut psbt)?;
     let transaction_bytes = bitcoin::consensus::serialize(&transaction);
 
     println!(

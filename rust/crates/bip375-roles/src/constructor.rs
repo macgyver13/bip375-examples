@@ -29,6 +29,18 @@ pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
 
         psbt_input.witness_utxo = Some(witness_utxo);
         psbt_input.final_script_witness = None; // Clear any existing witness
+
+        // For P2TR inputs, we should set the tap_internal_key if possible.
+        // In the absence of separate internal key info in Utxo, we assume for this
+        // demo/constructor that the key in the script is what we want to track.
+        if utxo.script_pubkey.is_p2tr() {
+            // P2TR script: OP_1 <32-byte x-only pubkey>
+            if utxo.script_pubkey.len() == 34 && utxo.script_pubkey.as_bytes()[0] == 0x51 {
+                if let Ok(x_only) = bitcoin::key::XOnlyPublicKey::from_slice(&utxo.script_pubkey.as_bytes()[2..34]) {
+                     psbt_input.tap_internal_key = Some(x_only);
+                }
+            }
+        }
     }
 
     Ok(())

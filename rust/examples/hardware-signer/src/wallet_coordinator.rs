@@ -324,7 +324,7 @@ impl WalletCoordinator {
         // Extract transaction
         println!("  EXTRACTOR: Extracting final transaction...");
 
-        let final_tx = extract_transaction(&psbt)?;
+        let final_tx = extract_transaction(&mut psbt)?;
         let tx_bytes = bitcoin::consensus::serialize(&final_tx);
 
         println!("     Transaction extracted successfully");
