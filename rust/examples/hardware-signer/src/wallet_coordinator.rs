@@ -8,7 +8,6 @@
 //! - Finalizes and extracts transactions
 
 use crate::shared_utils::*;
-use bip375_gui_common::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     constructor::{add_inputs, add_outputs},
@@ -111,9 +110,7 @@ impl WalletCoordinator {
         // and falls back to mock proof if resolution fails (for demo purposes)
         let dnssec_proof = create_dnssec_proof(dns_name);
 
-        use bip375_core::PsbtField;
-        let dnssec_field = PsbtField::with_value(PSBT_OUT_DNSSEC_PROOF, dnssec_proof.clone());
-        psbt.add_output_field(1, dnssec_field)?; // Recipient output (not change)
+        psbt.set_output_dnssec_proof(1, dnssec_proof.clone())?;
 
         println!("   Added DNSSEC proof for recipient output");
         println!("   Proof Format: <1-byte-length><dns_name><RFC 9102 proof>");

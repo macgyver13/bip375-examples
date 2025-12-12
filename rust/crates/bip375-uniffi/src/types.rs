@@ -358,12 +358,11 @@ impl SilentPaymentPsbt {
             return Err(Bip375Error::InvalidData);
         }
 
-        // Get the PSBT_OUT_SCRIPT field (0x04)
-        const PSBT_OUT_SCRIPT: u8 = 0x04;
-        if let Some(field) = psbt.get_output_field(idx, PSBT_OUT_SCRIPT) {
-            Ok(field.value_data.clone())
+        // Get the output script pubkey directly
+        if let Some(output) = psbt.outputs.get(idx) {
+            Ok(output.script_pubkey.to_bytes())
         } else {
-            // Return empty if no script has been computed yet
+            // Return empty if output doesn't exist
             Ok(Vec::new())
         }
     }

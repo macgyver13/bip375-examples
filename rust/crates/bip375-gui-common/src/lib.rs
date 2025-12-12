@@ -30,6 +30,7 @@ pub mod display_adapter;
 pub mod display_formatting;
 pub mod field_identifier;
 pub mod psbt_analyzer;
+pub mod psbt_display_ext;
 pub mod psbt_io;
 
 // Re-export commonly used types

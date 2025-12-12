@@ -8,8 +8,7 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt};
-use bip375_gui_common::display_formatting::PSBT_OUT_DNSSEC_PROOF;
+use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt};
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use common::{load_psbt, save_psbt, TransactionConfig};

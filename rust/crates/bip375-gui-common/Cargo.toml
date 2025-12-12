@@ -6,6 +6,8 @@ edition.workspace = true
 [dependencies]
 bip375-core.workspace = true
 bip375-io.workspace = true
+bitcoin.workspace = true
+psbt-v2.workspace = true
 hex.workspace = true
 base64 = "0.22"
 serde = { workspace = true, features = ["derive"] }

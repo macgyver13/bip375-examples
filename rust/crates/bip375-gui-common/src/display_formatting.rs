@@ -19,10 +19,9 @@
 ///
 /// Note: The field type constant (0x35) is defined locally. Consider upstreaming to
 /// rust-psbt or bip353-rs once BIP-353 PSBT integration is standardized.
-pub const PSBT_OUT_DNSSEC_PROOF: u8 = 0x35;
 
 /// New proposed field for tracking TWEAK associated with Silent Payment Input
-pub const PSBT_IN_SP_TWEAK: u8 = 0x1f;
+use bip375_core::extensions::PSBT_OUT_DNSSEC_PROOF;
 
 /// PSBT field category for disambiguating field types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

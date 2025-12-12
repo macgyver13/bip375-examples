@@ -3,10 +3,9 @@
 //! Provides functions for extracting field information from PSBTs,
 //! computing differences between PSBT states, and identifying field types.
 
-use crate::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use crate::field_identifier::{FieldIdentifier, TransactionSummary};
-use bip375_core::SilentPaymentPsbt;
-use bip375_core::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
+use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, SilentPaymentPsbt};
+use crate::psbt_display_ext::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
 use std::collections::HashSet;
 
 /// Extract all field identifiers from a PSBT

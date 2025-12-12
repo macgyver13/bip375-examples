@@ -143,7 +143,7 @@ pub fn sign_p2pkh_input(
     privkey: &SecretKey,
 ) -> Result<Vec<u8>> {
     // Create sighash cache
-    let mut sighash_cache = SighashCache::new(tx);
+    let sighash_cache = SighashCache::new(tx);
 
     // Compute sighash for this input
     let sighash = sighash_cache
