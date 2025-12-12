@@ -12,7 +12,7 @@ use bip375_core::{Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt};
 use bip375_gui_common::display_formatting::PSBT_OUT_DNSSEC_PROOF;
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
-use common::{load_psbt, save_psbt};
+use common::{load_psbt, save_psbt, TransactionConfig};
 use secp256k1::{PublicKey, Secp256k1};
 use std::io::{self, Write};
 
@@ -69,6 +69,7 @@ impl HardwareDevice {
 
     /// Display transaction details and get user approval
     pub fn verify_and_approve(
+        config: &TransactionConfig,
         auto_approve: bool,
         attack_mode: bool,
     ) -> Result<bool, Box<dyn std::error::Error>> {
@@ -136,11 +137,14 @@ impl HardwareDevice {
 
         // Display transaction summary with DNSSEC proofs inline
         let has_dnssec = !dnssec_proofs.is_empty();
-        display_transaction_summary_with_dnssec(if has_dnssec {
-            Some(dnssec_proofs)
-        } else {
-            None
-        });
+        display_transaction_summary_with_dnssec(
+            config,
+            if has_dnssec {
+                Some(dnssec_proofs)
+            } else {
+                None
+            },
+        );
 
         println!("  Review transaction carefully!");
         println!("   • Check recipient addresses");
@@ -192,6 +196,7 @@ impl HardwareDevice {
     /// Roles: SIGNER
     pub fn sign_psbt(
         mut psbt: SilentPaymentPsbt,
+        config: &TransactionConfig,
         attack_mode: bool,
     ) -> Result<SilentPaymentPsbt, Box<dyn std::error::Error>> {
         print_step_header("Step 2c: Sign Transaction", "HARDWARE DEVICE (Air-gapped)");
@@ -200,8 +205,8 @@ impl HardwareDevice {
 
         // Get hardware wallet's private keys from "secure storage"
         let hw_wallet = get_hardware_wallet();
-        let mut inputs = create_transaction_inputs();
-        let outputs = create_transaction_outputs();
+        let mut inputs = create_transaction_inputs(config);
+        let outputs = create_transaction_outputs(config);
         let secp = Secp256k1::new();
 
         // Extract scan keys from outputs
@@ -398,6 +403,7 @@ impl HardwareDevice {
 
     /// Complete signing workflow
     pub fn sign_workflow(
+        config: &TransactionConfig,
         auto_read: bool,
         auto_approve: bool,
         attack_mode: bool,
@@ -406,7 +412,7 @@ impl HardwareDevice {
         let (psbt, _metadata) = Self::receive_psbt(auto_read, true)?;
 
         // Display and get approval
-        let approved = Self::verify_and_approve(auto_approve, attack_mode)?;
+        let approved = Self::verify_and_approve(config, auto_approve, attack_mode)?;
 
         if !approved {
             println!("❌ Transaction not approved. Aborting.\n");
@@ -414,7 +420,7 @@ impl HardwareDevice {
         }
 
         // Sign PSBT
-        let signed_psbt = Self::sign_psbt(psbt, attack_mode)?;
+        let signed_psbt = Self::sign_psbt(psbt, config, attack_mode)?;
 
         // Send back to coordinator
         Self::send_psbt(&signed_psbt, true)?;

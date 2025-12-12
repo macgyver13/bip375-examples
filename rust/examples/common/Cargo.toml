@@ -5,7 +5,9 @@ edition = "2021"
 
 [dependencies]
 bip375-core.workspace = true
+bip375-crypto.workspace = true
 bip375-io.workspace = true
+bitcoin.workspace = true
 hex.workspace = true
 secp256k1.workspace = true
 sha2.workspace = true

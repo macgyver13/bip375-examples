@@ -27,7 +27,10 @@ impl WalletCoordinator {
     /// Create a new PSBT with inputs and outputs
     ///
     /// Roles: CREATOR + CONSTRUCTOR + UPDATER
-    pub fn create_psbt(auto_continue: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn create_psbt(
+        config: &TransactionConfig,
+        auto_continue: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         print_step_header(
             "Step 1: Create PSBT Structure",
             "WALLET COORDINATOR (Online)",
@@ -35,12 +38,15 @@ impl WalletCoordinator {
 
         println!("  CREATOR + CONSTRUCTOR + UPDATER: Setting up transaction...\n");
 
+        // Display configuration
+        config.display(&get_virtual_wallet());
+
         // Get transaction components
-        let inputs = create_transaction_inputs();
-        let outputs = create_transaction_outputs();
+        let inputs = create_transaction_inputs(config);
+        let outputs = create_transaction_outputs(config);
 
         // Display transaction for user review
-        display_transaction_summary();
+        display_transaction_summary(config);
 
         // Create PSBT
         let mut psbt = create_psbt(inputs.len(), outputs.len())?;
@@ -64,7 +70,7 @@ impl WalletCoordinator {
         use crate::shared_utils::TweakDatabase;
         use bip375_core::Bip375PsbtExt;
 
-        let tweak_db = TweakDatabase::demo(); // In production: read from wallet database
+        let tweak_db = TweakDatabase::from_virtual_wallet(&get_virtual_wallet());
         let mut sp_input_count = 0;
 
         for (input_idx, utxo) in inputs.iter().enumerate() {
@@ -158,7 +164,10 @@ impl WalletCoordinator {
     /// Finalize transaction after hardware device signs
     ///
     /// Roles: SIGNER (verification) + EXTRACTOR
-    pub fn finalize_transaction(auto_read: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn finalize_transaction(
+        config: &TransactionConfig,
+        auto_read: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         print_step_header(
             "Step 3: Verify and Finalize Transaction",
             "WALLET COORDINATOR (Online)",
@@ -202,8 +211,8 @@ impl WalletCoordinator {
         println!("{}\n", "=".repeat(60));
 
         let secp = Secp256k1::new();
-        let inputs = create_transaction_inputs();
-        let outputs = create_transaction_outputs();
+        let inputs = create_transaction_inputs(config);
+        let outputs = create_transaction_outputs(config);
 
         // Collect expected scan keys
         let hw_wallet = get_hardware_wallet();

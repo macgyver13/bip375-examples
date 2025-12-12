@@ -30,13 +30,62 @@ use secp256k1::Secp256k1;
 use crate::shared_utils::*;
 
 pub fn alice_creates() -> Result<()> {
+    alice_creates_main()
+}
+
+fn display_help() {
+    println!("\nBIP-375 Multi-Signer Demo - Alice Creates PSBT");
+    println!("{}\n", "=".repeat(60));
+    println!("Alice acts as CREATOR, CONSTRUCTOR, and initial SIGNER.");
+    println!("Creates PSBT with all inputs/outputs and signs her input.\n");
+    println!("USAGE:");
+    println!("    alice-creates [OPTIONS]\n");
+    println!("OPTIONS:");
+    println!("    --help, -h              Show this help message");
+    println!("    --utxos <ids>           Alice's UTXO IDs (default: 0)");
+    println!("    --recipient <sats>      Recipient amount in satoshis");
+    println!("    --change <sats>         Change amount in satoshis");
+    println!("    --fee <sats>            Fee amount in satoshis\n");
+    println!("EXAMPLES:");
+    println!("    # Use default configuration");
+    println!("    alice-creates\n");
+    println!("    # Custom amounts");
+    println!("    alice-creates --recipient 180000 --change 100000 --fee 20000\n");
+}
+
+fn alice_creates_main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        display_help();
+        return Ok(());
+    }
+
     print_step_header(1, "Alice Creates PSBT", "Alice");
 
-    print_scenario_overview();
+    // Parse configuration
+    let (alice_config, bob_config, charlie_config, combined_config) = if args.len() > 1 {
+        let alice_cfg = common::TransactionConfig::from_args(&args, common::TransactionConfig::multi_signer_auto());
+        let bob_cfg = common::TransactionConfig::multi_signer_auto();
+        let charlie_cfg = common::TransactionConfig::multi_signer_auto();
+        
+        // For combined config, use the parsed values for outputs
+        let combined = common::TransactionConfig::new(
+            vec![0, 0, 0],
+            alice_cfg.recipient_amount,
+            alice_cfg.change_amount,
+            alice_cfg.fee,
+        );
+        (alice_cfg, bob_cfg, charlie_cfg, combined)
+    } else {
+        get_default_configs()
+    };
 
     // Get transaction data
-    let mut inputs = get_transaction_inputs();
-    let outputs = get_transaction_outputs();
+    let mut inputs = get_transaction_inputs(&alice_config, &bob_config, &charlie_config);
+    
+    print_scenario_overview(&inputs, &combined_config);
+    let outputs = get_transaction_outputs(&combined_config);
 
     println!("🏗️  CREATOR: Setting up PSBT structure...");
     let mut psbt = create_psbt(inputs.len(), outputs.len())?;

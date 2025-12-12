@@ -9,9 +9,8 @@
 //! - File-based transfer: Simulates QR codes or USB transfer
 
 use bip375_core::{Output, OutputRecipient, SilentPaymentAddress, Utxo};
-use bip375_crypto::{pubkey_to_p2tr_script, pubkey_to_p2wpkh_script};
-use bitcoin::{hashes::Hash, Amount, Sequence, Txid};
-use common::SimpleWallet;
+use bip375_crypto::script_type_string;
+use common::{SimpleWallet, TransactionConfig, VirtualWallet};
 
 /// Wallet seeds for deterministic key generation
 pub const HW_WALLET_SEED: &str = "hardware_wallet_coldcard_demo";
@@ -37,70 +36,25 @@ pub fn get_attacker_address() -> SilentPaymentAddress {
     SilentPaymentAddress::new(scan_key, spend_key, None)
 }
 
-pub const DEMO_TWEAK: [u8; 32] = [0x11u8; 32];
-
-/// Create transaction inputs for the hardware signer scenario
-///
-/// 2 inputs controlled by the hardware wallet:
-/// - Input 0: 100,000 sats (Silent Payment - Tweaked Key)
-/// - Input 1: 200,000 sats (Standard P2WPKH)
-/// - Total: 300,000 sats
-pub fn create_transaction_inputs() -> Vec<Utxo> {
-    let hw_wallet = get_hardware_wallet();
-
-    // Input 0: Silent Payment input
-    // In a real scenario, this output was created using a tweaked public key.
-    // So we must derive the tweaked key here to create the correct P2TR script.
-    // This matches the tweak stored in TweakDatabase::demo().
-    // TODO: this is messy, figure out a better way
-    let (spend_privkey, _) = hw_wallet.spend_key_pair();
-    let tweaked_privkey = bip375_crypto::apply_tweak_to_privkey(&spend_privkey, &DEMO_TWEAK)
-        .expect("Failed to apply demo tweak");
-    let secp = secp256k1::Secp256k1::new();
-    let pubkey0 = bitcoin::PublicKey::from_private_key(
-        &secp,
-        &bitcoin::PrivateKey::new(tweaked_privkey, bitcoin::Network::Bitcoin),
-    );
-
-    // Convert to secp256k1::PublicKey for script generation
-    let pubkey0_secp = pubkey0.inner;
-
-    let pubkey1 = hw_wallet.input_key_pair(1).1;
-
-    vec![
-        Utxo::new(
-            Txid::from_slice(
-                &hex::decode("a1b2c3d4e5f6789012345678901234567890123456789012345678901234567a")
-                    .unwrap(),
-            )
-            .expect("valid txid"),
-            0,
-            Amount::from_sat(100_000),
-            pubkey_to_p2tr_script(&pubkey0_secp),
-            None, // Private key set later by hardware device
-            Sequence::from_consensus(0xfffffffe),
-        ),
-        Utxo::new(
-            Txid::from_slice(
-                &hex::decode("b1c2d3e4f5f6789012345678901234567890123456789012345678901234567b")
-                    .unwrap(),
-            )
-            .expect("valid txid"),
-            1,
-            Amount::from_sat(200_000),
-            pubkey_to_p2wpkh_script(&pubkey1),
-            None, // Private key set later by hardware device
-            Sequence::from_consensus(0xfffffffe),
-        ),
-    ]
+/// Get the virtual wallet with pre-configured UTXOs
+pub fn get_virtual_wallet() -> VirtualWallet {
+    VirtualWallet::hardware_wallet_default()
 }
 
-/// Create transaction outputs for the hardware signer scenario
+/// Create transaction inputs based on configuration
 ///
-/// 2 outputs:
-/// - Output 0: Change to hardware wallet (50,000 sats) with label=0
-/// - Output 1: Silent payment to recipient (245,000 sats)
-/// - Fee: 5,000 sats (300,000 - 50,000 - 245,000)
+/// Uses VirtualWallet to select UTXOs based on TransactionConfig.
+/// Supports flexible input selection including Silent Payment outputs.
+pub fn create_transaction_inputs(config: &TransactionConfig) -> Vec<Utxo> {
+    let wallet = get_virtual_wallet();
+    wallet.select_by_ids(&config.selected_utxo_ids)
+}
+
+/// Create transaction outputs based on configuration
+///
+/// Creates two outputs:
+/// - Output 0: Change to hardware wallet (configurable amount) with label=0
+/// - Output 1: Silent payment to recipient (configurable amount)
 ///
 /// Implementation Notes:
 ///
@@ -113,7 +67,8 @@ pub fn create_transaction_inputs() -> Vec<Utxo> {
 /// 4. Wallet recovery: Scanners know to check label=0 during backup recovery
 ///
 /// See BIP 375 "Change Detection" section and BIP 352 "Labels" section.
-pub fn create_transaction_outputs() -> Vec<Output> {
+pub fn create_transaction_outputs(config: &TransactionConfig) -> Vec<Output> {
+    use bitcoin::Amount;
     let hw_wallet = get_hardware_wallet();
     let (scan_key, spend_key) = hw_wallet.scan_spend_keys();
 
@@ -122,21 +77,23 @@ pub fn create_transaction_outputs() -> Vec<Output> {
 
     vec![
         // Change output
-        Output::silent_payment(Amount::from_sat(50_000), change_address),
+        Output::silent_payment(Amount::from_sat(config.change_amount), change_address),
         // Recipient output
-        Output::silent_payment(Amount::from_sat(245_000), get_recipient_address()),
+        Output::silent_payment(Amount::from_sat(config.recipient_amount), get_recipient_address()),
     ]
 }
 
 /// Display transaction summary for user review
 ///
 /// # Arguments
+/// * `config` - Transaction configuration
 /// * `dnssec_proofs` - Optional map of output_index -> (dns_name, proof_hex) for inline display
 pub fn display_transaction_summary_with_dnssec(
+    config: &TransactionConfig,
     dnssec_proofs: Option<std::collections::HashMap<usize, (String, String)>>,
 ) {
-    let inputs = create_transaction_inputs();
-    let outputs = create_transaction_outputs();
+    let inputs = create_transaction_inputs(config);
+    let outputs = create_transaction_outputs(config);
 
     println!("\n{}", "=".repeat(60));
     println!("  Transaction Summary");
@@ -151,15 +108,7 @@ pub fn display_transaction_summary_with_dnssec(
             &utxo.txid.to_string()[utxo.txid.to_string().len() - 8..]
         );
         println!("      VOUT: {}", utxo.vout);
-        if utxo.script_pubkey.is_p2tr() {
-            println!("      Type: P2TR");
-        } else if utxo.script_pubkey.is_p2wpkh() {
-            println!("      Type: P2WPKH");
-        } else if utxo.script_pubkey.is_p2pkh() {
-            println!("      Type: P2PKH");
-        } else {
-            println!("      Type: Unknown");
-        }
+        println!("      Type: {}", script_type_string(&utxo.script_pubkey));
     }
 
     let total_input: u64 = inputs.iter().map(|u| u.amount.to_sat()).sum();
@@ -221,8 +170,8 @@ pub fn display_transaction_summary_with_dnssec(
 }
 
 /// Display transaction summary for user review (without DNSSEC proofs)
-pub fn display_transaction_summary() {
-    display_transaction_summary_with_dnssec(None);
+pub fn display_transaction_summary(config: &TransactionConfig) {
+    display_transaction_summary_with_dnssec(config, None);
 }
 
 /// Print a step header
@@ -539,21 +488,20 @@ impl TweakDatabase {
     ///
     /// This simulates a wallet that has previously scanned the blockchain
     /// and detected silent payment outputs, storing their tweaks for later spending.
-    pub fn demo() -> Self {
+    /// Automatically loads tweaks from VirtualWallet for SP outputs.
+    pub fn from_virtual_wallet(wallet: &VirtualWallet) -> Self {
         let mut db = Self::new();
 
-        // Mock: Previously scanned SP output with known tweak
-        // In production, this tweak would be: hash_BIP0352/SharedSecret(ecdh_secret || k)
-        // Using the same txid as input 0 in create_transaction_inputs()
-        let demo_outpoint = OutPoint {
-            txid: Txid::from_slice(
-                &hex::decode("a1b2c3d4e5f6789012345678901234567890123456789012345678901234567a")
-                    .unwrap(),
-            )
-            .expect("valid txid"),
-            vout: 0,
-        };
-        db.store(demo_outpoint, DEMO_TWEAK);
+        // Load tweaks from all SP outputs in the virtual wallet
+        for vu in wallet.list_utxos() {
+            if let Some(tweak) = vu.tweak {
+                let outpoint = OutPoint {
+                    txid: vu.utxo.txid,
+                    vout: vu.utxo.vout,
+                };
+                db.store(outpoint, tweak);
+            }
+        }
 
         db
     }

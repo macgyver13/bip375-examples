@@ -34,6 +34,30 @@ use common::{load_psbt, save_psbt, save_txn};
 use secp256k1::Secp256k1;
 
 pub fn charlie_finalizes() -> Result<()> {
+    charlie_finalizes_main()
+}
+
+fn display_help() {
+    println!("\nBIP-375 Multi-Signer Demo - Charlie Finalizes");
+    println!("{}\n", "=".repeat(60));
+    println!("Charlie acts as final SIGNER, INPUT FINALIZER, and EXTRACTOR.");
+    println!("Verifies all work, signs his input, and extracts final transaction.\n");
+    println!("USAGE:");
+    println!("    charlie-finalizes [OPTIONS]\n");
+    println!("OPTIONS:");
+    println!("    --help, -h              Show this help message\n");
+    println!("NOTE: Charlie uses the same configuration as Alice and Bob.");
+    println!("      The PSBT already contains all inputs and outputs.\n");
+}
+
+fn charlie_finalizes_main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        display_help();
+        return Ok(());
+    }
+
     print_step_header(3, "Charlie Finalizes PSBT", "Charlie");
 
     // Load current working PSBT
@@ -51,8 +75,9 @@ pub fn charlie_finalizes() -> Result<()> {
     }
 
     // Get transaction inputs and set Charlie's private key
-    let mut inputs = get_transaction_inputs();
-    let outputs = get_transaction_outputs();
+    let (alice_config, bob_config, charlie_config, combined_config) = get_default_configs();
+    let mut inputs = get_transaction_inputs(&alice_config, &bob_config, &charlie_config);
+    let outputs = get_transaction_outputs(&combined_config);
     let charlie_private_key = get_charlie_private_key();
     inputs[2].private_key = Some(charlie_private_key);
     println!("   Set Charlie's private key for input 2");

@@ -26,6 +26,30 @@ use common::{load_psbt, save_psbt};
 use secp256k1::Secp256k1;
 
 pub fn bob_signs() -> Result<()> {
+    bob_signs_main()
+}
+
+fn display_help() {
+    println!("\nBIP-375 Multi-Signer Demo - Bob Signs");
+    println!("{}\n", "=".repeat(60));
+    println!("Bob acts as partial SIGNER.");
+    println!("Verifies Alice's work and signs his input.\n");
+    println!("USAGE:");
+    println!("    bob-signs [OPTIONS]\n");
+    println!("OPTIONS:");
+    println!("    --help, -h              Show this help message\n");
+    println!("NOTE: Bob uses the same configuration as Alice.");
+    println!("      The PSBT already contains all inputs and outputs.\n");
+}
+
+fn bob_signs_main() -> Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+        display_help();
+        return Ok(());
+    }
+
     print_step_header(2, "Bob Signs PSBT", "Bob");
 
     // Load current working PSBT
@@ -42,9 +66,12 @@ pub fn bob_signs() -> Result<()> {
         }
     }
 
+    // Get configuration for all parties
+    let (alice_config, bob_config, charlie_config, combined_config) = get_default_configs();
+
     // Get transaction inputs and set Bob's private key
-    let mut inputs = get_transaction_inputs();
-    let outputs = get_transaction_outputs();
+    let mut inputs = get_transaction_inputs(&alice_config, &bob_config, &charlie_config);
+    let outputs = get_transaction_outputs(&combined_config);
     let bob_private_key = get_bob_private_key();
     inputs[1].private_key = Some(bob_private_key);
     println!("   Set Bob's private key for input 1");

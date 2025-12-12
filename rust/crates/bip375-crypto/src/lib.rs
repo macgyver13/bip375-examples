@@ -4,6 +4,7 @@
 //! - BIP-352 silent payment cryptography
 //! - BIP-374 DLEQ proofs
 //! - Transaction signing (P2WPKH)
+//! - Script type utilities
 
 pub mod bip352;
 pub mod dleq;

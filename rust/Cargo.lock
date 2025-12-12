@@ -1193,7 +1193,9 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "bip375-core",
+ "bip375-crypto",
  "bip375-io",
+ "bitcoin",
  "hex",
  "secp256k1",
  "sha2",

@@ -9,9 +9,8 @@
 //! - Charlie controls input 2
 
 use bip375_core::{Output, OutputRecipient, SilentPaymentAddress, Utxo};
-use bip375_crypto::pubkey_to_p2wpkh_script;
-use bitcoin::{hashes::Hash, Amount, Sequence, Txid};
-use common::SimpleWallet;
+use bip375_crypto::script_type_string;
+use common::{SimpleWallet, TransactionConfig, VirtualWallet};
 use secp256k1::SecretKey;
 
 /// Get the silent payment recipient address (same for all signers)
@@ -21,63 +20,46 @@ pub fn get_recipient_address() -> SilentPaymentAddress {
     SilentPaymentAddress::new(scan_key, spend_key, None)
 }
 
+/// Get Alice's virtual wallet
+pub fn get_alice_wallet() -> VirtualWallet {
+    VirtualWallet::multi_signer_wallet("alice_multi_signer_silent_payment_test_seed")
+}
+
+/// Get Bob's virtual wallet
+pub fn get_bob_wallet() -> VirtualWallet {
+    VirtualWallet::multi_signer_wallet("bob_multi_signer_silent_payment_test_seed")
+}
+
+/// Get Charlie's virtual wallet
+pub fn get_charlie_wallet() -> VirtualWallet {
+    VirtualWallet::multi_signer_wallet("charlie_multi_signer_silent_payment_test_seed")
+}
+
 /// Get the transaction inputs for the multi-signer scenario
 ///
 /// 3 inputs controlled by different parties:
-/// - Input 0: Alice's UTXO (100,000 sats)
-/// - Input 1: Bob's UTXO (150,000 sats)
-/// - Input 2: Charlie's UTXO (200,000 sats)
-pub fn get_transaction_inputs() -> Vec<Utxo> {
-    // Create deterministic wallets for each party
-    let alice_wallet = SimpleWallet::new("alice_multi_signer_silent_payment_test_seed");
-    let bob_wallet = SimpleWallet::new("bob_multi_signer_silent_payment_test_seed");
-    let charlie_wallet = SimpleWallet::new("charlie_multi_signer_silent_payment_test_seed");
+/// - Input 0: Alice's UTXO (from her wallet, selected by config)
+/// - Input 1: Bob's UTXO (from his wallet, selected by config)
+/// - Input 2: Charlie's UTXO (from his wallet, selected by config)
+///
+/// Each party selects UTXOs from their own VirtualWallet based on their config.
+pub fn get_transaction_inputs(alice_config: &TransactionConfig, bob_config: &TransactionConfig, charlie_config: &TransactionConfig) -> Vec<Utxo> {
+    let alice_wallet = get_alice_wallet();
+    let bob_wallet = get_bob_wallet();
+    let charlie_wallet = get_charlie_wallet();
 
-    let alice_pubkey = alice_wallet.input_key_pair(0).1;
-    let bob_pubkey = bob_wallet.input_key_pair(0).1;
-    let charlie_pubkey = charlie_wallet.input_key_pair(0).1;
+    let mut inputs = Vec::new();
 
-    vec![
-        // Alice's input (index 0)
-        Utxo::new(
-            Txid::from_slice(
-                &hex::decode("a1b2c3d4e5f6789012345678901234567890123456789012345678901234567a")
-                    .unwrap(),
-            )
-            .expect("valid txid"),
-            0,
-            Amount::from_sat(100_000),
-            pubkey_to_p2wpkh_script(&alice_pubkey),
-            None, // Will be set by Alice
-            Sequence::from_consensus(0xfffffffe),
-        ),
-        // Bob's input (index 1)
-        Utxo::new(
-            Txid::from_slice(
-                &hex::decode("b1c2d3e4f5f6789012345678901234567890123456789012345678901234567b")
-                    .unwrap(),
-            )
-            .expect("valid txid"),
-            1,
-            Amount::from_sat(150_000),
-            pubkey_to_p2wpkh_script(&bob_pubkey),
-            None, // Will be set by Bob
-            Sequence::from_consensus(0xfffffffe),
-        ),
-        // Charlie's input (index 2)
-        Utxo::new(
-            Txid::from_slice(
-                &hex::decode("c1d2e3f4f5f6789012345678901234567890123456789012345678901234567c")
-                    .unwrap(),
-            )
-            .expect("valid txid"),
-            2,
-            Amount::from_sat(200_000),
-            pubkey_to_p2wpkh_script(&charlie_pubkey),
-            None, // Will be set by Charlie
-            Sequence::from_consensus(0xfffffffe),
-        ),
-    ]
+    // Add Alice's selected UTXOs
+    inputs.extend(alice_wallet.select_by_ids(&alice_config.selected_utxo_ids));
+
+    // Add Bob's selected UTXOs
+    inputs.extend(bob_wallet.select_by_ids(&bob_config.selected_utxo_ids));
+
+    // Add Charlie's selected UTXOs
+    inputs.extend(charlie_wallet.select_by_ids(&charlie_config.selected_utxo_ids));
+
+    inputs
 }
 
 /// Get Alice's private key for her controlled input
@@ -101,9 +83,13 @@ pub fn get_charlie_private_key() -> SecretKey {
 /// Get the transaction outputs for the multi-signer scenario
 ///
 /// 2 outputs:
-/// - Output 0: Change output (100,000 sats to a regular P2WPKH address)
-/// - Output 1: Silent payment output (340,000 sats = 450,000 total input - 100,000 change - 10,000 fee)
-pub fn get_transaction_outputs() -> Vec<Output> {
+/// - Output 0: Change output (configurable amount to a regular P2WPKH address)
+/// - Output 1: Silent payment output (configurable amount)
+///
+/// The config should be the combined config with total amounts.
+pub fn get_transaction_outputs(config: &TransactionConfig) -> Vec<Output> {
+    use bip375_crypto::pubkey_to_p2wpkh_script;
+    use bitcoin::Amount;
     // Change output to a regular P2WPKH address
     let change_wallet = SimpleWallet::new("change_address_for_multi_signer_test");
     let change_pubkey = change_wallet.input_key_pair(0).1;
@@ -111,9 +97,9 @@ pub fn get_transaction_outputs() -> Vec<Output> {
 
     vec![
         // Regular change output
-        Output::regular(Amount::from_sat(100_000), change_script),
-        // Silent payment output (340,000 sats)
-        Output::silent_payment(Amount::from_sat(340_000), get_recipient_address()),
+        Output::regular(Amount::from_sat(config.change_amount), change_script),
+        // Silent payment output
+        Output::silent_payment(Amount::from_sat(config.recipient_amount), get_recipient_address()),
     ]
 }
 
@@ -126,7 +112,7 @@ pub fn print_step_header(step_number: u32, step_name: &str, party_name: &str) {
 }
 
 /// Print an overview of the multi-signer scenario
-pub fn print_scenario_overview() {
+pub fn print_scenario_overview(inputs: &[Utxo], config: &TransactionConfig) {
     println!("Multi-Signer Silent Payment Scenario");
     println!("{}", "=".repeat(50));
     println!("  Transaction Overview:");
@@ -136,13 +122,13 @@ pub fn print_scenario_overview() {
     println!("   • File-based handoffs between parties");
     println!();
 
-    let inputs = get_transaction_inputs();
-    let outputs = get_transaction_outputs();
+    let outputs = get_transaction_outputs(config);
 
     println!("  Inputs:");
     let parties = ["Alice", "Bob", "Charlie"];
     for (i, (utxo, party)) in inputs.iter().zip(parties.iter()).enumerate() {
-        println!("   Input {} ({}): {} sats", i, party, utxo.amount.to_sat());
+        let input_type = script_type_string(&utxo.script_pubkey);
+        println!("   Input {} ({}) [{}]: {} sats", i, party, input_type, utxo.amount.to_sat());
         println!(
             "      TXID: {}...{}",
             &utxo.txid.to_string()[..16],
@@ -184,4 +170,23 @@ pub fn print_scenario_overview() {
     let fee = total_input - total_output;
     println!("   Transaction Fee: {} sats", fee);
     println!();
+}
+
+/// Get default configuration for multi-signer scenario
+/// This creates configs for each party (Alice, Bob, Charlie) each contributing one input
+pub fn get_default_configs() -> (TransactionConfig, TransactionConfig, TransactionConfig, TransactionConfig) {
+    let alice_config = TransactionConfig::multi_signer_auto(); // Alice contributes UTXO ID 0 (100k)
+    let bob_config = TransactionConfig::multi_signer_auto();   // Bob contributes UTXO ID 0 (100k)
+    let charlie_config = TransactionConfig::multi_signer_auto(); // Charlie contributes UTXO ID 0 (100k)
+    
+    // Combined config for outputs (totals)
+    // Total inputs: 300k, outputs: 185k + 100k + 15k = 300k
+    let combined_config = TransactionConfig::new(
+        vec![0, 0, 0], // Not used for outputs
+        185_000, // recipient amount
+        100_000, // change amount
+        15_000,  // fee
+    );
+    
+    (alice_config, bob_config, charlie_config, combined_config)
 }

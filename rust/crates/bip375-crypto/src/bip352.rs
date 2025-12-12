@@ -125,6 +125,28 @@ pub fn pubkey_to_p2tr_script(pubkey: &PublicKey) -> ScriptBuf {
     ScriptBuf::new_p2tr_tweaked(xonly.dangerous_assume_tweaked())
 }
 
+/// Detect script type from ScriptBuf
+///
+/// Returns a human-readable string identifying the script type.
+/// Supports common Bitcoin script types including SegWit v0/v1.
+pub fn script_type_string(script: &ScriptBuf) -> &'static str {
+    if script.is_p2wpkh() {
+        "P2WPKH"
+    } else if script.is_p2tr() {
+        "P2TR"
+    } else if script.is_p2pkh() {
+        "P2PKH"
+    } else if script.is_p2sh() {
+        "P2SH"
+    } else if script.is_p2wsh() {
+        "P2WSH"
+    } else if script.is_op_return() {
+        "OP_RETURN"
+    } else {
+        "Unknown"
+    }
+}
+
 /// Compute ECDH shared secret
 ///
 /// ecdh_secret = privkey * pubkey
