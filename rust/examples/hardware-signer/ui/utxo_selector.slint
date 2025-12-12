@@ -1,0 +1,419 @@
+// UTXO Selector Dialog for Hardware Signer
+// Allows user to select which UTXOs to spend in the transaction
+
+import { Button, VerticalBox, HorizontalBox, ScrollView, CheckBox, LineEdit, GridBox } from "std-widgets.slint";
+
+// UTXO data structure
+export struct UtxoData {
+    id: int,
+    amount: int,
+    script-type: string,  // "P2WPKH" or "P2TR"
+    has-sp-tweak: bool,   // Is this a received Silent Payment?
+    selected: bool,       // Is this UTXO selected?
+}
+
+// Transaction configuration
+export struct TxConfig {
+    recipient-amount: int,
+    change-amount: int,
+    fee: int,
+}
+
+// Individual UTXO row with checkbox
+component UtxoRow inherits Rectangle {
+    in property <UtxoData> utxo;
+    callback toggled();
+
+    height: 40px;
+    background: utxo.selected ? #e3f2fd : #f7f7f7;
+    border-radius: 4px;
+
+    HorizontalBox {
+        padding: 8px;
+        spacing: 12px;
+
+        CheckBox {
+            checked: utxo.selected;
+            toggled => { root.toggled(); }
+        }
+
+        Text {
+            text: "[" + utxo.id + "]";
+            font-size: 14px;
+            font-weight: 700;
+            color: #777;
+            vertical-alignment: center;
+            width: 40px;
+        }
+
+        Text {
+            text: utxo.amount + " sats";
+            font-size: 14px;
+            color: #777;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        Rectangle {
+            width: 80px;
+            height: 24px;
+            background: utxo.script-type == "P2TR" ? #ff9800 : #2196f3;
+            border-radius: 3px;
+
+            Text {
+                text: utxo.script-type;
+                color: #777;
+                font-size: 11px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        if utxo.has-sp-tweak: Rectangle {
+            width: 40px;
+            height: 24px;
+            background: #4caf50;
+            border-radius: 3px;
+
+            Text {
+                text: "SP";
+                color: #777;
+                font-size: 11px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// Preset scenario button
+component PresetButton inherits Rectangle {
+    in property <string> label;
+    in property <string> description;
+    callback clicked();
+
+    height: 60px;
+    background: touch-area.pressed ? #958b8b : touch-area.has-hover ? #4e4242 : #676161;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: #cccccc;
+
+    touch-area := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    VerticalBox {
+        alignment: center;
+        spacing: 2px;
+
+        Text {
+            text: label;
+            font-size: 14px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: description;
+            font-size: 10px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// Main UTXO selector dialog
+export component UtxoSelectorDialog inherits Dialog {
+    title: "Configure Transaction Inputs";
+
+    preferred-width: 700px;
+    preferred-height: 700px;
+    background: #444444;
+
+    // Properties
+    in-out property <[UtxoData]> utxos;
+    in-out property <TxConfig> config: {
+        recipient-amount: 195000,
+        change-amount: 50000,
+        fee: 5000,
+    };
+
+    // Callbacks
+    callback apply-config(TxConfig);  // Apply the config (Rust will extract selected IDs)
+    callback cancel();
+    callback selection-changed();  // Notify when selection changes to recompute totals
+    callback preset-all-p2wpkh();  // Select P2WPKH UTXOs
+    callback preset-all-p2tr();    // Select P2TR UTXOs
+    callback preset-sp-only();     // Select SP UTXOs
+    callback preset-mixed();       // Select mixed default
+
+    // Computed properties (updated by Rust when selection changes)
+    in-out property <int> total-input: 0;
+    in-out property <int> num-selected: 0;
+
+    property <int> total-output: config.recipient-amount + config.change-amount + config.fee;
+    property <bool> is-balanced: total-input == total-output;
+
+    VerticalBox {
+        padding: 16px;
+        spacing: 16px;
+
+        // Header
+        Text {
+            text: "Select UTXOs to Spend";
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        // UTXO list
+        Rectangle {
+            background: #444444;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: #e0e0e0;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 4px;
+
+                // Header
+                HorizontalBox {
+                    padding-left: 48px;  // Account for checkbox
+                    padding-bottom: 8px;
+                    spacing: 12px;
+
+                    Text {
+                        text: "ID";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: #666;
+                        width: 40px;
+                    }
+
+                    Text {
+                        text: "Amount";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: #666;
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: "Type";
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: #666;
+                        width: 80px;
+                    }
+
+                    Rectangle { width: 40px; }  // SP column
+                }
+
+                ScrollView {
+                    min-height: 200px;
+                    preferred-height: 400px;
+
+                    VerticalBox {
+                        spacing: 4px;
+
+                        for utxo[i] in utxos: UtxoRow {
+                            utxo: utxo;
+                            toggled => {
+                                utxos[i].selected = !utxos[i].selected;
+                                root.selection-changed();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Quick scenario presets
+        Rectangle {
+            background: #545454;
+            border-radius: 8px;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                Text {
+                    text: "Quick Scenarios";
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+
+                GridBox {
+                    spacing: 8px;
+
+                    Row {
+                        PresetButton {
+                            col: 0;
+                            label: "All P2WPKH";
+                            description: "Legacy SegWit";
+                            clicked => { root.preset-all-p2wpkh(); }
+                        }
+
+                        PresetButton {
+                            col: 1;
+                            label: "All P2TR";
+                            description: "Taproot only";
+                            clicked => { root.preset-all-p2tr(); }
+                        }
+                    }
+
+                    Row {
+                        PresetButton {
+                            col: 0;
+                            label: "SP Only";
+                            description: "Silent Payments";
+                            clicked => { root.preset-sp-only(); }
+                        }
+
+                        PresetButton {
+                            col: 1;
+                            label: "Mixed (Default)";
+                            description: "1 SP + 1 P2WPKH";
+                            clicked => { root.preset-mixed(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Amount configuration
+        Rectangle {
+            background: #444444;
+            border-radius: 8px;
+            border-color: #fff;
+            border-width: 1px;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 12px;
+
+                Text {
+                    text: "Transaction Amounts (sats)";
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+
+                GridBox {
+                    spacing: 8px;
+                    Row {
+                        Text {
+                            text: "Recipient:";
+                            vertical-alignment: center;
+                        }
+
+                        LineEdit {
+                            text: config.recipient-amount;
+                            input-type: InputType.number;
+                            edited(text) => {
+                                config.recipient-amount = text.to-float();
+                            }
+                        }
+                    }
+
+                    Row {
+                        Text {
+                            text: "Change:";
+                            vertical-alignment: center;
+                        }
+
+                        LineEdit {
+                            text: config.change-amount;
+                            input-type: InputType.number;
+                            edited(text) => {
+                                config.change-amount = text.to-float();
+                            }
+                        }
+                    }
+
+                    Row {
+                        Text {
+                            text: "Fee:";
+                            vertical-alignment: center;
+                        }
+
+                        LineEdit {
+                            text: config.fee;
+                            input-type: InputType.number;
+                            edited(text) => {
+                                config.fee = text.to-float();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Summary and balance check
+        Rectangle {
+            background: is-balanced ? #4d504d : #544d4e;
+            border-radius: 8px;
+            border-width: 2px;
+            border-color: is-balanced ? #4caf50 : #9b2c24;
+
+            VerticalBox {
+                padding: 12px;
+                spacing: 8px;
+
+                Text {
+                    text: "Transaction Summary";
+                    font-size: 14px;
+                    font-weight: 600;
+                }
+
+                HorizontalBox {
+                    spacing: 16px;
+
+                    Text {
+                        text: "Selected: " + num-selected + " UTXOs";
+                        font-size: 13px;
+                    }
+
+                    Text {
+                        text: "Input: " + total-input + " sats";
+                        font-size: 13px;
+                        font-weight: 600;
+                    }
+
+                    Text {
+                        text: "Output: " + total-output + " sats";
+                        font-size: 13px;
+                    }
+                }
+
+                Text {
+                    text: is-balanced ? "✓ Transaction Balanced" : "⚠ Input (" + total-input + ") ≠ Output (" + total-output + ")";
+                    color: is-balanced ? #2e7d32 : #9b2c24;
+                    font-weight: 700;
+                    font-size: 13px;
+                }
+            }
+        }
+
+        // Action buttons
+        HorizontalBox {
+            alignment: end;
+            spacing: 8px;
+
+            Button {
+                text: "Cancel";
+                clicked => { root.cancel(); }
+            }
+
+            Button {
+                text: "Apply Configuration";
+                enabled: is-balanced && num-selected > 0;
+                primary: true;
+                clicked => {
+                    // Rust will extract selected IDs from utxos model
+                    root.apply-config(config);
+                }
+            }
+        }
+    }
+}

@@ -43,7 +43,11 @@ pub fn get_charlie_wallet() -> VirtualWallet {
 /// - Input 2: Charlie's UTXO (from his wallet, selected by config)
 ///
 /// Each party selects UTXOs from their own VirtualWallet based on their config.
-pub fn get_transaction_inputs(alice_config: &TransactionConfig, bob_config: &TransactionConfig, charlie_config: &TransactionConfig) -> Vec<Utxo> {
+pub fn get_transaction_inputs(
+    alice_config: &TransactionConfig,
+    bob_config: &TransactionConfig,
+    charlie_config: &TransactionConfig,
+) -> Vec<Utxo> {
     let alice_wallet = get_alice_wallet();
     let bob_wallet = get_bob_wallet();
     let charlie_wallet = get_charlie_wallet();
@@ -99,7 +103,10 @@ pub fn get_transaction_outputs(config: &TransactionConfig) -> Vec<Output> {
         // Regular change output
         Output::regular(Amount::from_sat(config.change_amount), change_script),
         // Silent payment output
-        Output::silent_payment(Amount::from_sat(config.recipient_amount), get_recipient_address()),
+        Output::silent_payment(
+            Amount::from_sat(config.recipient_amount),
+            get_recipient_address(),
+        ),
     ]
 }
 
@@ -128,7 +135,13 @@ pub fn print_scenario_overview(inputs: &[Utxo], config: &TransactionConfig) {
     let parties = ["Alice", "Bob", "Charlie"];
     for (i, (utxo, party)) in inputs.iter().zip(parties.iter()).enumerate() {
         let input_type = script_type_string(&utxo.script_pubkey);
-        println!("   Input {} ({}) [{}]: {} sats", i, party, input_type, utxo.amount.to_sat());
+        println!(
+            "   Input {} ({}) [{}]: {} sats",
+            i,
+            party,
+            input_type,
+            utxo.amount.to_sat()
+        );
         println!(
             "      TXID: {}...{}",
             &utxo.txid.to_string()[..16],
@@ -174,19 +187,24 @@ pub fn print_scenario_overview(inputs: &[Utxo], config: &TransactionConfig) {
 
 /// Get default configuration for multi-signer scenario
 /// This creates configs for each party (Alice, Bob, Charlie) each contributing one input
-pub fn get_default_configs() -> (TransactionConfig, TransactionConfig, TransactionConfig, TransactionConfig) {
+pub fn get_default_configs() -> (
+    TransactionConfig,
+    TransactionConfig,
+    TransactionConfig,
+    TransactionConfig,
+) {
     let alice_config = TransactionConfig::multi_signer_auto(); // Alice contributes UTXO ID 0 (100k)
-    let bob_config = TransactionConfig::multi_signer_auto();   // Bob contributes UTXO ID 0 (100k)
+    let bob_config = TransactionConfig::multi_signer_auto(); // Bob contributes UTXO ID 0 (100k)
     let charlie_config = TransactionConfig::multi_signer_auto(); // Charlie contributes UTXO ID 0 (100k)
-    
+
     // Combined config for outputs (totals)
     // Total inputs: 300k, outputs: 185k + 100k + 15k = 300k
     let combined_config = TransactionConfig::new(
         vec![0, 0, 0], // Not used for outputs
-        185_000, // recipient amount
-        100_000, // change amount
-        15_000,  // fee
+        185_000,       // recipient amount
+        100_000,       // change amount
+        15_000,        // fee
     );
-    
+
     (alice_config, bob_config, charlie_config, combined_config)
 }

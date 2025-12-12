@@ -79,7 +79,10 @@ pub fn create_transaction_outputs(config: &TransactionConfig) -> Vec<Output> {
         // Change output
         Output::silent_payment(Amount::from_sat(config.change_amount), change_address),
         // Recipient output
-        Output::silent_payment(Amount::from_sat(config.recipient_amount), get_recipient_address()),
+        Output::silent_payment(
+            Amount::from_sat(config.recipient_amount),
+            get_recipient_address(),
+        ),
     ]
 }
 

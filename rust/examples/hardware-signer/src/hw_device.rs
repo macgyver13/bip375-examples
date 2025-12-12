@@ -8,7 +8,9 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt};
+use bip375_core::{
+    extensions::PSBT_OUT_DNSSEC_PROOF, Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt,
+};
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use common::{load_psbt, save_psbt, TransactionConfig};
@@ -314,8 +316,6 @@ impl HardwareDevice {
 
         // Sign all inputs (automatically detects P2PKH, P2WPKH, P2TR, and Silent Payments)
         sign_inputs(&secp, &mut psbt, &inputs)?;
-
-
 
         if attack_mode {
             println!("\n   🚨 ECDH shares computed with MALICIOUS scan key");

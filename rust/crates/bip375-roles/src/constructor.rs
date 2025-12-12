@@ -36,8 +36,10 @@ pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[Utxo]) -> Result<()> {
         if utxo.script_pubkey.is_p2tr() {
             // P2TR script: OP_1 <32-byte x-only pubkey>
             if utxo.script_pubkey.len() == 34 && utxo.script_pubkey.as_bytes()[0] == 0x51 {
-                if let Ok(x_only) = bitcoin::key::XOnlyPublicKey::from_slice(&utxo.script_pubkey.as_bytes()[2..34]) {
-                     psbt_input.tap_internal_key = Some(x_only);
+                if let Ok(x_only) =
+                    bitcoin::key::XOnlyPublicKey::from_slice(&utxo.script_pubkey.as_bytes()[2..34])
+                {
+                    psbt_input.tap_internal_key = Some(x_only);
                 }
             }
         }

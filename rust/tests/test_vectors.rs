@@ -187,7 +187,6 @@ fn test_valid_vectors() {
     println!("\n  All {} valid vectors passed\n", vectors.valid.len());
 }
 
-
 #[test]
 fn test_vector_file_exists() {
     assert!(

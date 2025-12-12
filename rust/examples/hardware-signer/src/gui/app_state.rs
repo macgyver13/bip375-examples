@@ -3,6 +3,7 @@
 //! This module defines the single source of truth for the GUI application state.
 
 use bip375_core::SilentPaymentPsbt;
+use common::TransactionConfig;
 use std::collections::HashSet;
 
 // Re-export types from gui-common for convenience
@@ -37,6 +38,9 @@ pub struct AppState {
 
     /// Modal dialog state
     pub active_modal: Option<ModalType>,
+
+    /// Transaction configuration (UTXO selection, amounts)
+    pub tx_config: TransactionConfig,
 }
 
 impl Default for AppState {
@@ -51,6 +55,7 @@ impl Default for AppState {
             transaction_summary: None,
             selected_field: None,
             active_modal: None,
+            tx_config: TransactionConfig::hardware_wallet_auto(),
         }
     }
 }
@@ -104,4 +109,5 @@ pub enum ModalType {
     ValidationError {
         error_message: String,
     },
+    UtxoSelector, // Show UTXO selection dialog
 }

@@ -5,8 +5,8 @@
 use crate::display_formatting;
 use crate::display_formatting::FieldCategory;
 use crate::field_identifier::FieldIdentifier;
-use bip375_core::SilentPaymentPsbt;
 use crate::psbt_display_ext::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
+use bip375_core::SilentPaymentPsbt;
 use std::collections::HashSet;
 
 /// A generic representation of a PSBT field for display

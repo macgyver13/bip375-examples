@@ -78,15 +78,25 @@ fn display_help() {
     let wallet = common::VirtualWallet::hardware_wallet_default();
     for utxo in wallet.list_utxos() {
         let sp_marker = if utxo.has_sp_tweak { " [SP]" } else { "" };
-        println!("    [{}] {} sats - {} - {}{}", 
-            utxo.id, utxo.utxo.amount.to_sat(), utxo.script_type.as_str(), 
-            utxo.description, sp_marker);
+        println!(
+            "    [{}] {} sats - {} - {}{}",
+            utxo.id,
+            utxo.utxo.amount.to_sat(),
+            utxo.script_type.as_str(),
+            utxo.description,
+            sp_marker
+        );
     }
     println!();
 }
 
 /// Run automated demo flow
-fn run_automated_demo(_auto_read: bool, _auto_approve: bool, attack_mode: bool, interactive_config: bool) {
+fn run_automated_demo(
+    _auto_read: bool,
+    _auto_approve: bool,
+    attack_mode: bool,
+    interactive_config: bool,
+) {
     println!("\n  Running automated BIP-375 Hardware Signer demo...\n");
 
     // Get configuration
@@ -123,7 +133,11 @@ fn run_normal_flow(auto_read: bool, auto_approve: bool) -> Result<(), Box<dyn st
 }
 
 /// Run normal flow with provided config
-fn run_normal_flow_with_config(config: &TransactionConfig, auto_read: bool, auto_approve: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn run_normal_flow_with_config(
+    config: &TransactionConfig,
+    auto_read: bool,
+    auto_approve: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("=== NORMAL FLOW ===\n");
 
     // Step 1: Create PSBT
@@ -181,7 +195,12 @@ fn run_attack_simulation_with_config(
 }
 
 /// Run interactive menu system
-fn run_interactive_menu(auto_read: bool, auto_approve: bool, attack_mode: bool, _interactive_config: bool) {
+fn run_interactive_menu(
+    auto_read: bool,
+    auto_approve: bool,
+    attack_mode: bool,
+    _interactive_config: bool,
+) {
     let mut state = DemoState::Ready;
     let mut current_config: Option<TransactionConfig> = None;
 
@@ -210,7 +229,8 @@ fn run_interactive_menu(auto_read: bool, auto_approve: bool, attack_mode: bool, 
             "2" => {
                 // Create PSBT
                 if state == DemoState::Ready || state == DemoState::TransactionExtracted {
-                    let config = current_config.as_ref()
+                    let config = current_config
+                        .as_ref()
                         .cloned()
                         .unwrap_or_else(|| TransactionConfig::hardware_wallet_auto());
                     match WalletCoordinator::create_psbt(&config, false) {
@@ -228,10 +248,16 @@ fn run_interactive_menu(auto_read: bool, auto_approve: bool, attack_mode: bool, 
             "3" => {
                 // Sign PSBT
                 if state == DemoState::PsbtCreated {
-                    let config = current_config.as_ref()
+                    let config = current_config
+                        .as_ref()
                         .cloned()
                         .unwrap_or_else(|| TransactionConfig::hardware_wallet_auto());
-                    match HardwareDevice::sign_workflow(&config, auto_read, auto_approve, attack_mode) {
+                    match HardwareDevice::sign_workflow(
+                        &config,
+                        auto_read,
+                        auto_approve,
+                        attack_mode,
+                    ) {
                         Ok(_) => {
                             state = DemoState::PsbtSigned;
                         }
@@ -246,7 +272,8 @@ fn run_interactive_menu(auto_read: bool, auto_approve: bool, attack_mode: bool, 
             "4" => {
                 // Finalize transaction
                 if state == DemoState::PsbtSigned {
-                    let config = current_config.as_ref()
+                    let config = current_config
+                        .as_ref()
                         .cloned()
                         .unwrap_or_else(|| TransactionConfig::hardware_wallet_auto());
                     match WalletCoordinator::finalize_transaction(&config, auto_read) {
@@ -279,10 +306,13 @@ fn run_interactive_menu(auto_read: bool, auto_approve: bool, attack_mode: bool, 
             "6" => {
                 // Attack simulation
                 if state == DemoState::Ready || state == DemoState::TransactionExtracted {
-                    let config = current_config.as_ref()
+                    let config = current_config
+                        .as_ref()
                         .cloned()
                         .unwrap_or_else(|| TransactionConfig::hardware_wallet_auto());
-                    if let Err(e) = run_attack_simulation_with_config(&config, auto_read, auto_approve) {
+                    if let Err(e) =
+                        run_attack_simulation_with_config(&config, auto_read, auto_approve)
+                    {
                         eprintln!("\n❌ Attack simulation error: {}\n", e);
                     }
                     // Reset state after attack simulation
@@ -317,11 +347,13 @@ fn display_menu(state: DemoState, config: Option<&TransactionConfig>) {
 
     println!("Current State: {:?}", state);
     if let Some(cfg) = config {
-        println!("Configuration: UTXOs {:?}, Recipient {}k, Change {}k, Fee {}k",
+        println!(
+            "Configuration: UTXOs {:?}, Recipient {}k, Change {}k, Fee {}k",
             cfg.selected_utxo_ids,
             cfg.recipient_amount / 1000,
             cfg.change_amount / 1000,
-            cfg.fee / 1000);
+            cfg.fee / 1000
+        );
     } else {
         println!("Configuration: Default");
     }
@@ -375,7 +407,7 @@ fn display_menu(state: DemoState, config: Option<&TransactionConfig>) {
 /// Get interactive configuration from user
 fn get_interactive_config() -> Result<TransactionConfig, Box<dyn std::error::Error>> {
     use common::{InteractiveConfig, VirtualWallet};
-    
+
     let wallet = VirtualWallet::hardware_wallet_default();
     let default_config = TransactionConfig::hardware_wallet_auto();
     InteractiveConfig::build(&wallet, default_config)

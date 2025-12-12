@@ -2,6 +2,10 @@
 // Main application window
 
 import { Button, VerticalBox, HorizontalBox, ScrollView, CheckBox, TextEdit, Palette } from "std-widgets.slint";
+import { UtxoSelectorDialog, UtxoData, TxConfig } from "utxo_selector.slint";
+
+// Re-export types from utxo_selector so they're available in Rust
+export { UtxoSelectorDialog, UtxoData, TxConfig }
 
 // Data structures
 export struct PsbtField {
@@ -129,11 +133,15 @@ export component AppWindow inherits Window {
     };
     in-out property <bool> has-validation: false;
 
+    // Transaction configuration display
+    in-out property <string> tx-config-summary: "Using 2 inputs: [1, 2]";
+
     // Callbacks (handled by Rust)
     callback create-psbt();
     callback sign-psbt();
     callback finalize-transaction();
     callback reset();
+    callback configure-inputs();  // Open UTXO selector dialog
 
     VerticalBox {
         // Header
@@ -204,6 +212,37 @@ export component AppWindow inherits Window {
                                    workflow-state == "PsbtSigned" ? #9966e6 :
                                    #33cc33;
                             font-size: 14px;
+                        }
+                    }
+
+                    // Configuration display (always visible)
+                    Rectangle {
+                        background: #555555;
+                        border-radius: 4px;
+
+                        VerticalBox {
+                            padding: 8px;
+                            spacing: 4px;
+
+                            Text {
+                                text: "Transaction Config";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: #cccccc;
+                            }
+
+                            Text {
+                                text: tx-config-summary;
+                                font-size: 11px;
+                                color: #ffffff;
+                                wrap: word-wrap;
+                            }
+
+                            // Only show configure button when in Ready or TransactionExtracted state
+                            if workflow-state == "Ready" || workflow-state == "TransactionExtracted": Button {
+                                text: "⚙ Configure Inputs";
+                                clicked => { root.configure-inputs(); }
+                            }
                         }
                     }
 

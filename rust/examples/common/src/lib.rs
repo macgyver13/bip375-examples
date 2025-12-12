@@ -213,7 +213,7 @@ pub struct VirtualUtxo {
     pub utxo: Utxo,
     pub script_type: ScriptType,
     pub description: String,
-    pub has_sp_tweak: bool, // Is it a received silent payment?
+    pub has_sp_tweak: bool,      // Is it a received silent payment?
     pub tweak: Option<[u8; 32]>, // The tweak data if SP output
 }
 
@@ -250,9 +250,8 @@ impl VirtualWallet {
                 let (final_pubkey, tweak) = if has_sp_tweak {
                     // Generate a deterministic tweak for this UTXO
                     let tweak = Self::generate_demo_tweak(idx);
-                    let tweaked_privkey =
-                        bip375_crypto::apply_tweak_to_privkey(&privkey, &tweak)
-                            .expect("Valid tweak");
+                    let tweaked_privkey = bip375_crypto::apply_tweak_to_privkey(&privkey, &tweak)
+                        .expect("Valid tweak");
                     let tweaked_pubkey = PublicKey::from_secret_key(&secp, &tweaked_privkey);
                     (tweaked_pubkey, Some(tweak))
                 } else {
@@ -306,14 +305,14 @@ impl VirtualWallet {
         Self::new(
             "hardware_wallet_coldcard_demo",
             &[
-                (50_000, ScriptType::P2WPKH, false),   // ID 0
-                (100_000, ScriptType::P2TR, true),     // ID 1 - SP
-                (150_000, ScriptType::P2WPKH, false),  // ID 2
-                (200_000, ScriptType::P2TR, true),     // ID 3 - SP
-                (75_000, ScriptType::P2WPKH, false),   // ID 4
-                (300_000, ScriptType::P2TR, true),     // ID 5 - SP
-                (125_000, ScriptType::P2WPKH, false),  // ID 6
-                (250_000, ScriptType::P2TR, false),    // ID 7
+                (50_000, ScriptType::P2WPKH, false),  // ID 0
+                (100_000, ScriptType::P2TR, true),    // ID 1 - SP
+                (150_000, ScriptType::P2WPKH, false), // ID 2
+                (200_000, ScriptType::P2TR, true),    // ID 3 - SP
+                (75_000, ScriptType::P2WPKH, false),  // ID 4
+                (300_000, ScriptType::P2TR, true),    // ID 5 - SP
+                (125_000, ScriptType::P2WPKH, false), // ID 6
+                (250_000, ScriptType::P2TR, false),   // ID 7
             ],
         )
     }
@@ -483,9 +482,7 @@ impl TransactionConfig {
 
     /// Parse comma-separated UTXO IDs
     fn parse_utxo_ids(s: &str) -> Result<Vec<usize>, std::num::ParseIntError> {
-        s.split(',')
-            .map(|id| id.trim().parse::<usize>())
-            .collect()
+        s.split(',').map(|id| id.trim().parse::<usize>()).collect()
     }
 
     /// Validate configuration against virtual wallet
@@ -577,9 +574,7 @@ impl InteractiveConfig {
             .map(|id| id.to_string())
             .collect();
 
-        println!(
-            "\\nSelect UTXOs to spend (comma-separated, e.g., '1,2,4'):"
-        );
+        println!("\\nSelect UTXOs to spend (comma-separated, e.g., '1,2,4'):");
         println!("Or press Enter for default [{}]", default_ids.join(","));
         print!("\\n> ");
         std::io::Write::flush(&mut std::io::stdout())?;
@@ -591,8 +586,7 @@ impl InteractiveConfig {
         let selected_ids = if input.is_empty() {
             default_config.selected_utxo_ids.clone()
         } else {
-            TransactionConfig::parse_utxo_ids(input)
-                .map_err(|_| "Invalid UTXO IDs format")?
+            TransactionConfig::parse_utxo_ids(input).map_err(|_| "Invalid UTXO IDs format")?
         };
 
         // Validate selection
@@ -604,7 +598,11 @@ impl InteractiveConfig {
 
         let total_input = wallet.total_amount(&selected_ids);
 
-        println!("\\n✓ Selected {} inputs totaling {} sats\\n", selected_ids.len(), total_input);
+        println!(
+            "\\n✓ Selected {} inputs totaling {} sats\\n",
+            selected_ids.len(),
+            total_input
+        );
         for id in &selected_ids {
             if let Some(vu) = wallet.get_utxo(*id) {
                 let sp_indicator = if vu.has_sp_tweak { " (SP)" } else { "" };
@@ -627,8 +625,7 @@ impl InteractiveConfig {
 
         // Auto-adjust amounts to balance
         let total_input = wallet.total_amount(&config.selected_utxo_ids);
-        let total_output =
-            config.recipient_amount + config.change_amount + config.fee;
+        let total_output = config.recipient_amount + config.change_amount + config.fee;
 
         let final_config = if total_input != total_output {
             println!(

@@ -355,7 +355,7 @@ impl Bip375PsbtExt for Psbt {
 
     fn set_output_dnssec_proof(&mut self, output_index: usize, proof: Vec<u8>) -> Result<()> {
         const PSBT_OUT_DNSSEC_PROOF: u8 = 0x35;
-        
+
         let output = self
             .outputs
             .get_mut(output_index)

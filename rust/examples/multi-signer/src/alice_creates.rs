@@ -65,10 +65,13 @@ fn alice_creates_main() -> Result<()> {
 
     // Parse configuration
     let (alice_config, bob_config, charlie_config, combined_config) = if args.len() > 1 {
-        let alice_cfg = common::TransactionConfig::from_args(&args, common::TransactionConfig::multi_signer_auto());
+        let alice_cfg = common::TransactionConfig::from_args(
+            &args,
+            common::TransactionConfig::multi_signer_auto(),
+        );
         let bob_cfg = common::TransactionConfig::multi_signer_auto();
         let charlie_cfg = common::TransactionConfig::multi_signer_auto();
-        
+
         // For combined config, use the parsed values for outputs
         let combined = common::TransactionConfig::new(
             vec![0, 0, 0],
@@ -83,7 +86,7 @@ fn alice_creates_main() -> Result<()> {
 
     // Get transaction data
     let mut inputs = get_transaction_inputs(&alice_config, &bob_config, &charlie_config);
-    
+
     print_scenario_overview(&inputs, &combined_config);
     let outputs = get_transaction_outputs(&combined_config);
 

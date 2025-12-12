@@ -18,8 +18,8 @@ impl WorkflowOrchestrator {
         // Take snapshot before
         let before_psbt = state.current_psbt.clone();
 
-        // Execute business logic (auto_continue for GUI mode)
-        WalletCoordinator::create_psbt(true)
+        // Execute business logic using the configured transaction config
+        WalletCoordinator::create_psbt(&state.tx_config, true)
             .map_err(|e| format!("Failed to create PSBT: {}", e))?;
 
         // Load the created PSBT
@@ -57,8 +57,8 @@ impl WorkflowOrchestrator {
         // Take snapshot before
         let before_psbt = state.current_psbt.clone();
 
-        // Execute business logic
-        HardwareDevice::sign_workflow(true, true, state.attack_mode)
+        // Execute business logic with config
+        HardwareDevice::sign_workflow(&state.tx_config, true, true, state.attack_mode)
             .map_err(|e| format!("Failed to sign PSBT: {}", e))?;
 
         let (psbt, _metadata) =
@@ -89,8 +89,8 @@ impl WorkflowOrchestrator {
         // Take snapshot before
         let before_psbt = state.current_psbt.clone();
 
-        // Execute business logic with validation
-        match WalletCoordinator::finalize_transaction(true) {
+        // Execute business logic with validation and config
+        match WalletCoordinator::finalize_transaction(&state.tx_config, true) {
             Ok(_) => {
                 // Load finalized PSBT (need to reload to see output scripts)
                 let (psbt, _) =
@@ -144,7 +144,10 @@ impl WorkflowOrchestrator {
     pub fn execute_reset(state: &mut AppState) -> Result<(), String> {
         WalletCoordinator::reset().map_err(|e| format!("Failed to reset: {}", e))?;
 
+        // Preserve the transaction config across resets
+        let preserved_config = state.tx_config.clone();
         *state = AppState::default();
+        state.tx_config = preserved_config;
         Ok(())
     }
 
