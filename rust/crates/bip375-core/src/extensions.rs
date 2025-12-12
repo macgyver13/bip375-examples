@@ -12,8 +12,7 @@
 //! - **Type-safe**: Leverages Rust's type system for correctness
 
 use crate::{
-    error::{Error, Result},
-    types::{EcdhShareData, SilentPaymentAddress},
+    error::{Error, Result}, types::{EcdhShareData, SilentPaymentAddress}
 };
 use bitcoin::CompressedPublicKey;
 use psbt_v2::{
@@ -484,6 +483,15 @@ impl Bip375PsbtExt for Psbt {
         input_index: usize,
         field: crate::field::PsbtField,
     ) -> Result<()> {
+        // Reject standard PSBT input field types - use specific methods instead
+        // Standard input fields: 0x00-0x10, 0x1d-0x1e (BIP-375), 0xFC (proprietary)
+        match field.field_type {
+            0x00..=0x10 | 0x1d | 0x1e | 0xFC => {
+                return Err(Error::StandardFieldNotAllowed(field.field_type));
+            }
+            _ => {} // Allow unknown fields
+        }
+
         let input = self
             .inputs
             .get_mut(input_index)
@@ -497,7 +505,6 @@ impl Bip375PsbtExt for Psbt {
         Ok(())
     }
 
-    // TODO: Replace with native rust-psbt fields or remove?
     fn get_input_field(
         &self,
         input_index: usize,
@@ -505,24 +512,31 @@ impl Bip375PsbtExt for Psbt {
     ) -> Option<crate::field::PsbtField> {
         let input = self.inputs.get(input_index)?;
 
-        for (key, value) in &input.unknowns {
-            if key.type_value == field_type {
-                return Some(crate::field::PsbtField::new(
-                    key.type_value,
-                    key.key.clone(),
-                    value.clone(),
-                ));
-            }
-        }
-        None
+        input
+            .iter_input_fields()
+            .into_iter()
+            .find(|(ftype, _, _)| *ftype == field_type)
+            .map(|(ftype, key_data, value_data)| {
+                crate::field::PsbtField::new(ftype, key_data, value_data)
+            })
+
     }
 
-    // TODO: Replace with native rust-psbt fields or remove?
+    // Only use this for adding unknown fields
     fn add_output_field(
         &mut self,
         output_index: usize,
         field: crate::field::PsbtField,
     ) -> Result<()> {
+        // Reject standard PSBT output field types - use specific methods instead
+        // Standard output fields: 0x00-0x04, 0x09-0x0a (BIP-375), 0xFC (proprietary)
+        match field.field_type {
+            0x00..=0x04 | 0x09 | 0x0a | 0xFC => {
+                return Err(Error::StandardFieldNotAllowed(field.field_type));
+            }
+            _ => {} // Allow unknown fields
+        }
+
         let output = self
             .outputs
             .get_mut(output_index)
@@ -536,24 +550,20 @@ impl Bip375PsbtExt for Psbt {
         Ok(())
     }
 
-    // TODO: Replace with native rust-psbt fields or remove?
     fn get_output_field(
         &self,
         output_index: usize,
         field_type: u8,
     ) -> Option<crate::field::PsbtField> {
         let output = self.outputs.get(output_index)?;
-
-        for (key, value) in &output.unknowns {
-            if key.type_value == field_type {
-                return Some(crate::field::PsbtField::new(
-                    key.type_value,
-                    key.key.clone(),
-                    value.clone(),
-                ));
-            }
-        }
-        None
+        
+        output
+            .iter_output_fields()
+            .into_iter()
+            .find(|(ftype, _, _)| *ftype == field_type)
+            .map(|(ftype, key_data, value_data)| {
+                crate::field::PsbtField::new(ftype, key_data, value_data)
+            })
     }
 }
 

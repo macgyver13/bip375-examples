@@ -56,6 +56,9 @@ pub enum Error {
     #[error("Invalid public key (must be compressed)")]
     InvalidPublicKey,
 
+    #[error("Cannot add standard field type {0} via generic accessor - use specific method instead")]
+    StandardFieldNotAllowed(u8),
+
     #[error("Bitcoin error: {0}")]
     Bitcoin(#[from] bitcoin::consensus::encode::Error),
 

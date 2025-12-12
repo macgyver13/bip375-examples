@@ -225,8 +225,19 @@ fn validate_ecdh_coverage(psbt: &SilentPaymentPsbt) -> Result<()> {
     for scan_key in scan_keys {
         // Check for global share first
         let global_shares = psbt.get_global_ecdh_shares();
+        let has_global = global_shares.iter().any(|s| s.scan_key == scan_key);
 
-        if global_shares.iter().any(|s| s.scan_key == scan_key) {
+        if has_global {
+            // Rule: If global share exists, there MUST NOT be any per-input shares for this scan key
+            for i in 0..num_inputs {
+                let shares = psbt.get_input_ecdh_shares(i);
+                if shares.iter().any(|s| s.scan_key == scan_key) {
+                    return Err(Error::InvalidFieldData(format!(
+                        "Scan key {} has both global ECDH share and per-input share at input {}",
+                        scan_key, i
+                    )));
+                }
+            }
             continue;
         }
 

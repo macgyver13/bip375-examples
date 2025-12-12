@@ -109,7 +109,24 @@ pub fn aggregate_ecdh_shares(psbt: &SilentPaymentPsbt) -> Result<AggregatedShare
         ));
     }
 
-    // Step 1: Collect all shares grouped by scan key
+    let mut result_shares = HashMap::new();
+
+    // Step 0: Collect explicit Global Shares
+    // These are stored in PSBT_GLOBAL_SP_ECDH_SHARE (0x07) and take precedence
+    let global_shares = psbt.get_global_ecdh_shares();
+    for share in global_shares {
+        result_shares.insert(
+            share.scan_key,
+            AggregatedShare {
+                scan_key: share.scan_key,
+                aggregated_share: share.share,
+                is_global: true,
+                num_inputs, // Global share implicitly covers all inputs
+            },
+        );
+    }
+
+    // Step 1: Collect input shares grouped by scan key
     let mut shares_by_scan_key: HashMap<PublicKey, Vec<PublicKey>> = HashMap::new();
 
     for input_idx in 0..num_inputs {
@@ -122,15 +139,18 @@ pub fn aggregate_ecdh_shares(psbt: &SilentPaymentPsbt) -> Result<AggregatedShare
         }
     }
 
-    // Step 2: Detect global vs per-input shares and aggregate
-    let mut result_shares = HashMap::new();
-
+    // Step 2: Detect implicit global vs per-input shares and aggregate
     for (scan_key, shares) in shares_by_scan_key {
-        if shares.is_empty() {
-            continue; // Should never happen, but be defensive
+        // If we already have an explicit global share for this key, skip input aggregation
+        if result_shares.contains_key(&scan_key) {
+            continue;
         }
 
-        // Detect global shares: all inputs have the exact same share point
+        if shares.is_empty() {
+            continue; // Should never happen
+        }
+
+        // Detect implicit global shares: all inputs have the exact same share point
         // AND there are shares from all inputs
         let first_share = shares[0];
         let is_global = shares.len() == num_inputs && shares.iter().all(|s| *s == first_share);

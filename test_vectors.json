@@ -741,7 +741,7 @@
           "scan_key": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
           "ecdh_result": "0255164e7926d50d52a09ff990647a5e95c1db1bfc68a616fbc2da213927f98bff",
           "dleq_proof": "c1d67f387882bf817915ea15821d64d5b3835c1fc05c558ce3d82492a17d908c10487dbb9bddc1080c8c2d9c1971b266083c69054e22193f244128ac66737e60",
-          "is_global": false,
+          "is_global": true,
           "input_index": 0
         }
       ],
