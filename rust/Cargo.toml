@@ -23,7 +23,7 @@ resolver = "2"
 members = [
     "crates/bip375-core",
     "crates/bip375-crypto",
-    "crates/bip375-gui-common",
+    "crates/bip375-helpers",
     "crates/bip375-io",
     "crates/bip375-roles",
     "crates/bip375-uniffi",
@@ -71,7 +71,7 @@ tokio = { version = "1", features = ["rt", "macros", "net"] }
 # Internal crates
 bip375-core = { path = "crates/bip375-core" }
 bip375-crypto = { path = "crates/bip375-crypto" }
-bip375-gui-common = { path = "crates/bip375-gui-common" }
+bip375-helpers = { path = "crates/bip375-helpers" }
 bip375-io = { path = "crates/bip375-io" }
 bip375-roles = { path = "crates/bip375-roles" }
 

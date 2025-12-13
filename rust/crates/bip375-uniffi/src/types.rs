@@ -103,12 +103,19 @@ pub struct Utxo {
 }
 
 impl Utxo {
-    pub fn to_core(&self) -> Result<core::types::Utxo, Bip375Error> {
-        use bitcoin::{Amount, Sequence, Txid};
+    /// Convert to PsbtInput (new type)
+    pub fn to_psbt_input(&self) -> Result<core::PsbtInput, Bip375Error> {
+        use bitcoin::{Amount, OutPoint, Sequence, TxOut, Txid};
         use secp256k1::SecretKey;
         use std::str::FromStr;
 
         let txid = Txid::from_str(&self.txid).map_err(|_| Bip375Error::InvalidData)?;
+        let outpoint = OutPoint::new(txid, self.vout);
+
+        let witness_utxo = TxOut {
+            value: Amount::from_sat(self.amount),
+            script_pubkey: bitcoin::ScriptBuf::from_bytes(self.script_pubkey.clone()),
+        };
 
         let private_key = if let Some(ref pk_bytes) = self.private_key {
             Some(SecretKey::from_slice(pk_bytes).map_err(|_| Bip375Error::InvalidKey)?)
@@ -116,20 +123,17 @@ impl Utxo {
             None
         };
 
-        let amount = Amount::from_sat(self.amount);
         let sequence = self
             .sequence
             .map(Sequence::from_consensus)
             .unwrap_or(Sequence::ZERO);
 
-        Ok(core::types::Utxo {
-            txid,
-            vout: self.vout,
-            amount,
-            script_pubkey: bitcoin::ScriptBuf::from_bytes(self.script_pubkey.clone()),
-            private_key,
+        Ok(core::PsbtInput::new(
+            outpoint,
+            witness_utxo,
             sequence,
-        })
+            private_key,
+        ))
     }
 }
 
@@ -150,22 +154,22 @@ pub struct Output {
 }
 
 impl Output {
-    pub fn to_core(&self) -> Result<core::types::Output, Bip375Error> {
-        use bitcoin::Amount;
+    /// Convert to PsbtOutput
+    pub fn to_psbt_output(&self) -> Result<core::PsbtOutput, Bip375Error> {
+        use bitcoin::{Amount, TxOut};
 
-        let recipient = match &self.recipient {
-            OutputRecipient::SilentPayment { address } => {
-                core::types::OutputRecipient::SilentPayment(address.to_core()?)
-            }
-            OutputRecipient::Address { script_pubkey } => core::types::OutputRecipient::Address(
-                bitcoin::ScriptBuf::from_bytes(script_pubkey.clone()),
-            ),
-        };
+        let amount = Amount::from_sat(self.amount);
 
-        Ok(core::types::Output {
-            amount: Amount::from_sat(self.amount),
-            recipient,
-        })
+        match &self.recipient {
+            OutputRecipient::SilentPayment { address } => Ok(core::PsbtOutput::SilentPayment {
+                amount,
+                address: address.to_core()?,
+            }),
+            OutputRecipient::Address { script_pubkey } => Ok(core::PsbtOutput::Regular(TxOut {
+                value: amount,
+                script_pubkey: bitcoin::ScriptBuf::from_bytes(script_pubkey.clone()),
+            })),
+        }
     }
 }
 
@@ -224,7 +228,7 @@ pub struct AggregatedShare {
 }
 
 impl AggregatedShare {
-    pub fn from_core(share: &core::ecdh_aggregation::AggregatedShare) -> Self {
+    pub fn from_core(share: &core::shares::AggregatedShare) -> Self {
         Self {
             scan_key: share.scan_key.serialize().to_vec(),
             aggregated_point: share.aggregated_share.serialize().to_vec(),
@@ -373,19 +377,19 @@ impl SilentPaymentPsbt {
     }
 
     pub fn add_inputs(&self, inputs: Vec<Utxo>) -> Result<(), Bip375Error> {
-        let core_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_core()).collect();
-        let core_inputs = core_inputs?;
+        let psbt_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_psbt_input()).collect();
+        let psbt_inputs = psbt_inputs?;
 
-        self.with_inner(|p| bip375_roles::constructor::add_inputs(p, &core_inputs))?;
+        self.with_inner(|p| bip375_roles::constructor::add_inputs(p, &psbt_inputs))?;
 
         Ok(())
     }
 
     pub fn add_outputs(&self, outputs: Vec<Output>) -> Result<(), Bip375Error> {
-        let core_outputs: Result<Vec<_>, _> = outputs.iter().map(|o| o.to_core()).collect();
-        let core_outputs = core_outputs?;
+        let psbt_outputs: Result<Vec<_>, _> = outputs.iter().map(|o| o.to_psbt_output()).collect();
+        let psbt_outputs = psbt_outputs?;
 
-        self.with_inner(|p| bip375_roles::constructor::add_outputs(p, &core_outputs))?;
+        self.with_inner(|p| bip375_roles::constructor::add_outputs(p, &psbt_outputs))?;
 
         Ok(())
     }
@@ -398,8 +402,8 @@ impl SilentPaymentPsbt {
         use secp256k1::{PublicKey, Secp256k1};
 
         let secp = Secp256k1::new();
-        let core_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_core()).collect();
-        let core_inputs = core_inputs?;
+        let psbt_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_psbt_input()).collect();
+        let psbt_inputs = psbt_inputs?;
 
         let core_scan_keys: Result<Vec<PublicKey>, _> =
             scan_keys.iter().map(|k| PublicKey::from_slice(k)).collect();
@@ -409,7 +413,7 @@ impl SilentPaymentPsbt {
             bip375_roles::signer::add_ecdh_shares_full(
                 &secp,
                 p,
-                &core_inputs,
+                &psbt_inputs,
                 &core_scan_keys,
                 true,
             )
@@ -420,9 +424,9 @@ impl SilentPaymentPsbt {
 
     pub fn sign_inputs(&self, inputs: Vec<Utxo>) -> Result<(), Bip375Error> {
         let secp = secp256k1::Secp256k1::new();
-        let core_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_core()).collect();
-        let core_inputs = core_inputs?;
-        self.with_inner(|p| bip375_roles::signer::sign_inputs(&secp, p, &core_inputs))?;
+        let psbt_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_psbt_input()).collect();
+        let psbt_inputs = psbt_inputs?;
+        self.with_inner(|p| bip375_roles::signer::sign_inputs(&secp, p, &psbt_inputs))?;
 
         Ok(())
     }
@@ -437,8 +441,8 @@ impl SilentPaymentPsbt {
         use secp256k1::{PublicKey, Secp256k1};
 
         let secp = Secp256k1::new();
-        let core_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_core()).collect();
-        let core_inputs = core_inputs?;
+        let psbt_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_psbt_input()).collect();
+        let psbt_inputs = psbt_inputs?;
 
         let core_scan_keys: Result<Vec<PublicKey>, _> =
             scan_keys.iter().map(|k| PublicKey::from_slice(k)).collect();
@@ -450,7 +454,7 @@ impl SilentPaymentPsbt {
             bip375_roles::signer::add_ecdh_shares_partial(
                 &secp,
                 p,
-                &core_inputs,
+                &psbt_inputs,
                 &core_scan_keys,
                 &indices,
                 include_dleq,

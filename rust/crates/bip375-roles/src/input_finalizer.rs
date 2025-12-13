@@ -93,9 +93,9 @@ pub fn finalize_inputs(
 mod tests {
     use super::*;
     use crate::{constructor::add_outputs, creator::create_psbt, signer::add_ecdh_shares_full};
-    use bip375_core::{Output, SilentPaymentAddress, Utxo};
+    use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
     use bitcoin::hashes::Hash;
-    use bitcoin::{Amount, ScriptBuf, Sequence, Txid};
+    use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
     use secp256k1::SecretKey;
 
     #[test]
@@ -114,7 +114,10 @@ mod tests {
         let sp_address = SilentPaymentAddress::new(scan_key, spend_key, None);
 
         // Add output
-        let outputs = vec![Output::silent_payment(Amount::from_sat(50000), sp_address)];
+        let outputs = vec![PsbtOutput::silent_payment(
+            Amount::from_sat(50000),
+            sp_address,
+        )];
         add_outputs(&mut psbt, &outputs).unwrap();
 
         // Create inputs with private keys
@@ -122,21 +125,29 @@ mod tests {
         let privkey2 = SecretKey::from_slice(&[2u8; 32]).unwrap();
 
         let inputs = vec![
-            Utxo::new(
-                Txid::all_zeros(),
-                0,
-                Amount::from_sat(30000),
-                ScriptBuf::new(),
+            PsbtInput::new(
+                OutPoint {
+                    txid: Txid::all_zeros(),
+                    vout: 0,
+                },
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: ScriptBuf::new(),
+                },
+                Sequence::MAX,
                 Some(privkey1),
-                Sequence::MAX,
             ),
-            Utxo::new(
-                Txid::all_zeros(),
-                1,
-                Amount::from_sat(30000),
-                ScriptBuf::new(),
-                Some(privkey2),
+            PsbtInput::new(
+                OutPoint {
+                    txid: Txid::all_zeros(),
+                    vout: 1,
+                },
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: ScriptBuf::new(),
+                },
                 Sequence::MAX,
+                Some(privkey2),
             ),
         ];
 
@@ -171,18 +182,22 @@ mod tests {
         let sp_address = SilentPaymentAddress::new(scan_key, spend_key, None);
 
         // Add output
-        let outputs = vec![Output::silent_payment(Amount::from_sat(50000), sp_address)];
+        let outputs = vec![PsbtOutput::silent_payment(
+            Amount::from_sat(50000),
+            sp_address,
+        )];
         add_outputs(&mut psbt, &outputs).unwrap();
 
         // Only add ECDH share for one input (incomplete)
         let privkey1 = SecretKey::from_slice(&[1u8; 32]).unwrap();
-        let inputs = vec![Utxo::new(
-            Txid::all_zeros(),
-            0,
-            Amount::from_sat(30000),
-            ScriptBuf::new(),
-            Some(privkey1),
+        let inputs = vec![PsbtInput::new(
+            OutPoint::new(Txid::all_zeros(), 0),
+            TxOut {
+                value: Amount::from_sat(30000),
+                script_pubkey: ScriptBuf::new(),
+            },
             Sequence::MAX,
+            Some(privkey1),
         )];
 
         // Use partial signing to only add share for input 0
@@ -217,7 +232,10 @@ mod tests {
         let sp_address = SilentPaymentAddress::new(scan_key, spend_key, None);
 
         // Add output
-        let outputs = vec![Output::silent_payment(Amount::from_sat(50000), sp_address)];
+        let outputs = vec![PsbtOutput::silent_payment(
+            Amount::from_sat(50000),
+            sp_address,
+        )];
         add_outputs(&mut psbt, &outputs).unwrap();
 
         // Create inputs with private keys
@@ -225,21 +243,23 @@ mod tests {
         let privkey2 = SecretKey::from_slice(&[2u8; 32]).unwrap();
 
         let inputs = vec![
-            Utxo::new(
-                Txid::all_zeros(),
-                0,
-                Amount::from_sat(30000),
-                ScriptBuf::new(),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 0),
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: ScriptBuf::new(),
+                },
+                Sequence::MAX,
                 Some(privkey1),
-                Sequence::MAX,
             ),
-            Utxo::new(
-                Txid::all_zeros(),
-                1,
-                Amount::from_sat(30000),
-                ScriptBuf::new(),
-                Some(privkey2),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 1),
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: ScriptBuf::new(),
+                },
                 Sequence::MAX,
+                Some(privkey2),
             ),
         ];
 

@@ -3,7 +3,6 @@
 //! Provides types for uniquely identifying and tracking PSBT fields across
 //! different map types (Global, Input, Output) for highlighting and comparison.
 
-use bip375_core::SilentPaymentPsbt;
 use serde::{Deserialize, Serialize};
 
 /// Uniquely identifies a PSBT field by its location and key
@@ -23,14 +22,6 @@ pub enum FieldIdentifier {
         field_type: u8,
         key_data: Vec<u8>,
     },
-}
-
-/// PSBT snapshot for history tracking
-#[derive(Clone, Debug)]
-pub struct PsbtSnapshot {
-    pub timestamp: std::time::SystemTime,
-    pub label: String,
-    pub psbt: SilentPaymentPsbt,
 }
 
 /// Transaction summary information

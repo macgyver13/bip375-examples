@@ -2,9 +2,13 @@
 //!
 //! Core types for silent payments in PSBTs.
 
-use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, Txid};
+use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, TxOut};
 use secp256k1::{PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
+
+// ============================================================================
+// Core BIP-352/BIP-375 Protocol Types
+// ============================================================================
 
 /// A silent payment address (BIP-352)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,133 +133,86 @@ impl EcdhShareData {
     }
 }
 
-/// UTXO information for creating PSBTs
+// ============================================================================
+// PSBT Construction Helper Types
+// ============================================================================
+
+/// Input data for PSBT construction
+///
+/// Combines bitcoin primitives with optional signing key for BIP-375 workflows.
+/// This is a construction helper, not part of the serialized PSBT format.
 #[derive(Debug, Clone)]
-pub struct Utxo {
-    /// Previous transaction ID
-    pub txid: Txid,
-    /// Output index
-    pub vout: u32,
-    /// Amount in satoshis
-    pub amount: Amount,
-    /// ScriptPubKey of the output
-    pub script_pubkey: ScriptBuf,
-    /// Private key for signing (if available)
-    pub private_key: Option<SecretKey>,
-    /// Sequence number
+pub struct PsbtInput {
+    /// The previous output being spent
+    pub outpoint: OutPoint,
+    /// The UTXO being spent (value + script)
+    pub witness_utxo: TxOut,
+    /// Sequence number for this input
     pub sequence: Sequence,
+    /// Optional private key for signing (not serialized)
+    pub private_key: Option<SecretKey>,
 }
 
-impl Utxo {
-    /// Create a new UTXO
+impl PsbtInput {
+    /// Create a new PSBT input
     pub fn new(
-        txid: Txid,
-        vout: u32,
-        amount: Amount,
-        script_pubkey: ScriptBuf,
-        private_key: Option<SecretKey>,
+        outpoint: OutPoint,
+        witness_utxo: TxOut,
         sequence: Sequence,
+        private_key: Option<SecretKey>,
     ) -> Self {
         Self {
-            txid,
-            vout,
-            amount,
-            script_pubkey,
-            private_key,
+            outpoint,
+            witness_utxo,
             sequence,
-        }
-    }
-
-    /// Get the outpoint for this UTXO
-    pub fn outpoint(&self) -> OutPoint {
-        OutPoint {
-            txid: self.txid,
-            vout: self.vout,
+            private_key,
         }
     }
 }
 
-/// Output information for PSBTs
+/// Output data for PSBT construction
+///
+/// Either a regular bitcoin output or a silent payment output.
+/// For silent payments, the script is computed during finalization.
 #[derive(Debug, Clone)]
-pub struct Output {
-    /// Amount in satoshis
-    pub amount: Amount,
-    /// Script pubkey or silent payment address
-    pub recipient: OutputRecipient,
+pub enum PsbtOutput {
+    /// Regular bitcoin output with known script
+    Regular(TxOut),
+    /// Silent payment output (script computed during finalization)
+    SilentPayment {
+        /// Amount to send
+        amount: Amount,
+        /// Silent payment address
+        address: SilentPaymentAddress,
+    },
 }
 
-/// Output recipient type
-#[derive(Debug, Clone)]
-pub enum OutputRecipient {
-    /// Regular Bitcoin address (script pubkey)
-    Address(ScriptBuf),
-    /// Silent payment address
-    SilentPayment(SilentPaymentAddress),
-}
-
-impl Output {
+impl PsbtOutput {
     /// Create a regular output
     pub fn regular(amount: Amount, script_pubkey: ScriptBuf) -> Self {
-        Self {
-            amount,
-            recipient: OutputRecipient::Address(script_pubkey),
-        }
+        Self::Regular(TxOut {
+            value: amount,
+            script_pubkey,
+        })
     }
 
     /// Create a silent payment output
     pub fn silent_payment(amount: Amount, address: SilentPaymentAddress) -> Self {
-        Self {
-            amount,
-            recipient: OutputRecipient::SilentPayment(address),
-        }
+        Self::SilentPayment { amount, address }
     }
 
     /// Check if this is a silent payment output
     pub fn is_silent_payment(&self) -> bool {
-        matches!(self.recipient, OutputRecipient::SilentPayment(_))
+        matches!(self, Self::SilentPayment { .. })
     }
-}
 
-/// Transaction data needed for signing
-#[derive(Debug, Clone)]
-pub struct TransactionData {
-    /// Transaction version
-    pub version: i32,
-    /// Transaction locktime
-    pub locktime: u32,
-    /// Input data
-    pub inputs: Vec<InputData>,
-    /// Output data
-    pub outputs: Vec<OutputData>,
-}
-
-/// Input data for transaction
-#[derive(Debug, Clone)]
-pub struct InputData {
-    /// Previous outpoint
-    pub outpoint: OutPoint,
-    /// Sequence number
-    pub sequence: Sequence,
-    /// Witness UTXO (for SegWit)
-    pub witness_utxo: Option<WitnessUtxo>,
-}
-
-/// Witness UTXO data
-#[derive(Debug, Clone)]
-pub struct WitnessUtxo {
-    /// Amount
-    pub amount: Amount,
-    /// Script pubkey
-    pub script_pubkey: ScriptBuf,
-}
-
-/// Output data for transaction
-#[derive(Debug, Clone)]
-pub struct OutputData {
-    /// Amount
-    pub amount: Amount,
-    /// Script pubkey
-    pub script_pubkey: ScriptBuf,
+    /// Get the amount
+    pub fn amount(&self) -> Amount {
+        match self {
+            Self::Regular(txout) => txout.value,
+            Self::SilentPayment { amount, .. } => *amount,
+        }
+    }
 }
 
 #[cfg(test)]

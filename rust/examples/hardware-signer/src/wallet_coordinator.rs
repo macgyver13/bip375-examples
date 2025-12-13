@@ -8,6 +8,7 @@
 //! - Finalizes and extracts transactions
 
 use crate::shared_utils::*;
+use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     constructor::{add_inputs, add_outputs},
@@ -16,7 +17,6 @@ use bip375_roles::{
     input_finalizer::finalize_inputs,
     validation::{validate_psbt, ValidationLevel},
 };
-use common::*;
 use secp256k1::Secp256k1;
 use std::collections::HashSet;
 
@@ -72,14 +72,9 @@ impl WalletCoordinator {
         let tweak_db = TweakDatabase::from_virtual_wallet(&get_virtual_wallet());
         let mut sp_input_count = 0;
 
-        for (input_idx, utxo) in inputs.iter().enumerate() {
-            let outpoint = bitcoin::OutPoint {
-                txid: utxo.txid,
-                vout: utxo.vout,
-            };
-
+        for (input_idx, input) in inputs.iter().enumerate() {
             // Check if this input is a silent payment output we previously received
-            if let Some(tweak) = tweak_db.get(&outpoint) {
+            if let Some(tweak) = tweak_db.get(&input.outpoint) {
                 psbt.set_input_sp_tweak(input_idx, tweak)?;
                 sp_input_count += 1;
             }
@@ -281,8 +276,14 @@ impl WalletCoordinator {
 
         // Amount validation
         println!("\n  Validating transaction amounts...");
-        let total_input: u64 = inputs.iter().map(|u| u.amount.to_sat()).sum();
-        let total_output: u64 = outputs.iter().map(|o| o.amount.to_sat()).sum();
+        let total_input: u64 = inputs.iter().map(|i| i.witness_utxo.value.to_sat()).sum();
+        let total_output: u64 = outputs
+            .iter()
+            .map(|o| match o {
+                bip375_core::PsbtOutput::SilentPayment { amount, .. } => amount.to_sat(),
+                bip375_core::PsbtOutput::Regular(txout) => txout.value.to_sat(),
+            })
+            .sum();
         let fee = total_input - total_output;
 
         println!("   Total input:  {} sats", total_input);

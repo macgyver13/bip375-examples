@@ -7,7 +7,7 @@ mod resources;
 mod test_vector_helper;
 
 use bip375_core::SilentPaymentPsbt;
-use bip375_gui_common::{display_adapter, psbt_analyzer, psbt_io};
+use bip375_helpers::display::{adapter, psbt_analyzer, psbt_io};
 use slint::Model;
 use std::collections::HashSet;
 use test_vector_helper::TestVectorFile;
@@ -20,10 +20,10 @@ fn convert_fields_to_slint(
 ) -> (Vec<PsbtField>, Vec<PsbtField>, Vec<PsbtField>) {
     // Extract all fields using the shared display adapter (no highlighting needed)
     let (global_fields, input_fields, output_fields) =
-        display_adapter::extract_display_fields(psbt, &HashSet::new());
+        adapter::extract_display_fields(psbt, &HashSet::new());
 
     // Convert DisplayField to Slint's PsbtField
-    let convert = |field: display_adapter::DisplayField| PsbtField {
+    let convert = |field: adapter::DisplayField| PsbtField {
         field_name: field.field_name.into(),
         field_type: field.field_type_str.into(),
         key_preview: field.key_preview.into(),

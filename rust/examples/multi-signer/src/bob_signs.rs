@@ -17,12 +17,12 @@
 
 use crate::shared_utils::*;
 use bip375_core::{Bip375PsbtExt, Result};
+use bip375_helpers::display::psbt_io::{load_psbt, save_psbt};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     signer::{add_ecdh_shares_partial, sign_inputs},
     validation::{validate_psbt, ValidationLevel},
 };
-use common::{load_psbt, save_psbt};
 use secp256k1::Secp256k1;
 
 pub fn bob_signs() -> Result<()> {
@@ -101,8 +101,8 @@ fn bob_signs_main() -> Result<()> {
     // Extract scan keys from outputs
     let scan_keys: Vec<_> = outputs
         .iter()
-        .filter_map(|output| match &output.recipient {
-            bip375_core::OutputRecipient::SilentPayment(address) => Some(address.scan_key),
+        .filter_map(|output| match output {
+            bip375_core::PsbtOutput::SilentPayment { address, .. } => Some(address.scan_key),
             _ => None,
         })
         .collect();

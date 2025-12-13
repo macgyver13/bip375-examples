@@ -8,9 +8,9 @@
 //! - Hardware device: Air-gapped device that signs transactions
 //! - File-based transfer: Simulates QR codes or USB transfer
 
-use bip375_core::{Output, OutputRecipient, SilentPaymentAddress, Utxo};
+use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
 use bip375_crypto::script_type_string;
-use common::{SimpleWallet, TransactionConfig, VirtualWallet};
+use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
 
 /// Wallet seeds for deterministic key generation
 pub const HW_WALLET_SEED: &str = "hardware_wallet_coldcard_demo";
@@ -45,9 +45,13 @@ pub fn get_virtual_wallet() -> VirtualWallet {
 ///
 /// Uses VirtualWallet to select UTXOs based on TransactionConfig.
 /// Supports flexible input selection including Silent Payment outputs.
-pub fn create_transaction_inputs(config: &TransactionConfig) -> Vec<Utxo> {
+pub fn create_transaction_inputs(config: &TransactionConfig) -> Vec<PsbtInput> {
     let wallet = get_virtual_wallet();
-    wallet.select_by_ids(&config.selected_utxo_ids)
+    wallet
+        .select_by_ids(&config.selected_utxo_ids)
+        .into_iter()
+        .map(|utxo| utxo.to_psbt_input())
+        .collect()
 }
 
 /// Create transaction outputs based on configuration
@@ -67,7 +71,7 @@ pub fn create_transaction_inputs(config: &TransactionConfig) -> Vec<Utxo> {
 /// 4. Wallet recovery: Scanners know to check label=0 during backup recovery
 ///
 /// See BIP 375 "Change Detection" section and BIP 352 "Labels" section.
-pub fn create_transaction_outputs(config: &TransactionConfig) -> Vec<Output> {
+pub fn create_transaction_outputs(config: &TransactionConfig) -> Vec<PsbtOutput> {
     use bitcoin::Amount;
     let hw_wallet = get_hardware_wallet();
     let (scan_key, spend_key) = hw_wallet.scan_spend_keys();
@@ -77,9 +81,9 @@ pub fn create_transaction_outputs(config: &TransactionConfig) -> Vec<Output> {
 
     vec![
         // Change output
-        Output::silent_payment(Amount::from_sat(config.change_amount), change_address),
+        PsbtOutput::silent_payment(Amount::from_sat(config.change_amount), change_address),
         // Recipient output
-        Output::silent_payment(
+        PsbtOutput::silent_payment(
             Amount::from_sat(config.recipient_amount),
             get_recipient_address(),
         ),
@@ -103,35 +107,34 @@ pub fn display_transaction_summary_with_dnssec(
     println!("{}\n", "=".repeat(60));
 
     println!("  Inputs:");
-    for (i, utxo) in inputs.iter().enumerate() {
-        println!("   Input {}: {} sats", i, utxo.amount.to_sat());
+    for (i, input) in inputs.iter().enumerate() {
+        println!("   Input {}: {} sats", i, input.witness_utxo.value.to_sat());
+        let txid_str = input.outpoint.txid.to_string();
         println!(
             "      TXID: {}...{}",
-            &utxo.txid.to_string()[..16],
-            &utxo.txid.to_string()[utxo.txid.to_string().len() - 8..]
+            &txid_str[..16],
+            &txid_str[txid_str.len() - 8..]
         );
-        println!("      VOUT: {}", utxo.vout);
-        println!("      Type: {}", script_type_string(&utxo.script_pubkey));
+        println!("      VOUT: {}", input.outpoint.vout);
+        println!(
+            "      Type: {}",
+            script_type_string(&input.witness_utxo.script_pubkey)
+        );
     }
 
-    let total_input: u64 = inputs.iter().map(|u| u.amount.to_sat()).sum();
+    let total_input: u64 = inputs.iter().map(|i| i.witness_utxo.value.to_sat()).sum();
     println!("   Total Input: {} sats\n", total_input);
 
     println!("  Outputs:");
     for (i, output) in outputs.iter().enumerate() {
-        match &output.recipient {
-            OutputRecipient::SilentPayment(address) => {
+        match output {
+            PsbtOutput::SilentPayment { amount, address } => {
                 let label_info = match address.label {
                     Some(0) => " (Change - label 0)",
                     Some(n) => &format!(" (label {})", n),
                     None => "",
                 };
-                println!(
-                    "   Output {}{}: {} sats",
-                    i,
-                    label_info,
-                    output.amount.to_sat()
-                );
+                println!("   Output {}{}: {} sats", i, label_info, amount.to_sat());
                 println!(
                     "      Scan Key:  {}",
                     hex::encode(address.scan_key.serialize())
@@ -159,14 +162,23 @@ pub fn display_transaction_summary_with_dnssec(
                     }
                 }
             }
-            OutputRecipient::Address(script_pubkey) => {
-                println!("   Output {}: {} sats", i, output.amount.to_sat());
-                println!("      Script: {}", hex::encode(script_pubkey.as_bytes()));
+            PsbtOutput::Regular(txout) => {
+                println!("   Output {}: {} sats", i, txout.value.to_sat());
+                println!(
+                    "      Script: {}",
+                    hex::encode(txout.script_pubkey.as_bytes())
+                );
             }
         }
     }
 
-    let total_output: u64 = outputs.iter().map(|o| o.amount.to_sat()).sum();
+    let total_output: u64 = outputs
+        .iter()
+        .map(|o| match o {
+            PsbtOutput::SilentPayment { amount, .. } => amount.to_sat(),
+            PsbtOutput::Regular(txout) => txout.value.to_sat(),
+        })
+        .sum();
     let fee = total_input - total_output;
     println!("\n   Fee: {} sats", fee);
     println!();

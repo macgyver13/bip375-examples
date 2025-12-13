@@ -2,10 +2,9 @@
 //!
 //! Unifies the logic for extracting and formatting PSBT fields for display.
 
-use crate::display_formatting;
-use crate::display_formatting::FieldCategory;
-use crate::field_identifier::FieldIdentifier;
-use crate::psbt_display_ext::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
+use super::field_identifier::FieldIdentifier;
+use super::formatting::{self, FieldCategory};
+use super::psbt_extension::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
 use bip375_core::SilentPaymentPsbt;
 use std::collections::HashSet;
 
@@ -128,10 +127,10 @@ fn create_display_field(
 ) -> DisplayField {
     let is_highlighted = highlighted.contains(&identifier);
 
-    let field_name = display_formatting::format_field_name(category, field_type);
+    let field_name = formatting::format_field_name(category, field_type);
     let field_type_str = format!("0x{:02x}", field_type);
-    let key_preview = display_formatting::format_value_preview(key_data);
-    let value_preview = display_formatting::format_field_value(category, field_type, value_data);
+    let key_preview = formatting::format_value_preview(key_data);
+    let value_preview = formatting::format_field_value(category, field_type, value_data);
 
     DisplayField {
         identifier,

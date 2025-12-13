@@ -19,7 +19,6 @@
 ///
 /// Note: The field type constant (0x35) is defined locally. Consider upstreaming to
 /// rust-psbt or bip353-rs once BIP-353 PSBT integration is standardized.
-
 /// New proposed field for tracking TWEAK associated with Silent Payment Input
 use bip375_core::extensions::PSBT_OUT_DNSSEC_PROOF;
 

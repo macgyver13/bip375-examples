@@ -1,82 +1,78 @@
-use bip375_core::{SilentPaymentPsbt, Utxo};
+//! Wallet types for examples and demos
+//!
+//! Provides virtual wallet, UTXO management, and transaction configuration
+//! utilities for building BIP-375 demonstration applications.
+
+use bip375_core::PsbtInput;
 use bip375_crypto::{pubkey_to_p2tr_script, pubkey_to_p2wpkh_script, script_type_string};
-use bip375_io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
-use bitcoin::{hashes::Hash, Amount, Sequence, Txid};
+use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
-use std::cell::RefCell;
-use std::fs;
-use std::path::{Path, PathBuf};
 
-/// File paths for PSBT transfer
-pub const TRANSFER_FILE: &str = "output/transfer.json";
-pub const FINAL_TX_FILE: &str = "output/final_transaction.hex";
+// ============================================================================
+// UTXO Type
+// ============================================================================
 
-thread_local! {
-    // Thread-local memory storage for PSBT (GUI mode)
-    static PSBT_MEMORY: RefCell<Option<(SilentPaymentPsbt, Option<PsbtMetadata>)>> = const { RefCell::new(None) };
+/// UTXO information for creating PSBTs
+///
+/// This is a helper type used by the examples' VirtualWallet.
+/// For actual PSBT construction, convert to `PsbtInput` using `to_psbt_input()`.
+#[derive(Debug, Clone)]
+pub struct Utxo {
+    /// Previous transaction ID
+    pub txid: Txid,
+    /// Output index
+    pub vout: u32,
+    /// Amount in satoshis
+    pub amount: Amount,
+    /// ScriptPubKey of the output
+    pub script_pubkey: ScriptBuf,
+    /// Private key for signing (if available)
+    pub private_key: Option<SecretKey>,
+    /// Sequence number
+    pub sequence: Sequence,
 }
 
-/// Set whether to use in-memory storage (for GUI) or file-based storage (for CLI)
-pub fn set_use_memory_storage(use_memory: bool) {
-    USE_MEMORY_STORAGE.with(|us| *us.borrow_mut() = use_memory);
-}
-
-thread_local! {
-    // Thread-local flag to control storage mode
-    static USE_MEMORY_STORAGE: RefCell<bool> = const { RefCell::new(false) };
-}
-
-/// Save PSBT wrapper - uses memory for GUI, files for CLI
-pub fn save_psbt(
-    psbt: &SilentPaymentPsbt,
-    metadata: Option<PsbtMetadata>,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
-
-    if use_memory {
-        // Store in thread-local memory
-        PSBT_MEMORY.with(|pm| {
-            *pm.borrow_mut() = Some((psbt.clone(), metadata));
-        });
-        Ok(PathBuf::from("memory://transfer.psbt"))
-    } else {
-        // Save to file (CLI mode)
-        let path = PathBuf::from(TRANSFER_FILE);
-        std::fs::create_dir_all(path.parent().unwrap())?;
-        save_psbt_with_metadata(psbt, metadata, &path)?;
-        Ok(path)
+impl Utxo {
+    /// Create a new UTXO
+    pub fn new(
+        txid: Txid,
+        vout: u32,
+        amount: Amount,
+        script_pubkey: ScriptBuf,
+        private_key: Option<SecretKey>,
+        sequence: Sequence,
+    ) -> Self {
+        Self {
+            txid,
+            vout,
+            amount,
+            script_pubkey,
+            private_key,
+            sequence,
+        }
     }
-}
 
-/// Load PSBT wrapper - uses memory for GUI, files for CLI
-pub fn load_psbt() -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), Box<dyn std::error::Error>>
-{
-    let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
-
-    if use_memory {
-        // Load from thread-local memory
-        PSBT_MEMORY.with(|pm| {
-            pm.borrow()
-                .clone()
-                .ok_or_else(|| "No PSBT in memory".into())
-        })
-    } else {
-        // Load from file (CLI mode)
-        let path = PathBuf::from(TRANSFER_FILE);
-        load_psbt_with_metadata(&path).map_err(|e| format!("Failed to load PSBT: {}", e).into())
+    /// Get the outpoint for this UTXO
+    pub fn outpoint(&self) -> OutPoint {
+        OutPoint {
+            txid: self.txid,
+            vout: self.vout,
+        }
     }
-}
 
-// Save final transaction
-pub fn save_txn(tx_bytes: &Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
-    let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
-    if !use_memory {
-        let tx_hex = hex::encode(tx_bytes);
-        fs::write(FINAL_TX_FILE, tx_hex)?;
-        println!("  Saved final transaction to: {}\n", FINAL_TX_FILE);
+    /// Convert to PsbtInput for use with bip375-roles
+    pub fn to_psbt_input(&self) -> PsbtInput {
+        PsbtInput::new(
+            self.outpoint(),
+            TxOut {
+                value: self.amount,
+                script_pubkey: self.script_pubkey.clone(),
+            },
+            self.sequence,
+            self.private_key,
+        )
     }
-    Ok(())
 }
 
 /// Simple wallet for generating deterministic keys from a seed
@@ -149,41 +145,6 @@ impl SimpleWallet {
     pub fn scan_spend_keys(&self) -> (PublicKey, PublicKey) {
         (self.scan_key_pair().1, self.spend_key_pair().1)
     }
-}
-
-/// Verify a file exists
-pub fn verify_file_exists(filename: &str) -> Result<(), String> {
-    if !Path::new(filename).exists() {
-        return Err(format!("File not found: {}", filename));
-    }
-    Ok(())
-}
-
-/// Reset workflow by removing all generated files
-pub fn reset_workflow() -> std::io::Result<()> {
-    println!("🧹 Resetting workflow...\n");
-
-    let files = [TRANSFER_FILE, FINAL_TX_FILE];
-
-    let mut removed_count = 0;
-    for file in &files {
-        if Path::new(file).exists() {
-            fs::remove_file(file)?;
-            println!(
-                "   Removed {}",
-                Path::new(file).file_name().unwrap().to_str().unwrap()
-            );
-            removed_count += 1;
-        }
-    }
-
-    if removed_count == 0 {
-        println!("   No workflow files found - already clean");
-    } else {
-        println!("\n  Workflow reset complete");
-    }
-
-    Ok(())
 }
 
 // =============================================================================

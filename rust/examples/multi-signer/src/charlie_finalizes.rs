@@ -23,6 +23,7 @@
 
 use crate::shared_utils::*;
 use bip375_core::{Bip375PsbtExt, Result};
+use bip375_helpers::display::psbt_io::{load_psbt, save_psbt, save_txn};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     extractor::extract_transaction,
@@ -30,7 +31,6 @@ use bip375_roles::{
     signer::{add_ecdh_shares_partial, sign_inputs},
     validation::{validate_psbt, ValidationLevel},
 };
-use common::{load_psbt, save_psbt, save_txn};
 use secp256k1::Secp256k1;
 
 pub fn charlie_finalizes() -> Result<()> {
@@ -107,8 +107,8 @@ fn charlie_finalizes_main() -> Result<()> {
     // Extract scan keys from outputs
     let scan_keys: Vec<_> = outputs
         .iter()
-        .filter_map(|output| match &output.recipient {
-            bip375_core::OutputRecipient::SilentPayment(address) => Some(address.scan_key),
+        .filter_map(|output| match output {
+            bip375_core::PsbtOutput::SilentPayment { address, .. } => Some(address.scan_key),
             _ => None,
         })
         .collect();
@@ -198,7 +198,7 @@ fn charlie_finalizes_main() -> Result<()> {
 
     // Display transaction summary
     println!("\n  Transaction Summary:");
-    let total_input: u64 = inputs.iter().map(|u| u.amount.to_sat()).sum();
+    let total_input: u64 = inputs.iter().map(|i| i.witness_utxo.value.to_sat()).sum();
     println!("   Total Input:      {:>10} sats", total_input);
     println!("   Change:           {:>10} sats", 100_000);
     println!("   Silent Payment:   {:>10} sats", 340_000);

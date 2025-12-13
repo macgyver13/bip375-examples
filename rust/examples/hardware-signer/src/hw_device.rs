@@ -8,12 +8,10 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{
-    extensions::PSBT_OUT_DNSSEC_PROOF, Bip375PsbtExt, OutputRecipient, SilentPaymentPsbt,
-};
+use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, Bip375PsbtExt, SilentPaymentPsbt};
+use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
-use common::{load_psbt, save_psbt, TransactionConfig};
 use secp256k1::{PublicKey, Secp256k1};
 use std::io::{self, Write};
 
@@ -213,8 +211,8 @@ impl HardwareDevice {
         // Extract scan keys from outputs
         let mut scan_keys: Vec<PublicKey> = outputs
             .iter()
-            .filter_map(|output| match &output.recipient {
-                OutputRecipient::SilentPayment(address) => Some(address.scan_key),
+            .filter_map(|output| match output {
+                bip375_core::PsbtOutput::SilentPayment { address, .. } => Some(address.scan_key),
                 _ => None,
             })
             .collect();

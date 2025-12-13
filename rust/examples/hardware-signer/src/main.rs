@@ -8,7 +8,7 @@ mod hw_device;
 mod shared_utils;
 mod wallet_coordinator;
 
-use common::TransactionConfig;
+use bip375_helpers::wallet::{types::InteractiveConfig, TransactionConfig, VirtualWallet};
 use hw_device::HardwareDevice;
 use std::io::{self, Write};
 use wallet_coordinator::WalletCoordinator;
@@ -75,7 +75,7 @@ fn display_help() {
     println!("    # Interactive UTXO selection");
     println!("    hardware-signer --interactive-config\n");
     println!("AVAILABLE UTXOs:");
-    let wallet = common::VirtualWallet::hardware_wallet_default();
+    let wallet = VirtualWallet::hardware_wallet_default();
     for utxo in wallet.list_utxos() {
         let sp_marker = if utxo.has_sp_tweak { " [SP]" } else { "" };
         println!(
@@ -126,12 +126,6 @@ fn run_automated_demo(
     }
 }
 
-/// Run normal flow automatically
-fn run_normal_flow(auto_read: bool, auto_approve: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let config = TransactionConfig::hardware_wallet_auto();
-    run_normal_flow_with_config(&config, auto_read, auto_approve)
-}
-
 /// Run normal flow with provided config
 fn run_normal_flow_with_config(
     config: &TransactionConfig,
@@ -151,15 +145,6 @@ fn run_normal_flow_with_config(
 
     println!("\n  Normal flow completed successfully!\n");
     Ok(())
-}
-
-/// Run attack simulation
-fn run_attack_simulation(
-    auto_read: bool,
-    auto_approve: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let config = TransactionConfig::hardware_wallet_auto();
-    run_attack_simulation_with_config(&config, auto_read, auto_approve)
 }
 
 /// Run attack simulation with provided config
@@ -232,7 +217,7 @@ fn run_interactive_menu(
                     let config = current_config
                         .as_ref()
                         .cloned()
-                        .unwrap_or_else(|| TransactionConfig::hardware_wallet_auto());
+                        .unwrap_or_else(TransactionConfig::hardware_wallet_auto);
                     match WalletCoordinator::create_psbt(&config, false) {
                         Ok(_) => {
                             state = DemoState::PsbtCreated;
@@ -251,7 +236,7 @@ fn run_interactive_menu(
                     let config = current_config
                         .as_ref()
                         .cloned()
-                        .unwrap_or_else(|| TransactionConfig::hardware_wallet_auto());
+                        .unwrap_or_else(TransactionConfig::hardware_wallet_auto);
                     match HardwareDevice::sign_workflow(
                         &config,
                         auto_read,
@@ -275,7 +260,7 @@ fn run_interactive_menu(
                     let config = current_config
                         .as_ref()
                         .cloned()
-                        .unwrap_or_else(|| TransactionConfig::hardware_wallet_auto());
+                        .unwrap_or_else(TransactionConfig::hardware_wallet_auto);
                     match WalletCoordinator::finalize_transaction(&config, auto_read) {
                         Ok(_) => {
                             state = DemoState::TransactionExtracted;
@@ -309,7 +294,7 @@ fn run_interactive_menu(
                     let config = current_config
                         .as_ref()
                         .cloned()
-                        .unwrap_or_else(|| TransactionConfig::hardware_wallet_auto());
+                        .unwrap_or_else(TransactionConfig::hardware_wallet_auto);
                     if let Err(e) =
                         run_attack_simulation_with_config(&config, auto_read, auto_approve)
                     {
@@ -406,8 +391,6 @@ fn display_menu(state: DemoState, config: Option<&TransactionConfig>) {
 
 /// Get interactive configuration from user
 fn get_interactive_config() -> Result<TransactionConfig, Box<dyn std::error::Error>> {
-    use common::{InteractiveConfig, VirtualWallet};
-
     let wallet = VirtualWallet::hardware_wallet_default();
     let default_config = TransactionConfig::hardware_wallet_auto();
     InteractiveConfig::build(&wallet, default_config)

@@ -150,9 +150,9 @@ mod tests {
         input_finalizer::finalize_inputs,
         signer::{add_ecdh_shares_full, sign_inputs},
     };
-    use bip375_core::{Output, SilentPaymentAddress, Utxo};
+    use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
     use bip375_crypto::pubkey_to_p2wpkh_script;
-    use bitcoin::{hashes::Hash, ScriptBuf, Txid};
+    use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
     #[test]
@@ -171,25 +171,33 @@ mod tests {
         let output_script = pubkey_to_p2wpkh_script(&pubkey1);
 
         let inputs = vec![
-            Utxo::new(
-                Txid::all_zeros(),
-                0,
-                Amount::from_sat(30000),
-                pubkey_to_p2wpkh_script(&pubkey1),
+            PsbtInput::new(
+                OutPoint {
+                    txid: Txid::all_zeros(),
+                    vout: 0,
+                },
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: pubkey_to_p2wpkh_script(&pubkey1),
+                },
+                Sequence::MAX,
                 Some(privkey1),
-                Sequence::MAX,
             ),
-            Utxo::new(
-                Txid::all_zeros(),
-                1,
-                Amount::from_sat(30000),
-                pubkey_to_p2wpkh_script(&pubkey1),
-                Some(privkey2),
+            PsbtInput::new(
+                OutPoint {
+                    txid: Txid::all_zeros(),
+                    vout: 1,
+                },
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: pubkey_to_p2wpkh_script(&pubkey1),
+                },
                 Sequence::MAX,
+                Some(privkey2),
             ),
         ];
 
-        let outputs = vec![Output::regular(Amount::from_sat(55000), output_script)];
+        let outputs = vec![PsbtOutput::regular(Amount::from_sat(55000), output_script)];
 
         // Construct PSBT
         add_inputs(&mut psbt, &inputs).unwrap();
@@ -232,25 +240,30 @@ mod tests {
         let pubkey1 = PublicKey::from_secret_key(&secp, &privkey1);
 
         let inputs = vec![
-            Utxo::new(
-                Txid::all_zeros(),
-                0,
-                Amount::from_sat(30000),
-                pubkey_to_p2wpkh_script(&pubkey1),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 0),
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: pubkey_to_p2wpkh_script(&pubkey1),
+                },
+                Sequence::MAX,
                 Some(privkey1),
-                Sequence::MAX,
             ),
-            Utxo::new(
-                Txid::all_zeros(),
-                1,
-                Amount::from_sat(30000),
-                pubkey_to_p2wpkh_script(&pubkey1),
-                Some(privkey2),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 1),
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: pubkey_to_p2wpkh_script(&pubkey1),
+                },
                 Sequence::MAX,
+                Some(privkey2),
             ),
         ];
 
-        let outputs = vec![Output::silent_payment(Amount::from_sat(55000), sp_address)];
+        let outputs = vec![PsbtOutput::silent_payment(
+            Amount::from_sat(55000),
+            sp_address,
+        )];
 
         // Construct PSBT
         add_inputs(&mut psbt, &inputs).unwrap();
@@ -285,16 +298,20 @@ mod tests {
     fn test_extract_fails_without_signatures() {
         let mut psbt = create_psbt(1, 1).unwrap();
 
-        let inputs = vec![Utxo::new(
-            Txid::all_zeros(),
-            0,
-            Amount::from_sat(30000),
-            ScriptBuf::new(),
-            None, // No private key = no signature
+        let inputs = vec![PsbtInput::new(
+            OutPoint::new(Txid::all_zeros(), 0),
+            TxOut {
+                value: Amount::from_sat(30000),
+                script_pubkey: ScriptBuf::new(),
+            },
             Sequence::MAX,
+            None, // No private key = no signature
         )];
 
-        let outputs = vec![Output::regular(Amount::from_sat(29000), ScriptBuf::new())];
+        let outputs = vec![PsbtOutput::regular(
+            Amount::from_sat(29000),
+            ScriptBuf::new(),
+        )];
 
         add_inputs(&mut psbt, &inputs).unwrap();
         add_outputs(&mut psbt, &outputs).unwrap();

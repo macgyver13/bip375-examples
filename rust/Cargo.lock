@@ -701,20 +701,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "bip375-gui-common"
+name = "bip375-helpers"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
- "bip353-rs",
+ "base64 0.21.7",
  "bip375-core",
+ "bip375-crypto",
  "bip375-io",
  "bitcoin",
  "dnssec-prover",
  "hex",
  "psbt-v2",
+ "secp256k1",
  "serde",
  "serde_json",
- "tokio",
+ "sha2",
 ]
 
 [[package]]
@@ -1188,19 +1189,6 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
-]
-
-[[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "bip375-core",
- "bip375-crypto",
- "bip375-io",
- "bitcoin",
- "hex",
- "secp256k1",
- "sha2",
 ]
 
 [[package]]
@@ -2284,12 +2272,11 @@ dependencies = [
  "bip353-rs",
  "bip375-core",
  "bip375-crypto",
- "bip375-gui-common",
+ "bip375-helpers",
  "bip375-io",
  "bip375-roles",
  "bitcoin",
  "chrono",
- "common",
  "dnssec-prover",
  "hex",
  "ripemd",
@@ -3323,12 +3310,11 @@ version = "0.1.0"
 dependencies = [
  "bip375-core",
  "bip375-crypto",
- "bip375-gui-common",
+ "bip375-helpers",
  "bip375-io",
  "bip375-roles",
  "bitcoin",
  "chrono",
- "common",
  "hex",
  "ripemd",
  "secp256k1",
@@ -4143,7 +4129,7 @@ name = "psbt-viewer"
 version = "0.1.0"
 dependencies = [
  "bip375-core",
- "bip375-gui-common",
+ "bip375-helpers",
  "bip375-io",
  "rfd",
  "serde",

@@ -261,9 +261,9 @@ fn validate_output_scripts(
     secp: &Secp256k1<secp256k1::All>,
     psbt: &SilentPaymentPsbt,
 ) -> Result<()> {
-    use bip375_core::aggregate_ecdh_shares;
-    use bip375_core::psbt_accessors::{
-        get_input_bip32_pubkeys, get_input_outpoint_bytes, get_output_sp_keys,
+    use bip375_core::{
+        aggregate_ecdh_shares, get_input_bip32_pubkeys, get_input_outpoint_bytes,
+        get_output_sp_keys,
     };
     use bip375_crypto::{
         compute_input_hash, derive_silent_payment_output_pubkey, pubkey_to_p2tr_script,
@@ -368,7 +368,7 @@ fn validate_output_scripts(
 
 /// Validate all DLEQ proofs in the PSBT
 fn validate_dleq_proofs(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymentPsbt) -> Result<()> {
-    use bip375_core::psbt_accessors::get_input_pubkey;
+    use bip375_core::get_input_pubkey;
 
     // Check global DLEQ if global ECDH exists
     let global_shares = psbt.get_global_ecdh_shares();
@@ -463,10 +463,10 @@ mod tests {
         constructor::{add_inputs, add_outputs},
         creator::create_psbt,
     };
-    use bip375_core::{Output, SilentPaymentAddress, Utxo};
+    use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
     use bip375_crypto::pubkey_to_p2wpkh_script;
     use bitcoin::hashes::Hash;
-    use bitcoin::{Amount, Sequence, Txid};
+    use bitcoin::{Amount, OutPoint, Sequence, TxOut, Txid};
     use secp256k1::SecretKey;
 
     #[test]
@@ -483,13 +483,14 @@ mod tests {
         let privkey = SecretKey::from_slice(&[1u8; 32]).unwrap();
         let pubkey = PublicKey::from_secret_key(&secp, &privkey);
 
-        let inputs = vec![Utxo::new(
-            Txid::all_zeros(),
-            0,
-            Amount::from_sat(30000),
-            pubkey_to_p2wpkh_script(&pubkey),
-            Some(privkey),
+        let inputs = vec![PsbtInput::new(
+            OutPoint::new(Txid::all_zeros(), 0),
+            TxOut {
+                value: Amount::from_sat(30000),
+                script_pubkey: pubkey_to_p2wpkh_script(&pubkey),
+            },
             Sequence::MAX,
+            Some(privkey),
         )];
 
         add_inputs(&mut psbt, &inputs).unwrap();
@@ -507,7 +508,7 @@ mod tests {
         let pubkey = PublicKey::from_secret_key(&secp, &privkey);
         let script = pubkey_to_p2wpkh_script(&pubkey);
 
-        let outputs = vec![Output::regular(Amount::from_sat(29000), script)];
+        let outputs = vec![PsbtOutput::regular(Amount::from_sat(29000), script)];
 
         add_outputs(&mut psbt, &outputs).unwrap();
 
@@ -530,28 +531,30 @@ mod tests {
         let sp_addr = SilentPaymentAddress::new(scan_pub, spend_pub, None);
 
         // Add SP output
-        let outputs = vec![Output::silent_payment(Amount::from_sat(10000), sp_addr)];
+        let outputs = vec![PsbtOutput::silent_payment(Amount::from_sat(10000), sp_addr)];
         add_outputs(&mut psbt, &outputs).unwrap();
 
         // Add dummy inputs so we have something to check against
         let input_priv = SecretKey::from_slice(&[1u8; 32]).unwrap();
         let input_pub = PublicKey::from_secret_key(&secp, &input_priv);
         let inputs = vec![
-            Utxo::new(
-                Txid::all_zeros(),
-                0,
-                Amount::from_sat(10000),
-                pubkey_to_p2wpkh_script(&input_pub),
-                Some(input_priv),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 0),
+                TxOut {
+                    value: Amount::from_sat(10000),
+                    script_pubkey: pubkey_to_p2wpkh_script(&input_pub),
+                },
                 Sequence::MAX,
+                Some(input_priv),
             ),
-            Utxo::new(
-                Txid::all_zeros(),
-                1,
-                Amount::from_sat(10000),
-                pubkey_to_p2wpkh_script(&input_pub),
-                Some(input_priv),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 1),
+                TxOut {
+                    value: Amount::from_sat(10000),
+                    script_pubkey: pubkey_to_p2wpkh_script(&input_pub),
+                },
                 Sequence::MAX,
+                Some(input_priv),
             ),
         ];
         add_inputs(&mut psbt, &inputs).unwrap();

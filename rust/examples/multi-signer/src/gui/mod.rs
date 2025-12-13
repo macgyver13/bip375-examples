@@ -29,7 +29,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         window.set_has_psbt(true);
 
         // Use display_adapter to extract and format fields
-        let (global, inputs, outputs) = bip375_gui_common::display_adapter::extract_display_fields(
+        let (global, inputs, outputs) = bip375_helpers::display::adapter::extract_display_fields(
             psbt,
             &state.highlighted_fields,
         );
@@ -95,7 +95,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
     }
 }
 
-fn into_slint_field(f: bip375_gui_common::display_adapter::DisplayField) -> PsbtField {
+fn into_slint_field(f: bip375_helpers::display::adapter::DisplayField) -> PsbtField {
     PsbtField {
         field_name: f.field_name.into(),
         field_type: f.field_type_str.into(),

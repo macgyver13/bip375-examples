@@ -29,7 +29,7 @@ required-features = ["gui"]
 [dependencies]
 bip375-core.workspace = true
 bip375-crypto.workspace = true
-bip375-gui-common.workspace = true
+bip375-helpers.workspace = true
 bip375-io.workspace = true
 bip375-roles.workspace = true
 bitcoin.workspace = true
@@ -40,7 +40,6 @@ hex.workspace = true
 sha2.workspace = true
 ripemd.workspace = true
 chrono.workspace = true
-common = { path = "../common" }
 
 # GUI framework
 slint = { version = "1.8", optional = true }

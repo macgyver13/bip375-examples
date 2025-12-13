@@ -1,4 +1,4 @@
-//! ECDH Share Aggregation
+//! Silent Payment ECDH Share Aggregation
 //!
 //! Provides functions for aggregating ECDH shares across PSBT inputs according to BIP-375.
 //!
@@ -212,6 +212,6 @@ fn aggregate_public_keys(pubkeys: &[PublicKey]) -> Result<PublicKey> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // use super::*;
     // Tests will be added during implementation
 }

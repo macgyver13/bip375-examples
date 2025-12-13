@@ -7,7 +7,7 @@
 //! - **P2TR SP inputs**: Use [`sign_sp_inputs()`] with tweaked key + Schnorr → `tap_key_sig`
 //! - **Mixed transactions**: Call both functions as needed for different input types
 
-use bip375_core::{Bip375PsbtExt, EcdhShareData, Error, Result, SilentPaymentPsbt, Utxo};
+use bip375_core::{Bip375PsbtExt, EcdhShareData, Error, PsbtInput, Result, SilentPaymentPsbt};
 use bip375_crypto::{
     apply_tweak_to_privkey, compute_ecdh_share, dleq_generate_proof, sign_p2pkh_input,
     sign_p2tr_input, sign_p2wpkh_input,
@@ -20,12 +20,12 @@ use std::collections::HashSet;
 pub fn add_ecdh_shares_full(
     secp: &Secp256k1<secp256k1::All>,
     psbt: &mut SilentPaymentPsbt,
-    inputs: &[Utxo],
+    inputs: &[PsbtInput],
     scan_keys: &[PublicKey],
     include_dleq: bool,
 ) -> Result<()> {
-    for (input_idx, utxo) in inputs.iter().enumerate() {
-        let Some(privkey) = &utxo.private_key else {
+    for (input_idx, input) in inputs.iter().enumerate() {
+        let Some(ref privkey) = input.private_key else {
             return Err(Error::Other(format!(
                 "Input {} missing private key",
                 input_idx
@@ -56,19 +56,19 @@ pub fn add_ecdh_shares_full(
 pub fn add_ecdh_shares_partial(
     secp: &Secp256k1<secp256k1::All>,
     psbt: &mut SilentPaymentPsbt,
-    inputs: &[Utxo],
+    inputs: &[PsbtInput],
     scan_keys: &[PublicKey],
     controlled_indices: &[usize],
     include_dleq: bool,
 ) -> Result<()> {
     let controlled_set: HashSet<usize> = controlled_indices.iter().copied().collect();
 
-    for (input_idx, utxo) in inputs.iter().enumerate() {
+    for (input_idx, input) in inputs.iter().enumerate() {
         if !controlled_set.contains(&input_idx) {
             continue;
         }
 
-        let Some(base_privkey) = &utxo.private_key else {
+        let Some(ref base_privkey) = input.private_key else {
             return Err(Error::Other(format!(
                 "Controlled input {} missing private key",
                 input_idx
@@ -87,7 +87,7 @@ pub fn add_ecdh_shares_partial(
         // For P2TR inputs, the public key is x-only (implicitly even Y).
         // If our private key produces an odd Y point, we must negate it
         // to match the on-chain public key for DLEQ verification.
-        if utxo.script_pubkey.is_p2tr() {
+        if input.witness_utxo.script_pubkey.is_p2tr() {
             let keypair = secp256k1::Keypair::from_secret_key(secp, &privkey);
             let (_, parity) = keypair.x_only_public_key();
             if parity == secp256k1::Parity::Odd {
@@ -126,23 +126,23 @@ pub fn add_ecdh_shares_partial(
 pub fn sign_inputs(
     secp: &Secp256k1<secp256k1::All>,
     psbt: &mut SilentPaymentPsbt,
-    inputs: &[Utxo],
+    inputs: &[PsbtInput],
 ) -> Result<()> {
     let tx = extract_tx_for_signing(psbt)?;
     let mut prevouts: Option<Vec<bitcoin::TxOut>> = None; // Lazy loaded for P2TR
 
-    for (input_idx, utxo) in inputs.iter().enumerate() {
-        let Some(privkey) = &utxo.private_key else {
+    for (input_idx, input) in inputs.iter().enumerate() {
+        let Some(ref privkey) = input.private_key else {
             continue;
         };
 
-        if utxo.script_pubkey.is_p2pkh() {
+        if input.witness_utxo.script_pubkey.is_p2pkh() {
             let signature = sign_p2pkh_input(
                 secp,
                 &tx,
                 input_idx,
-                &utxo.script_pubkey,
-                utxo.amount, // Not needed for legacy but passed
+                &input.witness_utxo.script_pubkey,
+                input.witness_utxo.value, // Not needed for legacy but passed
                 privkey,
             )
             .map_err(|e| Error::Other(format!("P2PKH signing failed: {}", e)))?;
@@ -156,13 +156,13 @@ pub fn sign_inputs(
             psbt.inputs[input_idx]
                 .partial_sigs
                 .insert(bitcoin_pubkey, sig);
-        } else if utxo.script_pubkey.is_p2wpkh() {
+        } else if input.witness_utxo.script_pubkey.is_p2wpkh() {
             let signature = sign_p2wpkh_input(
                 secp,
                 &tx,
                 input_idx,
-                &utxo.script_pubkey,
-                utxo.amount,
+                &input.witness_utxo.script_pubkey,
+                input.witness_utxo.value,
                 privkey,
             )
             .map_err(|e| Error::Other(format!("P2WPKH signing failed: {}", e)))?;
@@ -176,7 +176,7 @@ pub fn sign_inputs(
             psbt.inputs[input_idx]
                 .partial_sigs
                 .insert(bitcoin_pubkey, sig);
-        } else if utxo.script_pubkey.is_p2tr() {
+        } else if input.witness_utxo.script_pubkey.is_p2tr() {
             // Load prevouts if not already loaded (needed for Taproot sighash)
             if prevouts.is_none() {
                 prevouts = Some(
@@ -324,7 +324,8 @@ fn extract_tx_for_signing(psbt: &SilentPaymentPsbt) -> Result<bitcoin::Transacti
 mod tests {
     use super::*;
     use crate::{constructor::add_inputs, creator::create_psbt};
-    use bitcoin::{hashes::Hash, Amount, Sequence, Txid};
+    use bip375_core::PsbtInput;
+    use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
     use secp256k1::SecretKey;
 
     #[test]
@@ -338,21 +339,23 @@ mod tests {
         let scan_key = PublicKey::from_secret_key(&secp, &scan_privkey);
 
         let inputs = vec![
-            Utxo::new(
-                Txid::all_zeros(),
-                0,
-                Amount::from_sat(50000),
-                ScriptBuf::new(),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 0),
+                TxOut {
+                    value: Amount::from_sat(50000),
+                    script_pubkey: ScriptBuf::new(),
+                },
+                Sequence::MAX,
                 Some(privkey1),
-                Sequence::MAX,
             ),
-            Utxo::new(
-                Txid::all_zeros(),
-                1,
-                Amount::from_sat(30000),
-                ScriptBuf::new(),
-                Some(privkey2),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 1),
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: ScriptBuf::new(),
+                },
                 Sequence::MAX,
+                Some(privkey2),
             ),
         ];
 
@@ -379,21 +382,23 @@ mod tests {
         let scan_key = PublicKey::from_secret_key(&secp, &scan_privkey);
 
         let inputs = vec![
-            Utxo::new(
-                Txid::all_zeros(),
-                0,
-                Amount::from_sat(50000),
-                ScriptBuf::new(),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 0),
+                TxOut {
+                    value: Amount::from_sat(50000),
+                    script_pubkey: ScriptBuf::new(),
+                },
+                Sequence::MAX,
                 Some(privkey1),
-                Sequence::MAX,
             ),
-            Utxo::new(
-                Txid::all_zeros(),
-                1,
-                Amount::from_sat(30000),
-                ScriptBuf::new(),
-                Some(privkey2),
+            PsbtInput::new(
+                OutPoint::new(Txid::all_zeros(), 1),
+                TxOut {
+                    value: Amount::from_sat(30000),
+                    script_pubkey: ScriptBuf::new(),
+                },
                 Sequence::MAX,
+                Some(privkey2),
             ),
         ];
 

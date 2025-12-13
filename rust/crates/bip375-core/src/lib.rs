@@ -8,16 +8,18 @@
 //! - ECDH share types
 //! - UTXO types
 
-pub mod ecdh_aggregation;
 pub mod error;
 pub mod extensions;
-pub mod psbt_accessors;
+pub mod shares;
 pub mod types;
 
-pub use ecdh_aggregation::{aggregate_ecdh_shares, AggregatedShare, AggregatedShares};
 pub use error::{Error, Result};
-pub use extensions::Bip375PsbtExt;
-pub use types::{EcdhShareData, Output, OutputRecipient, SilentPaymentAddress, Utxo};
+pub use extensions::{
+    get_input_bip32_pubkeys, get_input_outpoint, get_input_outpoint_bytes, get_input_pubkey,
+    get_input_txid, get_input_vout, get_output_sp_keys, Bip375PsbtExt,
+};
+pub use shares::{aggregate_ecdh_shares, AggregatedShare, AggregatedShares};
+pub use types::{EcdhShareData, PsbtInput, PsbtOutput, SilentPaymentAddress};
 
 /// Type alias for PSBT v2 with BIP-375 extensions
 ///

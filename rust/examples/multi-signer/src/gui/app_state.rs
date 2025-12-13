@@ -6,7 +6,7 @@ use bip375_core::SilentPaymentPsbt;
 use std::collections::HashSet;
 
 // Re-export types from gui-common for convenience
-pub use bip375_gui_common::field_identifier::{FieldIdentifier, TransactionSummary};
+pub use bip375_helpers::display::field_identifier::{FieldIdentifier, TransactionSummary};
 
 /// Main application state for multi-signer workflow
 #[derive(Clone, Debug)]

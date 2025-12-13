@@ -17,13 +17,13 @@
 //! - Input 2:   Waiting for Charlie
 
 use bip375_core::{Bip375PsbtExt, Result};
+use bip375_helpers::{display::psbt_io::save_psbt, wallet::TransactionConfig};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     constructor::{add_inputs, add_outputs},
     creator::create_psbt,
     signer::{add_ecdh_shares_partial, sign_inputs},
 };
-use common::save_psbt;
 use secp256k1::Secp256k1;
 
 // Import shared_utils from crate root (works when used as library module)
@@ -65,15 +65,12 @@ fn alice_creates_main() -> Result<()> {
 
     // Parse configuration
     let (alice_config, bob_config, charlie_config, combined_config) = if args.len() > 1 {
-        let alice_cfg = common::TransactionConfig::from_args(
-            &args,
-            common::TransactionConfig::multi_signer_auto(),
-        );
-        let bob_cfg = common::TransactionConfig::multi_signer_auto();
-        let charlie_cfg = common::TransactionConfig::multi_signer_auto();
+        let alice_cfg = TransactionConfig::from_args(&args, TransactionConfig::multi_signer_auto());
+        let bob_cfg = TransactionConfig::multi_signer_auto();
+        let charlie_cfg = TransactionConfig::multi_signer_auto();
 
         // For combined config, use the parsed values for outputs
-        let combined = common::TransactionConfig::new(
+        let combined = TransactionConfig::new(
             vec![0, 0, 0],
             alice_cfg.recipient_amount,
             alice_cfg.change_amount,
@@ -112,8 +109,8 @@ fn alice_creates_main() -> Result<()> {
     // Extract scan keys from outputs
     let scan_keys: Vec<_> = outputs
         .iter()
-        .filter_map(|output| match &output.recipient {
-            bip375_core::OutputRecipient::SilentPayment(address) => Some(address.scan_key),
+        .filter_map(|output| match output {
+            bip375_core::PsbtOutput::SilentPayment { address, .. } => Some(address.scan_key),
             _ => None,
         })
         .collect();

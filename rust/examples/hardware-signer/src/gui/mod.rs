@@ -7,7 +7,7 @@ pub mod app_state;
 pub mod workflow_orchestrator;
 
 use app_state::*;
-use common::{TransactionConfig, VirtualWallet};
+use bip375_helpers::wallet::{TransactionConfig, VirtualWallet};
 use slint::Model;
 use std::rc::Rc;
 use workflow_orchestrator::WorkflowOrchestrator;
@@ -17,12 +17,12 @@ use workflow_orchestrator::WorkflowOrchestrator;
 slint::include_modules!();
 
 /// Convert AppState to Slint data structures
+#[allow(dead_code)]
 fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
     // Update workflow state
     let state_str = match state.workflow_state {
         WorkflowState::Ready => "Ready",
         WorkflowState::PsbtCreated => "PsbtCreated",
-        WorkflowState::HardwareApprovalPending => "PsbtCreated",
         WorkflowState::PsbtSigned => "PsbtSigned",
         WorkflowState::TransactionExtracted => "TransactionExtracted",
     };
@@ -36,7 +36,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         window.set_has_psbt(true);
 
         // Use display_adapter to extract and format fields
-        let (global, inputs, outputs) = bip375_gui_common::display_adapter::extract_display_fields(
+        let (global, inputs, outputs) = bip375_helpers::display::adapter::extract_display_fields(
             psbt,
             &state.highlighted_fields,
         );
@@ -94,7 +94,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
     }
 }
 
-fn into_slint_field(f: bip375_gui_common::display_adapter::DisplayField) -> PsbtField {
+fn into_slint_field(f: bip375_helpers::display::adapter::DisplayField) -> PsbtField {
     PsbtField {
         field_name: f.field_name.into(),
         field_type: f.field_type_str.into(),
@@ -144,6 +144,7 @@ fn format_config_summary(config: &TransactionConfig, wallet: &VirtualWallet) -> 
 }
 
 /// Run the GUI application
+#[allow(dead_code)]
 pub fn run_gui() -> Result<(), slint::PlatformError> {
     let window = AppWindow::new()?;
     let state = AppState::default();
