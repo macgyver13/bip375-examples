@@ -160,7 +160,7 @@ def main():
     )
 
     # Save as JSON with metadata
-    json_path = "transfer.json"
+    json_path = "output/transfer.json"
     psbt.save(json_path, metadata)
     print(f"✓ Saved PSBT with metadata to {json_path}")
 

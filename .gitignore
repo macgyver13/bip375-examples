@@ -1,4 +1,7 @@
 .json
+.vscode
+.claude
 __pycache__
 rust/target
 output/
+rust/docs
