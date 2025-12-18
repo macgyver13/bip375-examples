@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Import a PSBT from a base64-encoded string
 ///
@@ -35,6 +36,43 @@ pub fn export_to_base64(psbt: &SilentPaymentPsbt) -> Result<String, String> {
 
     use base64::Engine;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
+/// Export a PSBT to a binary file with a save dialog
+///
+/// Opens a file save dialog with timestamp-based default naming (export_<timestamp>.psbt)
+/// and serializes the PSBT to raw binary format.
+///
+/// # Arguments
+/// * `psbt` - The PSBT to export
+///
+/// # Returns
+/// * `Ok(PathBuf)` - Path where the file was saved
+/// * `Err(String)` - Error message if export failed or was cancelled
+pub fn export_psbt_with_dialog(psbt: &SilentPaymentPsbt) -> Result<PathBuf, String> {
+    // Generate timestamp-based default filename
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+    let default_name = format!("export_{}.psbt", timestamp);
+
+    // Open save dialog
+    let path = rfd::FileDialog::new()
+        .add_filter("PSBT", &["psbt"])
+        .set_title("Save PSBT file")
+        .set_file_name(&default_name)
+        .save_file()
+        .ok_or_else(|| "Save cancelled".to_string())?;
+
+    // Serialize PSBT to binary
+    let psbt_bytes = psbt.serialize();
+
+    // Write to file
+    std::fs::write(&path, psbt_bytes).map_err(|e| format!("Failed to write PSBT file: {}", e))?;
+
+    println!("✅ PSBT exported to {}", path.display());
+    Ok(path)
 }
 
 /// Load a PSBT from a JSON file

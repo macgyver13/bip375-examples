@@ -154,6 +154,7 @@ export component AppWindow inherits Window {
     callback bob-signs();
     callback charlie-finalizes();
     callback reset();
+    callback export-psbt();
 
     VerticalBox {
         // Header
@@ -298,6 +299,15 @@ export component AppWindow inherits Window {
                             enabled: workflow-state == "BobComplete";
                             clicked => { root.charlie-finalizes(); }
                         }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    // Export button
+                    MenuButton {
+                        text: "💾 Export PSBT";
+                        enabled: has-psbt;
+                        clicked => { root.export-psbt(); }
                     }
 
                     Rectangle { height: 1px; background: #666666; }

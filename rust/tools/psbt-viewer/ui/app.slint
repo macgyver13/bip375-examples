@@ -129,6 +129,7 @@ export component AppWindow inherits Window {
     callback browse-test-vectors();
     callback select-test-vector(int);
     callback load-psbt-file();
+    callback export-psbt();
 
     VerticalBox {
         // Header
@@ -346,10 +347,22 @@ export component AppWindow inherits Window {
                 if has-psbt: VerticalBox {
                     padding: 16px;
 
-                    Text {
-                        text: "PSBT Properties";
-                        font-size: 24px;
-                        font-weight: 700;
+                    HorizontalBox {
+                        Text {
+                            text: "PSBT Properties";
+                            font-size: 24px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+
+                        Button {
+                            text: "💾 Export";
+                            clicked => { root.export-psbt(); }
+                        }
                     }
 
                     ScrollView {
