@@ -8,10 +8,12 @@ bip375-core.workspace = true
 bip375-crypto.workspace = true
 bip375-io.workspace = true
 base64.workspace = true
+bip39 = "2.0"
 bitcoin.workspace = true
 dnssec-prover.workspace = true
 hex.workspace = true
 psbt-v2.workspace = true
+rfd = "0.15"
 secp256k1.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

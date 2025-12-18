@@ -142,6 +142,7 @@ export component AppWindow inherits Window {
     callback finalize-transaction();
     callback reset();
     callback configure-inputs();  // Open UTXO selector dialog
+    callback export-psbt();
 
     VerticalBox {
         // Header
@@ -319,10 +320,18 @@ export component AppWindow inherits Window {
                 if has-psbt: VerticalBox {
                     padding: 16px;
 
-                    Text {
-                        text: "PSBT Properties";
-                        font-size: 24px;
-                        font-weight: 700;
+                    HorizontalBox {
+                        Text {
+                            text: "PSBT Properties";
+                            font-size: 24px;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                        }
+
+                        Button {
+                            text: "💾 Export";
+                            clicked => { root.export-psbt(); }
+                        }
                     }
 
                     ScrollView {

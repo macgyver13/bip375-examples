@@ -463,6 +463,14 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
                 }
             }
         });
+
+        window.on_export_psbt({
+            let state_rc = state_rc.clone();
+            move || {
+                let state = state_rc.borrow();
+                bip375_helpers::gui::export_psbt_callback(state.current_psbt.as_ref());
+            }
+        });
     }
 
     window.run()

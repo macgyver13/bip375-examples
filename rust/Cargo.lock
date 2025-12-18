@@ -712,6 +712,7 @@ dependencies = [
  "dnssec-prover",
  "hex",
  "psbt-v2",
+ "rfd",
  "secp256k1",
  "serde",
  "serde_json",

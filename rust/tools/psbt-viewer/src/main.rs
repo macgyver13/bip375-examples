@@ -9,7 +9,9 @@ mod test_vector_helper;
 use bip375_core::SilentPaymentPsbt;
 use bip375_helpers::display::{adapter, psbt_analyzer, psbt_io};
 use slint::Model;
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 use test_vector_helper::TestVectorFile;
 
 slint::include_modules!();
@@ -39,7 +41,14 @@ fn convert_fields_to_slint(
 }
 
 /// Update the UI with PSBT data
-fn display_psbt(window: &AppWindow, psbt: &SilentPaymentPsbt) {
+fn display_psbt(
+    window: &AppWindow,
+    psbt: &SilentPaymentPsbt,
+    current_psbt: &Rc<RefCell<Option<SilentPaymentPsbt>>>,
+) {
+    // Store the current PSBT for export
+    *current_psbt.borrow_mut() = Some(psbt.clone());
+
     let (global_fields, input_fields, output_fields) = convert_fields_to_slint(psbt);
 
     window.set_global_fields(slint::ModelRc::new(slint::VecModel::from(global_fields)));
@@ -76,6 +85,9 @@ fn display_psbt(window: &AppWindow, psbt: &SilentPaymentPsbt) {
 fn main() -> Result<(), slint::PlatformError> {
     let window = AppWindow::new()?;
 
+    // Shared state for current PSBT
+    let current_psbt: Rc<RefCell<Option<SilentPaymentPsbt>>> = Rc::new(RefCell::new(None));
+
     // Auto-load test vectors on startup
     match resources::load_test_vectors() {
         Ok(json) => {
@@ -96,12 +108,13 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Handle import-psbt callback
     let window_weak = window.as_weak();
+    let current_psbt_clone = current_psbt.clone();
     window.on_import_psbt(move |base64_str| {
         let window = window_weak.unwrap();
 
         match psbt_io::import_from_base64(&base64_str) {
             Ok(psbt) => {
-                display_psbt(&window, &psbt);
+                display_psbt(&window, &psbt, &current_psbt_clone);
                 window.set_status_message("✅ PSBT imported successfully".into());
             }
             Err(e) => {
@@ -112,7 +125,9 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Handle clear callback
     let window_weak = window.as_weak();
+    let current_psbt_clone = current_psbt.clone();
     window.on_clear(move || {
+        *current_psbt_clone.borrow_mut() = None;
         let window = window_weak.unwrap();
         window.set_has_psbt(false);
         window.set_import_text("".into());
@@ -172,13 +187,14 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Handle load-psbt-file callback
     let window_weak = window.as_weak();
+    let current_psbt_clone = current_psbt.clone();
     window.on_load_psbt_file(move || {
         let window = window_weak.unwrap();
 
         if let Some(path) = resources::browse_for_psbt_file() {
             match bip375_io::file_io::load_psbt(&path) {
                 Ok((psbt, metadata)) => {
-                    display_psbt(&window, &psbt);
+                    display_psbt(&window, &psbt, &current_psbt_clone);
                     let msg = if let Some(meta) = metadata {
                         format!(
                             "✅ Loaded PSBT from file ({})",
@@ -194,6 +210,13 @@ fn main() -> Result<(), slint::PlatformError> {
                 }
             }
         }
+    });
+
+    // Handle export-psbt callback
+    let current_psbt_clone = current_psbt.clone();
+    window.on_export_psbt(move || {
+        let psbt = current_psbt_clone.borrow();
+        bip375_helpers::gui::export_psbt_callback(psbt.as_ref());
     });
 
     window.run()
