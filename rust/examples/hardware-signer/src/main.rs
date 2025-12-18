@@ -31,6 +31,15 @@ fn main() {
         return;
     }
 
+    // Parse mnemonic if provided
+    let mnemonic = match parse_mnemonic_arg(&args) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("❌ Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     // Parse CLI flags
     let auto_read = args.contains(&"--auto-read".to_string());
     let auto_approve = args.contains(&"--auto-approve".to_string());
@@ -39,9 +48,45 @@ fn main() {
     let interactive_config = args.contains(&"--interactive-config".to_string());
 
     if demo_flow {
-        run_automated_demo(auto_read, auto_approve, attack_mode, interactive_config);
+        run_automated_demo(
+            auto_read,
+            auto_approve,
+            attack_mode,
+            interactive_config,
+            mnemonic,
+        );
     } else {
-        run_interactive_menu(auto_read, auto_approve, attack_mode, interactive_config);
+        run_interactive_menu(
+            auto_read,
+            auto_approve,
+            attack_mode,
+            interactive_config,
+            mnemonic,
+        );
+    }
+}
+
+/// Parse --mnemonic argument from command line
+fn parse_mnemonic_arg(args: &[String]) -> Result<Option<String>, String> {
+    if let Some(pos) = args.iter().position(|arg| arg == "--mnemonic") {
+        if let Some(mnemonic) = args.get(pos + 1) {
+            if mnemonic.starts_with("--") {
+                return Err("--mnemonic requires a value (12 or 24 word phrase)".to_string());
+            }
+            // Validate word count (12 or 24 words)
+            let word_count = mnemonic.split_whitespace().count();
+            if word_count != 12 && word_count != 24 {
+                return Err(format!(
+                    "Invalid mnemonic: expected 12 or 24 words, got {}",
+                    word_count
+                ));
+            }
+            Ok(Some(mnemonic.clone()))
+        } else {
+            Err("--mnemonic requires a value".to_string())
+        }
+    } else {
+        Ok(None)
     }
 }
 
@@ -55,6 +100,7 @@ fn display_help() {
     println!("    hardware-signer [OPTIONS]\n");
     println!("OPTIONS:");
     println!("    --help, -h              Show this help message");
+    println!("    --mnemonic <phrase>     BIP39 mnemonic (12 or 24 words, quoted)");
     println!("    --demo-flow             Run automated demo flow");
     println!("    --auto-read             Auto-confirm PSBT transfers");
     println!("    --auto-approve          Auto-approve transactions");
@@ -68,6 +114,8 @@ fn display_help() {
     println!("EXAMPLES:");
     println!("    # Run interactive menu");
     println!("    hardware-signer\n");
+    println!("    # Use BIP39 mnemonic");
+    println!("    hardware-signer --mnemonic \"word1 word2 ... word12\"\n");
     println!("    # Run automated demo with default config");
     println!("    hardware-signer --demo-flow --auto-read --auto-approve\n");
     println!("    # Use custom UTXOs");
@@ -75,7 +123,7 @@ fn display_help() {
     println!("    # Interactive UTXO selection");
     println!("    hardware-signer --interactive-config\n");
     println!("AVAILABLE UTXOs:");
-    let wallet = VirtualWallet::hardware_wallet_default();
+    let wallet = VirtualWallet::hardware_wallet_default(None).expect("Failed to create wallet");
     for utxo in wallet.list_utxos() {
         let sp_marker = if utxo.has_sp_tweak { " [SP]" } else { "" };
         println!(
@@ -96,6 +144,7 @@ fn run_automated_demo(
     _auto_approve: bool,
     attack_mode: bool,
     interactive_config: bool,
+    mnemonic: Option<String>,
 ) {
     println!("\n  Running automated BIP-375 Hardware Signer demo...\n");
 
@@ -115,12 +164,13 @@ fn run_automated_demo(
 
     if attack_mode {
         println!("Running ATTACK SIMULATION mode\n");
-        if let Err(e) = run_attack_simulation_with_config(&config, true, true) {
+        if let Err(e) = run_attack_simulation_with_config(&config, true, true, mnemonic.as_deref())
+        {
             eprintln!("❌ Attack simulation failed: {}", e);
         }
     } else {
         println!("Running NORMAL mode\n");
-        if let Err(e) = run_normal_flow_with_config(&config, true, true) {
+        if let Err(e) = run_normal_flow_with_config(&config, true, true, mnemonic.as_deref()) {
             eprintln!("❌ Normal flow failed: {}", e);
         }
     }
@@ -131,17 +181,18 @@ fn run_normal_flow_with_config(
     config: &TransactionConfig,
     auto_read: bool,
     auto_approve: bool,
+    mnemonic: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("=== NORMAL FLOW ===\n");
 
     // Step 1: Create PSBT
-    WalletCoordinator::create_psbt(config, true)?;
+    WalletCoordinator::create_psbt(config, true, mnemonic)?;
 
     // Step 2: Sign on hardware device
-    HardwareDevice::sign_workflow(config, auto_read, auto_approve, false)?;
+    HardwareDevice::sign_workflow(config, auto_read, auto_approve, false, mnemonic)?;
 
     // Step 3: Finalize
-    WalletCoordinator::finalize_transaction(config, auto_read)?;
+    WalletCoordinator::finalize_transaction(config, auto_read, mnemonic)?;
 
     println!("\n  Normal flow completed successfully!\n");
     Ok(())
@@ -152,18 +203,19 @@ fn run_attack_simulation_with_config(
     config: &TransactionConfig,
     auto_read: bool,
     auto_approve: bool,
+    mnemonic: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("=== ATTACK SIMULATION ===\n");
 
     // Step 1: Create PSBT
-    WalletCoordinator::create_psbt(config, true)?;
+    WalletCoordinator::create_psbt(config, true, mnemonic)?;
 
     // Step 2: Sign with ATTACK MODE
-    HardwareDevice::sign_workflow(config, auto_read, auto_approve, true)?;
+    HardwareDevice::sign_workflow(config, auto_read, auto_approve, true, mnemonic)?;
 
     // Step 3: Finalize (should fail with attack detection)
     println!("\n Coordinator will now verify DLEQ proofs...\n");
-    match WalletCoordinator::finalize_transaction(config, auto_read) {
+    match WalletCoordinator::finalize_transaction(config, auto_read, mnemonic) {
         Ok(_) => {
             println!("\n⚠️  WARNING: Attack was NOT detected!");
             println!("   This should not happen - check validation logic\n");
@@ -185,6 +237,7 @@ fn run_interactive_menu(
     auto_approve: bool,
     attack_mode: bool,
     _interactive_config: bool,
+    mnemonic: Option<String>,
 ) {
     let mut state = DemoState::Ready;
     let mut current_config: Option<TransactionConfig> = None;
@@ -192,7 +245,7 @@ fn run_interactive_menu(
     loop {
         display_menu(state, current_config.as_ref());
 
-        print!("Choose option [1-7]: ");
+        print!("Choose option [1-8]: ");
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
@@ -218,7 +271,7 @@ fn run_interactive_menu(
                         .as_ref()
                         .cloned()
                         .unwrap_or_else(TransactionConfig::hardware_wallet_auto);
-                    match WalletCoordinator::create_psbt(&config, false) {
+                    match WalletCoordinator::create_psbt(&config, false, mnemonic.as_deref()) {
                         Ok(_) => {
                             state = DemoState::PsbtCreated;
                         }
@@ -242,6 +295,7 @@ fn run_interactive_menu(
                         auto_read,
                         auto_approve,
                         attack_mode,
+                        mnemonic.as_deref(),
                     ) {
                         Ok(_) => {
                             state = DemoState::PsbtSigned;
@@ -261,7 +315,11 @@ fn run_interactive_menu(
                         .as_ref()
                         .cloned()
                         .unwrap_or_else(TransactionConfig::hardware_wallet_auto);
-                    match WalletCoordinator::finalize_transaction(&config, auto_read) {
+                    match WalletCoordinator::finalize_transaction(
+                        &config,
+                        auto_read,
+                        mnemonic.as_deref(),
+                    ) {
                         Ok(_) => {
                             state = DemoState::TransactionExtracted;
                         }
@@ -295,9 +353,12 @@ fn run_interactive_menu(
                         .as_ref()
                         .cloned()
                         .unwrap_or_else(TransactionConfig::hardware_wallet_auto);
-                    if let Err(e) =
-                        run_attack_simulation_with_config(&config, auto_read, auto_approve)
-                    {
+                    if let Err(e) = run_attack_simulation_with_config(
+                        &config,
+                        auto_read,
+                        auto_approve,
+                        mnemonic.as_deref(),
+                    ) {
                         eprintln!("\n❌ Attack simulation error: {}\n", e);
                     }
                     // Reset state after attack simulation
@@ -351,47 +412,47 @@ fn display_menu(state: DemoState, config: Option<&TransactionConfig>) {
             println!("  2.  Create New PSBT (Wallet Coordinator)");
         }
         _ => {
-            println!("  1.  Create New PSBT (Wallet Coordinator) [disabled]");
+            println!("  2.  Create New PSBT (Wallet Coordinator) [disabled]");
         }
     }
 
     match state {
         DemoState::PsbtCreated => {
-            println!("  2.  Sign PSBT (Hardware Device)");
+            println!("  3.  Sign PSBT (Hardware Device)");
         }
         _ => {
-            println!("  2.  Sign PSBT (Hardware Device) [disabled]");
+            println!("  3.  Sign PSBT (Hardware Device) [disabled]");
         }
     }
 
     match state {
         DemoState::PsbtSigned => {
-            println!("  3.  Finalize Transaction (Wallet Coordinator)");
+            println!("  4.  Finalize Transaction (Wallet Coordinator)");
         }
         _ => {
-            println!("  3.  Finalize Transaction (Wallet Coordinator) [disabled]");
+            println!("  4.  Finalize Transaction (Wallet Coordinator) [disabled]");
         }
     }
 
-    println!("  4.  Reset Demo");
+    println!("  5.  Reset Demo");
 
     match state {
         DemoState::Ready | DemoState::TransactionExtracted => {
-            println!("  5.  Run Attack Simulation");
+            println!("  6.  Run Attack Simulation");
         }
         _ => {
-            println!("  5.  Run Attack Simulation [disabled]");
+            println!("  6.  Run Attack Simulation [disabled]");
         }
     }
 
-    println!("  6.  About This Demo");
-    println!("  7.  Exit");
+    println!("  7.  About This Demo");
+    println!("  8.  Exit");
     println!();
 }
 
 /// Get interactive configuration from user
 fn get_interactive_config() -> Result<TransactionConfig, Box<dyn std::error::Error>> {
-    let wallet = VirtualWallet::hardware_wallet_default();
+    let wallet = VirtualWallet::hardware_wallet_default(None)?;
     let default_config = TransactionConfig::hardware_wallet_auto();
     InteractiveConfig::build(&wallet, default_config)
 }

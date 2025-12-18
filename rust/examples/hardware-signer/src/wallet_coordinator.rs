@@ -7,7 +7,9 @@
 //! - Detects attacks (wrong scan keys)
 //! - Finalizes and extracts transactions
 
+use crate::shared_utils::TweakDatabase;
 use crate::shared_utils::*;
+use bip375_core::Bip375PsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
@@ -29,6 +31,7 @@ impl WalletCoordinator {
     pub fn create_psbt(
         config: &TransactionConfig,
         auto_continue: bool,
+        mnemonic: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         print_step_header(
             "Step 1: Create PSBT Structure",
@@ -37,15 +40,18 @@ impl WalletCoordinator {
 
         println!("  CREATOR + CONSTRUCTOR + UPDATER: Setting up transaction...\n");
 
-        // Display configuration
-        config.display(&get_virtual_wallet());
+        let virtual_wallet = get_virtual_wallet(mnemonic)?;
+        config.display(&virtual_wallet);
+
+        // Create wallet from mnemonic
+        let hw_wallet = get_hardware_wallet(mnemonic)?;
 
         // Get transaction components
-        let inputs = create_transaction_inputs(config);
-        let outputs = create_transaction_outputs(config);
+        let inputs = create_transaction_inputs(config, &virtual_wallet);
+        let outputs = create_transaction_outputs(config, &hw_wallet);
 
         // Display transaction for user review
-        display_transaction_summary(config);
+        display_transaction_summary(config, &hw_wallet, mnemonic);
 
         // Create PSBT
         let mut psbt = create_psbt(inputs.len(), outputs.len())?;
@@ -60,16 +66,20 @@ impl WalletCoordinator {
             outputs.len()
         );
 
+        // UPDATER ROLE: Add BIP32 derivation paths
+        let input_deriv_count =
+            add_input_bip32_derivations(&mut psbt, &hw_wallet, &config.selected_utxo_ids)?;
+        let output_deriv_count = add_output_bip32_derivations(&mut psbt, &outputs, &hw_wallet)?;
+        let xpub_count = add_global_xpubs(&mut psbt, mnemonic)?;
+
         // UPDATER ROLE: Add silent payment tweaks for spending (if any)
         //
         // This demonstrates spending silent payment outputs. The wallet coordinator
         // maintains a database of tweaks discovered during blockchain scanning.
         // When spending a silent payment UTXO, the coordinator adds PSBT_IN_SP_TWEAK
         // so the hardware signer can apply the tweak to its spend key.
-        use crate::shared_utils::TweakDatabase;
-        use bip375_core::Bip375PsbtExt;
-
-        let tweak_db = TweakDatabase::from_virtual_wallet(&get_virtual_wallet());
+        // Note: virtual_wallet already created above with correct derivation path
+        let tweak_db = TweakDatabase::from_virtual_wallet(&virtual_wallet);
         let mut sp_input_count = 0;
 
         for (input_idx, input) in inputs.iter().enumerate() {
@@ -105,16 +115,39 @@ impl WalletCoordinator {
         // and falls back to mock proof if resolution fails (for demo purposes)
         let dnssec_proof = create_dnssec_proof(dns_name);
 
-        psbt.set_output_dnssec_proof(1, dnssec_proof.clone())?;
+        psbt.set_output_dnssec_proof(outputs.len() - 1, dnssec_proof.clone())?;
 
         println!("   Added DNSSEC proof for recipient output");
         println!("   Proof Format: <1-byte-length><dns_name><RFC 9102 proof>");
         println!("   Proof Size: {} bytes\n", dnssec_proof.len());
 
-        // Note: BIP32 derivation fields would be added here in production
-        // For this demo, hardware wallet will match by public key
-        println!("  UPDATER: Privacy mode - no derivation paths");
-        println!("   Hardware wallet will match public keys internally\n");
+        // Display BIP32 derivation info
+        if input_deriv_count > 0 || output_deriv_count > 0 || xpub_count > 0 {
+            println!("  UPDATER: Added BIP32 derivation information");
+            if input_deriv_count > 0 {
+                println!(
+                    "   {} PSBT_IN_BIP32_DERIVATION entries across {} inputs",
+                    input_deriv_count,
+                    inputs.len()
+                );
+            }
+            if output_deriv_count > 0 {
+                println!(
+                    "   {} PSBT_OUT_BIP32_DERIVATION entries",
+                    output_deriv_count
+                );
+            }
+            if xpub_count > 0 {
+                println!("   {} PSBT_GLOBAL_XPUB entries", xpub_count);
+            }
+            println!("   Hardware wallet can match keys using BIP32 paths\n");
+        } else if mnemonic.is_some() {
+            println!("  UPDATER: No BIP32 derivation paths (privacy mode)");
+            println!("   Hardware wallet will match public keys internally\n");
+        } else {
+            println!("  UPDATER: No BIP32 derivation paths (seed-based wallet)");
+            println!("   Hardware wallet will match public keys internally\n");
+        }
 
         // Save to transfer file
         let metadata = PsbtMetadata {
@@ -159,6 +192,7 @@ impl WalletCoordinator {
     pub fn finalize_transaction(
         config: &TransactionConfig,
         auto_read: bool,
+        mnemonic: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         print_step_header(
             "Step 3: Verify and Finalize Transaction",
@@ -203,11 +237,13 @@ impl WalletCoordinator {
         println!("{}\n", "=".repeat(60));
 
         let secp = Secp256k1::new();
-        let inputs = create_transaction_inputs(config);
-        let outputs = create_transaction_outputs(config);
+
+        let virtual_wallet = get_virtual_wallet(mnemonic)?;
+        let hw_wallet = get_hardware_wallet(mnemonic)?;
+        let inputs = create_transaction_inputs(config, &virtual_wallet);
+        let outputs = create_transaction_outputs(config, &hw_wallet);
 
         // Collect expected scan keys
-        let hw_wallet = get_hardware_wallet();
         let hw_scan_key = hw_wallet.scan_key_pair().1;
         let recipient_address = get_recipient_address();
         let recipient_scan_key = recipient_address.scan_key;
@@ -305,7 +341,7 @@ impl WalletCoordinator {
 
         // For change outputs with labels, we need the scan private key to apply label tweaks
         // In this demo, the hardware wallet's scan private key is needed for the change output
-        let hw_wallet = get_hardware_wallet();
+        let hw_wallet = get_hardware_wallet(mnemonic)?;
         let (scan_privkey, scan_pubkey) = hw_wallet.scan_key_pair();
 
         let mut scan_privkeys = std::collections::HashMap::new();

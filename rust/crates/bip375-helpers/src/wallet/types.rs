@@ -5,6 +5,7 @@
 
 use bip375_core::PsbtInput;
 use bip375_crypto::{pubkey_to_p2tr_script, pubkey_to_p2wpkh_script, script_type_string};
+use bip39::{Language, Mnemonic};
 use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
@@ -75,75 +76,272 @@ impl Utxo {
     }
 }
 
-/// Simple wallet for generating deterministic keys from a seed
+/// Derivation path type for BIP32 key generation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DerivationPath {
+    /// BIP84: m/84'/0'/0' (P2WPKH)
+    Bip84,
+    /// BIP86: m/86'/0'/0' (P2TR)
+    Bip86,
+}
+
+impl Default for DerivationPath {
+    fn default() -> Self {
+        DerivationPath::Bip84 // Default to P2WPKH
+    }
+}
+
+/// Wallet key source
+enum WalletSource {
+    /// Simple seed-based derivation (backward compatible)
+    Seed(String),
+    /// BIP39 mnemonic with BIP32 derivation
+    Mnemonic {
+        seed: [u8; 64],
+        derivation_path: DerivationPath,
+    },
+}
+
+/// Simple wallet for generating deterministic keys from a seed or mnemonic
 pub struct SimpleWallet {
-    seed: String,
+    source: WalletSource,
 }
 
 impl SimpleWallet {
+    /// Create a wallet from a simple seed string (backward compatible)
     pub fn new(seed: &str) -> Self {
         Self {
-            seed: seed.to_string(),
+            source: WalletSource::Seed(seed.to_string()),
         }
     }
 
-    /// Generate a deterministic private key from the seed
+    /// Create a wallet from a BIP39 mnemonic with configurable derivation path
+    ///
+    /// # Arguments
+    /// * `mnemonic_phrase` - 12 or 24 word BIP39 mnemonic
+    /// * `derivation_path` - Optional derivation path (defaults to BIP86/P2TR)
+    ///
+    /// # Errors
+    /// Returns error if mnemonic is invalid
+    pub fn from_mnemonic(
+        mnemonic_phrase: &str,
+        derivation_path: Option<DerivationPath>,
+    ) -> Result<Self, String> {
+        // Parse and validate mnemonic
+        let mnemonic = Mnemonic::parse_in(Language::English, mnemonic_phrase)
+            .map_err(|e| format!("Invalid BIP39 mnemonic: {}", e))?;
+
+        // Convert to seed (512 bits / 64 bytes)
+        let seed = mnemonic.to_seed("");
+
+        Ok(Self {
+            source: WalletSource::Mnemonic {
+                seed,
+                derivation_path: derivation_path.unwrap_or_default(),
+            },
+        })
+    }
+
+    /// Generate a deterministic private key for an input
+    ///
+    /// For seed-based wallets: Uses SHA256(seed_input_{index})
+    /// For mnemonic wallets: Uses BIP32 derivation at m/<purpose>'/0'/0'/0/index
     pub fn input_key_pair(&self, index: u32) -> (SecretKey, PublicKey) {
         let secp = Secp256k1::new();
 
-        // Match Python's key derivation: f"{seed}_input_{index}"
-        let key_material = format!("{}_input_{}", self.seed, index);
-        let mut hasher = Sha256::new();
-        hasher.update(key_material.as_bytes());
-        let hash = hasher.finalize();
+        match &self.source {
+            WalletSource::Seed(seed) => {
+                // Match Python's key derivation: f"{seed}_input_{index}"
+                let key_material = format!("{}_input_{}", seed, index);
+                let mut hasher = Sha256::new();
+                hasher.update(key_material.as_bytes());
+                let hash = hasher.finalize();
 
-        let privkey = SecretKey::from_slice(&hash).expect("valid private key");
-        let pubkey = PublicKey::from_secret_key(&secp, &privkey);
+                let privkey = SecretKey::from_slice(&hash).expect("valid private key");
+                let pubkey = PublicKey::from_secret_key(&secp, &privkey);
 
-        (privkey, pubkey)
+                (privkey, pubkey)
+            }
+            WalletSource::Mnemonic {
+                seed,
+                derivation_path,
+            } => {
+                // Use BIP32 derivation: m/<purpose>'/0'/0'/0/index
+                let purpose = match derivation_path {
+                    DerivationPath::Bip84 => 84, // P2WPKH
+                    DerivationPath::Bip86 => 86, // P2TR
+                };
+
+                Self::derive_key_bip32(seed, &[purpose, 0, 0, 0, index])
+            }
+        }
     }
 
     /// Generate scan key pair
     ///
-    /// Must match Python's Wallet.create_key_pair("scan", 0):
-    /// data = f"{self.seed}_scan_0".encode()
+    /// For seed-based wallets: Uses SHA256(seed_scan_0)
+    /// For mnemonic wallets: Uses BIP32 at m/352'/0'/0'/0/0 (BIP352 scan key)
     pub fn scan_key_pair(&self) -> (SecretKey, PublicKey) {
         let secp = Secp256k1::new();
 
-        // Match Python's key derivation: f"{seed}_scan_0"
-        let key_material = format!("{}_scan_0", self.seed);
-        let mut hasher = Sha256::new();
-        hasher.update(key_material.as_bytes());
-        let scan_hash = hasher.finalize();
+        match &self.source {
+            WalletSource::Seed(seed) => {
+                // Match Python's key derivation: f"{seed}_scan_0"
+                let key_material = format!("{}_scan_0", seed);
+                let mut hasher = Sha256::new();
+                hasher.update(key_material.as_bytes());
+                let scan_hash = hasher.finalize();
 
-        let scan_privkey = SecretKey::from_slice(&scan_hash).expect("valid scan private key");
-        let scan_pubkey = PublicKey::from_secret_key(&secp, &scan_privkey);
+                let scan_privkey =
+                    SecretKey::from_slice(&scan_hash).expect("valid scan private key");
+                let scan_pubkey = PublicKey::from_secret_key(&secp, &scan_privkey);
 
-        (scan_privkey, scan_pubkey)
+                (scan_privkey, scan_pubkey)
+            }
+            WalletSource::Mnemonic { seed, .. } => {
+                // BIP352 scan key path: m/352'/0'/0'/0/0
+                Self::derive_key_bip32(seed, &[352, 0, 0, 0, 0])
+            }
+        }
     }
 
     /// Generate spend key pair
     ///
-    /// Must match Python's Wallet.create_key_pair("spend", 0):
-    /// data = f"{self.seed}_spend_0".encode()
+    /// For seed-based wallets: Uses SHA256(seed_spend_0)
+    /// For mnemonic wallets: Uses BIP32 at m/352'/0'/0'/1/0 (BIP352 spend key)
     pub fn spend_key_pair(&self) -> (SecretKey, PublicKey) {
         let secp = Secp256k1::new();
 
-        // Match Python's key derivation: f"{seed}_spend_0"
-        let key_material = format!("{}_spend_0", self.seed);
-        let mut hasher = Sha256::new();
-        hasher.update(key_material.as_bytes());
-        let spend_hash = hasher.finalize();
+        match &self.source {
+            WalletSource::Seed(seed) => {
+                // Match Python's key derivation: f"{seed}_spend_0"
+                let key_material = format!("{}_spend_0", seed);
+                let mut hasher = Sha256::new();
+                hasher.update(key_material.as_bytes());
+                let spend_hash = hasher.finalize();
 
-        let spend_privkey = SecretKey::from_slice(&spend_hash).expect("valid spend private key");
-        let spend_pubkey = PublicKey::from_secret_key(&secp, &spend_privkey);
+                let spend_privkey =
+                    SecretKey::from_slice(&spend_hash).expect("valid spend private key");
+                let spend_pubkey = PublicKey::from_secret_key(&secp, &spend_privkey);
 
-        (spend_privkey, spend_pubkey)
+                (spend_privkey, spend_pubkey)
+            }
+            WalletSource::Mnemonic { seed, .. } => {
+                // BIP352 spend key path: m/352'/0'/0'/1/0
+                Self::derive_key_bip32(seed, &[352, 0, 0, 1, 0])
+            }
+        }
     }
 
     /// Get scan and spend public keys (convenience method)
     pub fn scan_spend_keys(&self) -> (PublicKey, PublicKey) {
         (self.scan_key_pair().1, self.spend_key_pair().1)
+    }
+
+    /// Get the master fingerprint for BIP32 derivation
+    ///
+    /// For mnemonic-based wallets: Returns the actual master fingerprint (first 4 bytes of HASH160(master_pubkey))
+    /// For seed-based wallets: Returns a placeholder [0u8; 4] since they don't use BIP32
+    ///
+    /// # Returns
+    /// 4-byte master fingerprint as array
+    pub fn master_fingerprint(&self) -> [u8; 4] {
+        match &self.source {
+            WalletSource::Seed(_) => {
+                // Seed-based wallets don't use BIP32, return placeholder
+                [0u8; 4]
+            }
+            WalletSource::Mnemonic { seed, .. } => {
+                use bitcoin::bip32::Xpriv;
+                use bitcoin::Network;
+
+                // Derive master xpriv: m
+                let master_xpriv =
+                    Xpriv::new_master(Network::Bitcoin, seed).expect("valid master key");
+
+                // Get master xpub
+                let secp = Secp256k1::new();
+                let master_xpub = bitcoin::bip32::Xpub::from_priv(&secp, &master_xpriv);
+
+                // Return fingerprint: first 4 bytes
+                master_xpub.fingerprint().to_bytes()
+            }
+        }
+    }
+
+    /// Get the derivation path used by this wallet
+    ///
+    /// For mnemonic-based wallets: Returns the configured derivation path
+    /// For seed-based wallets: Returns None since they don't use BIP32
+    pub fn derivation_path(&self) -> Option<DerivationPath> {
+        match &self.source {
+            WalletSource::Seed(_) => None,
+            WalletSource::Mnemonic {
+                derivation_path, ..
+            } => Some(*derivation_path),
+        }
+    }
+
+    /// Get the full BIP32 derivation path for a specific input index
+    ///
+    /// Returns the path that matches the wallet's internal key derivation:
+    /// - For BIP84 (P2WPKH): m/84'/0'/0'/0/index
+    /// - For BIP86 (P2TR): m/86'/0'/0'/0/index
+    ///
+    /// For seed-based wallets: Returns None since they don't use BIP32
+    ///
+    /// # Arguments
+    /// * `index` - The UTXO/input index
+    ///
+    /// # Returns
+    /// Vec of path components as u32 values with hardening applied (0x80000000 bit set)
+    pub fn get_input_derivation_path(&self, index: u32) -> Option<Vec<u32>> {
+        match &self.source {
+            WalletSource::Seed(_) => None,
+            WalletSource::Mnemonic {
+                derivation_path, ..
+            } => {
+                let purpose = match derivation_path {
+                    DerivationPath::Bip84 => 0x80000054, // 84'
+                    DerivationPath::Bip86 => 0x80000056, // 86'
+                };
+                Some(vec![purpose, 0x80000000, 0x80000000, 0, index])
+            }
+        }
+    }
+
+    /// Derive a key using BIP32 from a seed
+    ///
+    /// Uses HMAC-SHA512 for BIP32 derivation with hardened keys
+    fn derive_key_bip32(seed: &[u8; 64], path: &[u32]) -> (SecretKey, PublicKey) {
+        use bitcoin::bip32::{DerivationPath as Bip32Path, Xpriv};
+        use std::str::FromStr;
+
+        let secp = Secp256k1::new();
+
+        // Create master key from seed
+        let master = Xpriv::new_master(bitcoin::Network::Bitcoin, seed).expect("valid master key");
+
+        // Build derivation path with hardened keys (add 2^31 for hardened)
+        let path_str = format!(
+            "m/{}",
+            path.iter()
+                .map(|&i| format!("{}'", i))
+                .collect::<Vec<_>>()
+                .join("/")
+        );
+
+        let derivation_path = Bip32Path::from_str(&path_str).expect("valid derivation path");
+
+        // Derive key
+        let derived = master
+            .derive_priv(&secp, &derivation_path)
+            .expect("valid derivation");
+
+        let privkey = derived.private_key;
+        let pubkey = PublicKey::from_secret_key(&secp, &privkey);
+
+        (privkey, pubkey)
     }
 }
 
@@ -188,10 +386,15 @@ impl VirtualWallet {
     /// Create a new virtual wallet with pre-populated UTXOs
     ///
     /// # Arguments
-    /// * `wallet_seed` - Seed for generating deterministic keys
+    /// * `wallet_seed` - Seed for generating deterministic keys (ignored if wallet provided)
     /// * `utxo_configs` - List of (amount, script_type, has_sp_tweak) configurations
-    pub fn new(wallet_seed: &str, utxo_configs: &[(u64, ScriptType, bool)]) -> Self {
-        let wallet = SimpleWallet::new(wallet_seed);
+    /// * `wallet` - Optional pre-configured SimpleWallet (for mnemonic support)
+    pub fn new(
+        wallet_seed: &str,
+        utxo_configs: &[(u64, ScriptType, bool)],
+        wallet: Option<SimpleWallet>,
+    ) -> Self {
+        let wallet = wallet.unwrap_or_else(|| SimpleWallet::new(wallet_seed));
         let secp = Secp256k1::new();
 
         let utxos = utxo_configs
@@ -262,8 +465,17 @@ impl VirtualWallet {
     }
 
     /// Create default hardware wallet virtual wallet
-    pub fn hardware_wallet_default() -> Self {
-        Self::new(
+    ///
+    /// # Arguments
+    /// * `mnemonic` - Optional BIP39 mnemonic phrase
+    pub fn hardware_wallet_default(mnemonic: Option<&str>) -> Result<Self, String> {
+        let wallet = if let Some(phrase) = mnemonic {
+            Some(SimpleWallet::from_mnemonic(phrase, None)?)
+        } else {
+            None
+        };
+
+        Ok(Self::new(
             "hardware_wallet_coldcard_demo",
             &[
                 (50_000, ScriptType::P2WPKH, false),  // ID 0
@@ -275,7 +487,8 @@ impl VirtualWallet {
                 (125_000, ScriptType::P2WPKH, false), // ID 6
                 (250_000, ScriptType::P2TR, false),   // ID 7
             ],
-        )
+            wallet,
+        ))
     }
 
     /// Create default multi-signer virtual wallet (per-party wallets)
@@ -288,6 +501,7 @@ impl VirtualWallet {
                 (200_000, ScriptType::P2WPKH, false), // ID 2
                 (75_000, ScriptType::P2TR, false),    // ID 3
             ],
+            None,
         )
     }
 
@@ -512,11 +726,11 @@ impl InteractiveConfig {
         wallet: &VirtualWallet,
         default_config: TransactionConfig,
     ) -> Result<TransactionConfig, Box<dyn std::error::Error>> {
-        println!("\\n{}", "=".repeat(60));
+        println!("\n{}", "=".repeat(60));
         println!("  Configure Transaction Inputs");
         println!("{}", "=".repeat(60));
 
-        println!("\\nAvailable UTXOs in your virtual wallet:\\n");
+        println!("\nAvailable UTXOs in your virtual wallet:\n");
         for vu in wallet.list_utxos() {
             let sp_indicator = if vu.has_sp_tweak { " [SP]" } else { "" };
             println!(
@@ -535,9 +749,9 @@ impl InteractiveConfig {
             .map(|id| id.to_string())
             .collect();
 
-        println!("\\nSelect UTXOs to spend (comma-separated, e.g., '1,2,4'):");
+        println!("\nSelect UTXOs to spend (comma-separated, e.g., '1,2,4'):");
         println!("Or press Enter for default [{}]", default_ids.join(","));
-        print!("\\n> ");
+        print!("\n> ");
         std::io::Write::flush(&mut std::io::stdout())?;
 
         let mut input = String::new();

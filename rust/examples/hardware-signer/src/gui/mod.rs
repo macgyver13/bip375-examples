@@ -145,12 +145,14 @@ fn format_config_summary(config: &TransactionConfig, wallet: &VirtualWallet) -> 
 
 /// Run the GUI application
 #[allow(dead_code)]
-pub fn run_gui() -> Result<(), slint::PlatformError> {
+pub fn run_gui(mnemonic: Option<String>) -> Result<(), slint::PlatformError> {
     let window = AppWindow::new()?;
-    let state = AppState::default();
+    let mut state = AppState::default();
+    state.mnemonic = mnemonic.clone();
 
     // Set initial config summary
-    let wallet = VirtualWallet::hardware_wallet_default();
+    let wallet = VirtualWallet::hardware_wallet_default(mnemonic.as_deref())
+        .expect("Failed to create virtual wallet");
     let initial_summary = format_config_summary(&state.tx_config, &wallet);
     window.set_tx_config_summary(initial_summary.into());
 
@@ -229,8 +231,10 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
                 if let Some(_window) = window_weak.upgrade() {
                     // Create UTXO selector dialog
                     if let Ok(dialog) = UtxoSelectorDialog::new() {
-                        let wallet = VirtualWallet::hardware_wallet_default();
                         let state = state_rc.borrow();
+                        let wallet =
+                            VirtualWallet::hardware_wallet_default(state.mnemonic.as_deref())
+                                .expect("Failed to create virtual wallet");
 
                         // Populate UTXO list from wallet
                         let utxos: Vec<UtxoData> = wallet
@@ -260,8 +264,6 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
                             let window_weak = window_weak.clone();
                             let dialog_weak = dialog.as_weak();
                             move |new_config| {
-                                let mut state = state_rc.borrow_mut();
-
                                 // Extract selected IDs from dialog's utxos model
                                 if let Some(d) = dialog_weak.upgrade() {
                                     let utxos_model = d.get_utxos();
@@ -277,16 +279,23 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
                                         .collect();
 
                                     // Update transaction config
-                                    state.tx_config = TransactionConfig::new(
-                                        ids,
-                                        new_config.recipient_amount as u64,
-                                        new_config.change_amount as u64,
-                                        new_config.fee as u64,
-                                    );
+                                    {
+                                        let mut state = state_rc.borrow_mut();
+                                        state.tx_config = TransactionConfig::new(
+                                            ids,
+                                            new_config.recipient_amount as u64,
+                                            new_config.change_amount as u64,
+                                            new_config.fee as u64,
+                                        );
+                                    }
 
                                     // Update display summary
                                     if let Some(w) = window_weak.upgrade() {
-                                        let wallet = VirtualWallet::hardware_wallet_default();
+                                        let state = state_rc.borrow();
+                                        let wallet = VirtualWallet::hardware_wallet_default(
+                                            state.mnemonic.as_deref(),
+                                        )
+                                        .expect("Failed to create virtual wallet");
                                         let summary =
                                             format_config_summary(&state.tx_config, &wallet);
                                         w.set_tx_config_summary(summary.into());

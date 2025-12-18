@@ -32,6 +32,7 @@ hex.workspace = true
 sha2.workspace = true
 ripemd.workspace = true
 chrono.workspace = true
+bip39 = "2.0"
 
 # BIP-353 support
 bip353-rs.workspace = true

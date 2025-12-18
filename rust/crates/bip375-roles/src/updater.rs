@@ -7,44 +7,53 @@ use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::EcdsaSighashType;
 use psbt_v2::PsbtSighashType;
 
-/// BIP32 derivation information
-pub struct Bip32Derivation {
-    /// Master fingerprint (4 bytes)
-    pub master_fingerprint: [u8; 4],
-    /// Derivation path
-    pub path: Vec<u32>,
-}
-
-impl Bip32Derivation {
-    /// Create a new BIP32 derivation
-    pub fn new(master_fingerprint: [u8; 4], path: Vec<u32>) -> Self {
-        Self {
-            master_fingerprint,
-            path,
-        }
-    }
-}
-
 /// Add BIP32 derivation information for an input
+///
+/// Automatically detects the script type and adds derivation to the appropriate field:
+/// - For P2TR (Taproot): adds to `tap_key_origins` using x-only pubkey - leaf_hashes omitted for demo
+/// - For legacy/SegWit v0 (P2PKH, P2WPKH, P2SH, P2WSH): adds to `bip32_derivations`
+///
+/// # Arguments
+/// * `psbt` - The PSBT to modify
+/// * `input_index` - Index of the input
+/// * `pubkey` - Full public key (will be converted to x-only for Taproot)
+/// * `master_fingerprint` - Master key fingerprint (4 bytes)
+/// * `path` - BIP32 derivation path as Vec<u32> with hardening applied
 pub fn add_input_bip32_derivation(
     psbt: &mut SilentPaymentPsbt,
     input_index: usize,
     pubkey: &secp256k1::PublicKey,
-    derivation: &Bip32Derivation,
+    master_fingerprint: [u8; 4],
+    path: Vec<u32>,
 ) -> Result<()> {
     let input = psbt
         .inputs
         .get_mut(input_index)
         .ok_or(Error::InvalidInputIndex(input_index))?;
 
-    let fingerprint = Fingerprint::from(derivation.master_fingerprint);
-    let path: DerivationPath = derivation
-        .path
-        .iter()
-        .map(|&i| ChildNumber::from(i))
-        .collect();
+    let fingerprint = Fingerprint::from(master_fingerprint);
+    let derivation_path: DerivationPath = path.iter().map(|&i| ChildNumber::from(i)).collect();
 
-    input.bip32_derivations.insert(*pubkey, (fingerprint, path));
+    // Detect script type from witness_utxo
+    if let Some(ref utxo) = input.witness_utxo {
+        if utxo.script_pubkey.is_p2tr() {
+            // For Taproot, use tap_key_origins with x-only pubkey
+            let xonly_pubkey = bitcoin::key::XOnlyPublicKey::from(*pubkey);
+            input
+                .tap_key_origins
+                .insert(xonly_pubkey, (vec![], (fingerprint, derivation_path)));
+        } else {
+            // For legacy/SegWit v0, use bip32_derivations
+            input
+                .bip32_derivations
+                .insert(*pubkey, (fingerprint, derivation_path));
+        }
+    } else {
+        // If no witness_utxo, default to bip32_derivations for legacy
+        input
+            .bip32_derivations
+            .insert(*pubkey, (fingerprint, derivation_path));
+    }
 
     Ok(())
 }
@@ -54,23 +63,39 @@ pub fn add_output_bip32_derivation(
     psbt: &mut SilentPaymentPsbt,
     output_index: usize,
     pubkey: &secp256k1::PublicKey,
-    derivation: &Bip32Derivation,
+    master_fingerprint: [u8; 4],
+    path: Vec<u32>,
 ) -> Result<()> {
     let output = psbt
         .outputs
         .get_mut(output_index)
         .ok_or(Error::InvalidOutputIndex(output_index))?;
 
-    let fingerprint = Fingerprint::from(derivation.master_fingerprint);
-    let path: DerivationPath = derivation
-        .path
-        .iter()
-        .map(|&i| ChildNumber::from(i))
-        .collect();
+    let fingerprint = Fingerprint::from(master_fingerprint);
+    let derivation_path: DerivationPath = path.iter().map(|&i| ChildNumber::from(i)).collect();
 
     output
         .bip32_derivations
-        .insert(*pubkey, (fingerprint, path));
+        .insert(*pubkey, (fingerprint, derivation_path));
+
+    Ok(())
+}
+
+/// Add xpub to the global PSBT section
+///
+/// Adds PSBT_GLOBAL_XPUB with the extended public key and its origin information.
+pub fn add_global_xpub(
+    psbt: &mut SilentPaymentPsbt,
+    xpub: bitcoin::bip32::Xpub,
+    master_fingerprint: [u8; 4],
+    path: Vec<u32>,
+) -> Result<()> {
+    let fingerprint = Fingerprint::from(master_fingerprint);
+    let derivation_path: DerivationPath = path.iter().map(|&i| ChildNumber::from(i)).collect();
+
+    psbt.global
+        .xpubs
+        .insert(xpub, (fingerprint, derivation_path));
 
     Ok(())
 }
@@ -105,17 +130,18 @@ mod tests {
         let privkey = SecretKey::from_slice(&[1u8; 32]).unwrap();
         let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &privkey);
 
-        let derivation = Bip32Derivation::new([0xAA, 0xBB, 0xCC, 0xDD], vec![0x8000002C]);
+        let fingerprint = [0xAA, 0xBB, 0xCC, 0xDD];
+        let path = vec![0x8000002C];
 
-        add_input_bip32_derivation(&mut psbt, 0, &pubkey, &derivation).unwrap();
+        add_input_bip32_derivation(&mut psbt, 0, &pubkey, fingerprint, path).unwrap();
 
         // Verify derivation was added
         let input = &psbt.inputs[0];
         assert!(input.bip32_derivations.contains_key(&pubkey));
 
-        let (fp, path) = input.bip32_derivations.get(&pubkey).unwrap();
+        let (fp, derivation_path) = input.bip32_derivations.get(&pubkey).unwrap();
         assert_eq!(fp.as_bytes(), &[0xAA, 0xBB, 0xCC, 0xDD]);
-        assert_eq!(path.len(), 1);
+        assert_eq!(derivation_path.len(), 1);
     }
 
     #[test]
