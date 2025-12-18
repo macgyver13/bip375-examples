@@ -32,6 +32,9 @@ pub struct AppState {
 
     /// Transaction configuration (UTXO selection, amounts)
     pub tx_config: TransactionConfig,
+
+    /// Optional BIP39 mnemonic for deterministic key derivation
+    pub mnemonic: Option<String>,
 }
 
 impl Default for AppState {
@@ -44,6 +47,7 @@ impl Default for AppState {
             validation_results: None,
             transaction_summary: None,
             tx_config: TransactionConfig::hardware_wallet_auto(),
+            mnemonic: None,
         }
     }
 }

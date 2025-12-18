@@ -20,7 +20,7 @@ impl WorkflowOrchestrator {
         let before_psbt = state.current_psbt.clone();
 
         // Execute business logic using the configured transaction config
-        WalletCoordinator::create_psbt(&state.tx_config, true)
+        WalletCoordinator::create_psbt(&state.tx_config, true, state.mnemonic.as_deref())
             .map_err(|e| format!("Failed to create PSBT: {}", e))?;
 
         // Load the created PSBT
@@ -41,13 +41,18 @@ impl WorkflowOrchestrator {
     /// Execute Step 2: Hardware Sign PSBT
     #[allow(dead_code)]
     pub fn execute_sign_psbt(state: &mut AppState) -> Result<(), String> {
-        
         // Take snapshot before
         let before_psbt = state.current_psbt.clone();
 
         // Execute business logic with config
-        HardwareDevice::sign_workflow(&state.tx_config, true, true, state.attack_mode)
-            .map_err(|e| format!("Failed to sign PSBT: {}", e))?;
+        HardwareDevice::sign_workflow(
+            &state.tx_config,
+            true,
+            true,
+            state.attack_mode,
+            state.mnemonic.as_deref(),
+        )
+        .map_err(|e| format!("Failed to sign PSBT: {}", e))?;
 
         let (psbt, _metadata) =
             load_psbt().map_err(|e| format!("Failed to load signed PSBT: {}", e))?;
@@ -69,7 +74,11 @@ impl WorkflowOrchestrator {
         let before_psbt = state.current_psbt.clone();
 
         // Execute business logic with validation and config
-        match WalletCoordinator::finalize_transaction(&state.tx_config, true) {
+        match WalletCoordinator::finalize_transaction(
+            &state.tx_config,
+            true,
+            state.mnemonic.as_deref(),
+        ) {
             Ok(_) => {
                 // Load finalized PSBT (need to reload to see output scripts)
                 let (psbt, _) =
@@ -115,10 +124,12 @@ impl WorkflowOrchestrator {
     pub fn execute_reset(state: &mut AppState) -> Result<(), String> {
         WalletCoordinator::reset().map_err(|e| format!("Failed to reset: {}", e))?;
 
-        // Preserve the transaction config across resets
+        // Preserve the transaction config and mnemonic across resets
         let preserved_config = state.tx_config.clone();
+        let preserved_mnemonic = state.mnemonic.clone();
         *state = AppState::default();
         state.tx_config = preserved_config;
+        state.mnemonic = preserved_mnemonic;
         Ok(())
     }
 
@@ -129,5 +140,4 @@ impl WorkflowOrchestrator {
     ) -> HashSet<FieldIdentifier> {
         psbt_analyzer::compute_field_diff(before, after)
     }
-
 }

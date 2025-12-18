@@ -18,8 +18,15 @@ pub const RECIPIENT_SEED: &str = "recipient_hardware_signer_demo";
 pub const ATTACKER_SEED: &str = "attacker_malicious_scan_key";
 
 /// Get the hardware wallet instance
-pub fn get_hardware_wallet() -> SimpleWallet {
-    SimpleWallet::new(HW_WALLET_SEED)
+///
+/// # Arguments
+/// * `mnemonic` - Optional BIP39 mnemonic phrase (12 or 24 words)
+pub fn get_hardware_wallet(mnemonic: Option<&str>) -> Result<SimpleWallet, String> {
+    if let Some(mnemonic_phrase) = mnemonic {
+        SimpleWallet::from_mnemonic(mnemonic_phrase, None)
+    } else {
+        Ok(SimpleWallet::new(HW_WALLET_SEED))
+    }
 }
 
 /// Get the recipient address for silent payment
@@ -37,20 +44,22 @@ pub fn get_attacker_address() -> SilentPaymentAddress {
 }
 
 /// Get the virtual wallet with pre-configured UTXOs
-pub fn get_virtual_wallet() -> VirtualWallet {
-    VirtualWallet::hardware_wallet_default()
+pub fn get_virtual_wallet(mnemonic: Option<&str>) -> Result<VirtualWallet, String> {
+    VirtualWallet::hardware_wallet_default(mnemonic)
 }
 
 /// Create transaction inputs based on configuration
 ///
 /// Uses VirtualWallet to select UTXOs based on TransactionConfig.
 /// Supports flexible input selection including Silent Payment outputs.
-pub fn create_transaction_inputs(config: &TransactionConfig) -> Vec<PsbtInput> {
-    let wallet = get_virtual_wallet();
+pub fn create_transaction_inputs(
+    config: &TransactionConfig,
+    wallet: &VirtualWallet,
+) -> Vec<PsbtInput> {
     wallet
         .select_by_ids(&config.selected_utxo_ids)
         .into_iter()
-        .map(|utxo| utxo.to_psbt_input())
+        .map(|vu| vu.to_psbt_input())
         .collect()
 }
 
@@ -71,23 +80,31 @@ pub fn create_transaction_inputs(config: &TransactionConfig) -> Vec<PsbtInput> {
 /// 4. Wallet recovery: Scanners know to check label=0 during backup recovery
 ///
 /// See BIP 375 "Change Detection" section and BIP 352 "Labels" section.
-pub fn create_transaction_outputs(config: &TransactionConfig) -> Vec<PsbtOutput> {
+pub fn create_transaction_outputs(
+    config: &TransactionConfig,
+    hw_wallet: &SimpleWallet,
+) -> Vec<PsbtOutput> {
     use bitcoin::Amount;
-    let hw_wallet = get_hardware_wallet();
     let (scan_key, spend_key) = hw_wallet.scan_spend_keys();
 
     // Change output: Silent payment back to hardware wallet with label=0 (reserved for change per BIP 352)
     let change_address = SilentPaymentAddress::new(scan_key, spend_key, Some(0));
 
-    vec![
-        // Change output
-        PsbtOutput::silent_payment(Amount::from_sat(config.change_amount), change_address),
-        // Recipient output
-        PsbtOutput::silent_payment(
+    let mut outputs = Vec::new();
+    if config.change_amount > 0 {
+        outputs.push(PsbtOutput::silent_payment(
+            Amount::from_sat(config.change_amount),
+            change_address,
+        ));
+    }
+    if config.recipient_amount > 0 {
+        outputs.push(PsbtOutput::silent_payment(
             Amount::from_sat(config.recipient_amount),
             get_recipient_address(),
-        ),
-    ]
+        ));
+    }
+
+    outputs
 }
 
 /// Display transaction summary for user review
@@ -95,12 +112,16 @@ pub fn create_transaction_outputs(config: &TransactionConfig) -> Vec<PsbtOutput>
 /// # Arguments
 /// * `config` - Transaction configuration
 /// * `dnssec_proofs` - Optional map of output_index -> (dns_name, proof_hex) for inline display
+/// * `hw_wallet` - Hardware wallet for generating outputs
 pub fn display_transaction_summary_with_dnssec(
     config: &TransactionConfig,
     dnssec_proofs: Option<std::collections::HashMap<usize, (String, String)>>,
+    hw_wallet: &SimpleWallet,
+    mnemonic: Option<&str>,
 ) {
-    let inputs = create_transaction_inputs(config);
-    let outputs = create_transaction_outputs(config);
+    let virtual_wallet = get_virtual_wallet(mnemonic).expect("Failed to create virtual wallet");
+    let inputs = create_transaction_inputs(config, &virtual_wallet);
+    let outputs = create_transaction_outputs(config, hw_wallet);
 
     println!("\n{}", "=".repeat(60));
     println!("  Transaction Summary");
@@ -185,8 +206,12 @@ pub fn display_transaction_summary_with_dnssec(
 }
 
 /// Display transaction summary for user review (without DNSSEC proofs)
-pub fn display_transaction_summary(config: &TransactionConfig) {
-    display_transaction_summary_with_dnssec(config, None);
+pub fn display_transaction_summary(
+    config: &TransactionConfig,
+    hw_wallet: &SimpleWallet,
+    mnemonic: Option<&str>,
+) {
+    display_transaction_summary_with_dnssec(config, None, hw_wallet, mnemonic);
 }
 
 /// Print a step header
@@ -526,4 +551,180 @@ impl Default for TweakDatabase {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// =============================================================================
+// BIP32 Derivation Utilities
+// =============================================================================
+
+use bip375_core::SilentPaymentPsbt;
+use bip375_roles::updater::{add_input_bip32_derivation, add_output_bip32_derivation};
+
+/// Add BIP32 derivation info for transaction inputs
+///
+/// Uses the UPDATER role to add PSBT_IN_BIP32_DERIVATION fields for each input
+/// based on the wallet's derivation scheme. This allows hardware wallets to match
+/// keys using BIP32 paths.
+///
+/// # Arguments
+/// * `psbt` - The PSBT to update
+/// * `wallet` - Hardware wallet with the correct derivation path already set
+/// * `selected_utxo_ids` - IDs of the selected UTXOs
+///
+/// # Returns
+/// Number of derivation entries added
+pub fn add_input_bip32_derivations(
+    psbt: &mut SilentPaymentPsbt,
+    wallet: &SimpleWallet,
+    selected_utxo_ids: &[usize],
+) -> Result<usize, String> {
+    let mut count = 0;
+    let master_fingerprint = wallet.master_fingerprint();
+
+    for (input_idx, &utxo_id) in selected_utxo_ids.iter().enumerate() {
+        // Get the derivation path from the wallet for this input index
+        let Some(path) = wallet.get_input_derivation_path(utxo_id as u32) else {
+            continue; // Skip seed-based wallets (no BIP32 derivation)
+        };
+
+        let (_privkey, pubkey) = wallet.input_key_pair(utxo_id as u32);
+
+        add_input_bip32_derivation(psbt, input_idx, &pubkey, master_fingerprint, path)
+            .map_err(|e| format!("Failed to add input derivation: {}", e))?;
+
+        count += 1;
+    }
+
+    Ok(count)
+}
+
+/// Add BIP32 derivation info for transaction outputs
+///
+/// Uses the UPDATER role to add PSBT_OUT_BIP32_DERIVATION fields for outputs.
+/// This is particularly important for change outputs so hardware wallets can verify
+/// the change is returning to the user's wallet.
+///
+/// # Arguments
+/// * `psbt` - The PSBT to update
+/// * `outputs` - The transaction outputs
+/// * `mnemonic` - Optional mnemonic for BIP39-based wallets
+///
+/// # Returns
+/// Number of derivation entries added
+pub fn add_output_bip32_derivations(
+    psbt: &mut SilentPaymentPsbt,
+    outputs: &[PsbtOutput],
+    wallet: &SimpleWallet,
+) -> Result<usize, String> {
+    let mut count = 0;
+    let master_fingerprint = wallet.master_fingerprint();
+
+    // Skip BIP32 derivations for seed-based wallets (fingerprint = [0, 0, 0, 0])
+    if master_fingerprint == [0u8; 4] {
+        println!("  UPDATER: Seed-based wallet detected - skipping BIP32 derivations");
+        return Ok(0);
+    }
+
+    // Get wallet's own keys for ownership verification
+    let (hw_scan_pubkey, hw_spend_pubkey) = wallet.scan_spend_keys();
+
+    // Process each output to determine if it's change (owned by wallet)
+    for (output_index, output) in outputs.iter().enumerate() {
+        match output {
+            PsbtOutput::SilentPayment { address, .. } => {
+                // Change detection logic: Compare scan AND spend keys
+                // Only add derivations if BOTH keys match (wallet owns this output)
+                let is_change = address.scan_key.serialize() == hw_scan_pubkey.serialize()
+                    && address.spend_key.serialize() == hw_spend_pubkey.serialize();
+
+                if !is_change {
+                    // This is a recipient output - skip (we don't own these keys)
+                    continue;
+                }
+
+                // This IS a change output - add BOTH scan and spend derivations ?
+
+                // BIP352 paths for Silent Payment change:
+                // Scan key:  m/352'/0'/0'/0/{output_index}
+                // Spend key: m/352'/0'/0'/1/{output_index}
+
+                let scan_path = vec![
+                    0x80000160, // 352' (BIP352)
+                    0x80000000, // 0' (Bitcoin mainnet)
+                    0x80000000, // 0' (account 0)
+                    0x00000000, // 0 (scan key branch)
+                    output_index as u32,
+                ];
+
+                let spend_path = vec![
+                    0x80000160, // 352' (BIP352)
+                    0x80000000, // 0' (Bitcoin mainnet)
+                    0x80000000, // 0' (account 0)
+                    0x00000001, // 1 (spend key branch)
+                    output_index as u32,
+                ];
+
+                // Add BOTH derivations (scan + spend)
+                add_output_bip32_derivation(
+                    psbt,
+                    output_index,
+                    &address.scan_key,
+                    master_fingerprint,
+                    scan_path,
+                )
+                .map_err(|e| format!("Failed to add scan key derivation: {}", e))?;
+                count += 1;
+
+                add_output_bip32_derivation(
+                    psbt,
+                    output_index,
+                    &address.spend_key,
+                    master_fingerprint,
+                    spend_path,
+                )
+                .map_err(|e| format!("Failed to add spend key derivation: {}", e))?;
+                count += 1;
+            }
+            PsbtOutput::Regular(_txout) => {
+                // For regular outputs (P2WPKH, P2TR), we would extract the pubkey
+                // and check ownership, then add BIP84/BIP86 derivations
+                // This is more complex - requires script parsing
+
+                // TODO: Implement for regular outputs when needed
+                // For now, this example only handles Silent Payment outputs
+            }
+        }
+    }
+
+    Ok(count)
+}
+
+/// Add xpubs to the global PSBT section
+///
+/// Uses the UPDATER role to add PSBT_GLOBAL_XPUB fields containing the wallet's
+/// extended public keys with their origin information.
+///
+/// # Arguments
+/// * `psbt` - The PSBT to update
+/// * `mnemonic` - Optional mnemonic for BIP39-based wallets
+///
+/// # Returns
+/// Number of xpubs added
+pub fn add_global_xpubs(
+    psbt: &mut SilentPaymentPsbt,
+    mnemonic: Option<&str>,
+) -> Result<usize, String> {
+    // Only add xpubs for mnemonic-based wallets
+    if mnemonic.is_none() {
+        return Ok(0);
+    }
+
+    // TODO: Generate actual xpub from mnemonic
+    // For now, return 0 (this requires deriving the xpub from the seed)
+    // In production, you would:
+    // 1. Derive master xpriv from mnemonic
+    // 2. Derive account-level xpub (e.g., m/84'/0'/0')
+    // 3. Call add_global_xpub() with the xpub and its KeySource
+
+    Ok(0)
 }

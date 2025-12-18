@@ -172,6 +172,12 @@ pub trait Bip375PsbtExt {
     /// * `output_index` - Index of the output
     /// * `proof` - The DNSSEC proof data
     fn set_output_dnssec_proof(&mut self, output_index: usize, proof: Vec<u8>) -> Result<()>;
+
+    /// Get all scan keys from outputs with PSBT_OUT_SP_V0_INFO set
+    ///
+    /// Iterates through all outputs and extracts scan keys from silent payment addresses.
+    /// This is used by signers to determine which scan keys need ECDH shares.
+    fn get_output_scan_keys(&self) -> Vec<PublicKey>;
 }
 
 impl Bip375PsbtExt for Psbt {
@@ -381,6 +387,16 @@ impl Bip375PsbtExt for Psbt {
         };
         output.unknowns.insert(key, proof);
         Ok(())
+    }
+
+    fn get_output_scan_keys(&self) -> Vec<PublicKey> {
+        let mut scan_keys = Vec::new();
+        for output_idx in 0..self.outputs.len() {
+            if let Some(address) = self.get_output_sp_address(output_idx) {
+                scan_keys.push(address.scan_key);
+            }
+        }
+        scan_keys
     }
 }
 

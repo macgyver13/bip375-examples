@@ -8,10 +8,11 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, Bip375PsbtExt, SilentPaymentPsbt};
+use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, Bip375PsbtExt, PsbtInput, SilentPaymentPsbt};
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
+use bitcoin::{OutPoint, Sequence};
 use secp256k1::{PublicKey, Secp256k1};
 use std::io::{self, Write};
 
@@ -71,6 +72,7 @@ impl HardwareDevice {
         config: &TransactionConfig,
         auto_approve: bool,
         attack_mode: bool,
+        mnemonic: Option<&str>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         print_step_header(
             "Step 2b: Verify Transaction",
@@ -79,6 +81,9 @@ impl HardwareDevice {
 
         println!(" HARDWARE DEVICE SCREEN:");
         println!("{}\n", "=".repeat(60));
+
+        // Create wallet from mnemonic or seed
+        let hw_wallet = get_hardware_wallet(mnemonic)?;
 
         // Extract and validate DNSSEC proofs from PSBT
         let (psbt, _) = load_psbt().map_err(|e| format!("Failed to load PSBT: {}", e))?;
@@ -143,6 +148,8 @@ impl HardwareDevice {
             } else {
                 None
             },
+            &hw_wallet,
+            mnemonic,
         );
 
         println!("  Review transaction carefully!");
@@ -195,27 +202,43 @@ impl HardwareDevice {
     /// Roles: SIGNER
     pub fn sign_psbt(
         mut psbt: SilentPaymentPsbt,
-        config: &TransactionConfig,
         attack_mode: bool,
+        mnemonic: Option<&str>,
     ) -> Result<SilentPaymentPsbt, Box<dyn std::error::Error>> {
         print_step_header("Step 2c: Sign Transaction", "HARDWARE DEVICE (Air-gapped)");
 
         println!("   SIGNER: Processing transaction with hardware keys...\n");
 
-        // Get hardware wallet's private keys from "secure storage"
-        let hw_wallet = get_hardware_wallet();
-        let mut inputs = create_transaction_inputs(config);
-        let outputs = create_transaction_outputs(config);
-        let secp = Secp256k1::new();
+        // Create wallet from mnemonic or seed
+        let hw_wallet = get_hardware_wallet(mnemonic)?;
 
-        // Extract scan keys from outputs
-        let mut scan_keys: Vec<PublicKey> = outputs
+        // Get hardware wallet's private keys from "secure storage"
+        // Create PsbtInput vector from PSBT (PSBT is source of truth)
+        let mut inputs: Vec<PsbtInput> = psbt
+            .inputs
             .iter()
-            .filter_map(|output| match output {
-                bip375_core::PsbtOutput::SilentPayment { address, .. } => Some(address.scan_key),
-                _ => None,
+            .map(|psbt_input| {
+                PsbtInput::new(
+                    OutPoint {
+                        txid: psbt_input.previous_txid,
+                        vout: psbt_input.spent_output_index,
+                    },
+                    psbt_input
+                        .witness_utxo
+                        .clone()
+                        .expect("witness_utxo required"),
+                    psbt_input
+                        .sequence
+                        .unwrap_or(Sequence::from_consensus(0xfffffffe)),
+                    None, // private_key set later for controlled inputs
+                )
             })
             .collect();
+
+        let secp = Secp256k1::new();
+
+        // Extract scan keys from PSBT outputs (PSBT is source of truth)
+        let mut scan_keys: Vec<PublicKey> = psbt.get_output_scan_keys();
 
         if attack_mode {
             // ATTACK SIMULATION: Replace recipient scan key with attacker's scan key
@@ -250,36 +273,247 @@ impl HardwareDevice {
                 println!("     Scan key {}: {}", i, hex::encode(sk.serialize()));
             }
 
-            // Display which output is which (for demo purposes)
-            if scan_keys.len() >= 2 {
-                let hw_scan_key = hw_wallet.scan_key_pair().1;
-                if scan_keys[0].serialize() == hw_scan_key.serialize() {
-                    println!("     (Output 0 is change to hardware wallet)");
+            // CHANGE VERIFICATION: Use BIP32 derivations to cryptographically verify
+            // which outputs are change (returning to our wallet) vs recipient outputs.
+            //
+            // Security Model:
+            // 1. Check if output has BIP32 derivations (presence = ownership claim)
+            // 2. Verify master fingerprint matches wallet (prevents forged derivations)
+            // 3. Verify derivation paths follow BIP352 pattern (ensures correctness)
+            // 4. Verify pubkeys in derivations match wallet's keys (final proof)
+            // 5. Require BOTH scan and spend derivations (prevents partial attacks)
+            println!("\n   Verifying output ownership via BIP32 derivations...");
+
+            let hw_master_fingerprint = hw_wallet.master_fingerprint();
+            let (hw_scan_key, hw_spend_key) = hw_wallet.scan_spend_keys();
+
+            let mut change_output_count = 0;
+            let mut recipient_output_count = 0;
+
+            for (output_idx, output) in psbt.outputs.iter().enumerate() {
+                // Check if output has BIP32 derivations
+                let has_derivations = !output.bip32_derivations.is_empty();
+
+                if !has_derivations {
+                    // No derivations = recipient output (not owned by wallet)
+                    recipient_output_count += 1;
+                    println!(
+                        "     Output {}: No BIP32 derivations (recipient output)",
+                        output_idx
+                    );
+                    continue;
                 }
-                println!("     (Output 1 is payment to recipient)");
+
+                // Output has derivations - verify they match wallet
+                let mut scan_deriv_valid = false;
+                let mut spend_deriv_valid = false;
+
+                for (pubkey, (fingerprint, path)) in &output.bip32_derivations {
+                    // SECURITY CHECK 1: Verify fingerprint matches wallet
+                    if fingerprint.to_bytes() != hw_master_fingerprint {
+                        println!(
+                            "     ⚠️  Output {}: BIP32 fingerprint mismatch!",
+                            output_idx
+                        );
+                        println!("         Expected: {}", hex::encode(hw_master_fingerprint));
+                        println!("         Found:    {}", hex::encode(fingerprint.to_bytes()));
+                        return Err("BIP32 fingerprint mismatch - possible attack!".into());
+                    }
+
+                    // SECURITY CHECK 2: Verify path follows BIP352 pattern
+                    let path_vec: Vec<u32> = path
+                        .into_iter()
+                        .map(|cn| {
+                            let child_num: u32 = (*cn).into();
+                            child_num
+                        })
+                        .collect();
+
+                    // Expected patterns:
+                    // Scan:  m/352'/0'/0'/0/{index}
+                    // Spend: m/352'/0'/0'/1/{index}
+
+                    if path_vec.len() == 5
+                        && path_vec[0] == 0x80000160  // 352'
+                        && path_vec[1] == 0x80000000  // 0'
+                        && path_vec[2] == 0x80000000
+                    // 0'
+                    {
+                        if path_vec[3] == 0x00000000 {
+                            // scan branch (0)
+                            // SECURITY CHECK 3: Verify pubkey matches wallet's scan key
+                            if pubkey.serialize() == hw_scan_key.serialize() {
+                                scan_deriv_valid = true;
+                                println!("     ✓ Output {}: Scan key derivation verified (path index {})",
+                                         output_idx, path_vec[4]);
+                            } else {
+                                println!("     ⚠️  Output {}: Scan key mismatch!", output_idx);
+                                return Err(
+                                    "Scan key mismatch in BIP32 derivation - possible attack!"
+                                        .into(),
+                                );
+                            }
+                        } else if path_vec[3] == 0x00000001 {
+                            // spend branch (1)
+                            // SECURITY CHECK 4: Verify pubkey matches wallet's spend key
+                            if pubkey.serialize() == hw_spend_key.serialize() {
+                                spend_deriv_valid = true;
+                                println!("     ✓ Output {}: Spend key derivation verified (path index {})",
+                                         output_idx, path_vec[4]);
+                            } else {
+                                println!("     ⚠️  Output {}: Spend key mismatch!", output_idx);
+                                return Err(
+                                    "Spend key mismatch in BIP32 derivation - possible attack!"
+                                        .into(),
+                                );
+                            }
+                        } else {
+                            println!("     ⚠️  Output {}: Invalid BIP352 branch (expected 0 or 1, got {})",
+                                     output_idx, path_vec[3]);
+                            return Err("Invalid BIP352 derivation path - wrong branch".into());
+                        }
+                    } else {
+                        println!(
+                            "     ⚠️  Output {}: Invalid BIP352 derivation path structure",
+                            output_idx
+                        );
+                        println!("         Expected: m/352'/0'/0'/[0|1]/{{index}}");
+                        println!("         Got path length: {}", path_vec.len());
+                        if path_vec.len() >= 3 {
+                            println!(
+                                "         Got: m/{}'/{}'/{}'...",
+                                path_vec[0] & 0x7FFFFFFF,
+                                path_vec[1] & 0x7FFFFFFF,
+                                path_vec[2] & 0x7FFFFFFF
+                            );
+                        }
+                        return Err("Invalid BIP352 derivation path structure".into());
+                    }
+                }
+
+                // SECURITY CHECK 5: BOTH scan and spend derivations must be present and valid
+                if scan_deriv_valid && spend_deriv_valid {
+                    change_output_count += 1;
+                    println!(
+                        "     ✓ Output {} verified as CHANGE to hardware wallet",
+                        output_idx
+                    );
+                } else if scan_deriv_valid || spend_deriv_valid {
+                    // Partial match - suspicious! Possible attack
+                    println!(
+                        "     ⚠️  Output {}: Incomplete BIP32 derivations!",
+                        output_idx
+                    );
+                    println!("         Scan derivation valid: {}", scan_deriv_valid);
+                    println!("         Spend derivation valid: {}", spend_deriv_valid);
+                    return Err("Incomplete BIP32 derivations - possible attack! Both scan and spend required.".into());
+                } else {
+                    // Has derivations but they don't match - definite attack
+                    println!(
+                        "     ⚠️  Output {}: BIP32 derivations present but validation failed!",
+                        output_idx
+                    );
+                    return Err("BIP32 derivations validation failed - possible attack!".into());
+                }
             }
+
+            // Summary
+            println!("\n   Change Verification Summary:");
+            println!("     Method: BIP32 derivation validation");
+            println!("     Change outputs identified: {}", change_output_count);
+            println!("     Recipient outputs: {}", recipient_output_count);
+            if change_output_count > 0 {
+                println!("     Security: Cryptographic proof of ownership ✓");
+            }
+
             println!();
         }
 
-        // Hardware wallet controls both inputs
-        let hw_controlled_inputs = vec![0, 1];
+        // Determine which inputs are controlled by hardware wallet via BIP32 derivations
+        println!("   Verifying input control via BIP32 derivations...");
+
+        let hw_master_fingerprint = hw_wallet.master_fingerprint();
+        let mut hw_controlled_inputs = Vec::new();
+
+        for (input_idx, input) in psbt.inputs.iter().enumerate() {
+            // Check for BIP32 derivations (tap_key_origins for P2TR, bip32_derivations for others)
+            let has_our_derivation = if !input.tap_key_origins.is_empty() {
+                // P2TR input - check tap_key_origins
+                input
+                    .tap_key_origins
+                    .values()
+                    .any(|(_, (fp, _))| fp.to_bytes() == hw_master_fingerprint)
+            } else {
+                // Legacy/SegWit input - check bip32_derivations
+                input
+                    .bip32_derivations
+                    .values()
+                    .any(|(fp, _)| fp.to_bytes() == hw_master_fingerprint)
+            };
+
+            if has_our_derivation {
+                hw_controlled_inputs.push(input_idx);
+                println!(
+                    "     ✓ Input {}: Controlled by hardware wallet (BIP32 derivation verified)",
+                    input_idx
+                );
+            } else {
+                println!(
+                    "     Input {}: Not controlled by hardware wallet (no matching derivation)",
+                    input_idx
+                );
+            }
+        }
 
         println!(
-            "   Hardware wallet controls inputs: {:?}",
+            "   Hardware wallet controls {} input(s): {:?}\n",
+            hw_controlled_inputs.len(),
             hw_controlled_inputs
         );
 
+        if hw_controlled_inputs.is_empty() {
+            return Err("No inputs controlled by hardware wallet! Cannot sign transaction.".into());
+        }
+
         // Set private keys for hardware-controlled inputs
-        for input_idx in &hw_controlled_inputs {
+        for &input_idx in &hw_controlled_inputs {
             // Check if this is a Silent Payment input (has tweak)
             // If so, we must use the spend private key
-            if psbt.get_input_sp_tweak(*input_idx).is_some() {
+            if psbt.get_input_sp_tweak(input_idx).is_some() {
                 let (spend_privkey, _) = hw_wallet.spend_key_pair();
-                inputs[*input_idx].private_key = Some(spend_privkey);
+                inputs[input_idx].private_key = Some(spend_privkey);
             } else {
                 // Otherwise use standard derived key
-                let privkey = hw_wallet.input_key_pair(*input_idx as u32).0;
-                inputs[*input_idx].private_key = Some(privkey);
+                let witness_utxo = &inputs[input_idx].witness_utxo;
+
+                // Try all possible key derivation indices until we find a match
+                let mut found_key = false;
+                for try_idx in 0..10 {
+                    // Reasonable gap limit for demo wallet
+                    let (candidate_privkey, candidate_pubkey) = hw_wallet.input_key_pair(try_idx);
+
+                    // Check if this pubkey matches the UTXO's script
+                    let candidate_script = if witness_utxo.script_pubkey.is_p2wpkh() {
+                        bip375_crypto::pubkey_to_p2wpkh_script(&candidate_pubkey)
+                    } else if witness_utxo.script_pubkey.is_p2tr() {
+                        bip375_crypto::pubkey_to_p2tr_script(&candidate_pubkey)
+                    } else {
+                        continue; // Unsupported script type
+                    };
+
+                    if candidate_script == witness_utxo.script_pubkey {
+                        inputs[input_idx].private_key = Some(candidate_privkey);
+                        found_key = true;
+                        break;
+                    }
+                }
+
+                if !found_key {
+                    return Err(format!(
+                        "Could not find matching private key for input {} (not controlled by this hardware wallet)",
+                        input_idx
+                    ).into());
+                }
             }
         }
 
@@ -404,12 +638,13 @@ impl HardwareDevice {
         auto_read: bool,
         auto_approve: bool,
         attack_mode: bool,
+        mnemonic: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Receive PSBT
         let (psbt, _metadata) = Self::receive_psbt(auto_read, true)?;
 
         // Display and get approval
-        let approved = Self::verify_and_approve(config, auto_approve, attack_mode)?;
+        let approved = Self::verify_and_approve(config, auto_approve, attack_mode, mnemonic)?;
 
         if !approved {
             println!("❌ Transaction not approved. Aborting.\n");
@@ -417,7 +652,7 @@ impl HardwareDevice {
         }
 
         // Sign PSBT
-        let signed_psbt = Self::sign_psbt(psbt, config, attack_mode)?;
+        let signed_psbt = Self::sign_psbt(psbt, attack_mode, mnemonic)?;
 
         // Send back to coordinator
         Self::send_psbt(&signed_psbt, true)?;

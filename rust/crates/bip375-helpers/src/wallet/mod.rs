@@ -5,4 +5,4 @@
 
 pub mod types;
 
-pub use types::{SimpleWallet, TransactionConfig, Utxo, VirtualWallet};
+pub use types::{DerivationPath, SimpleWallet, TransactionConfig, Utxo, VirtualWallet};
