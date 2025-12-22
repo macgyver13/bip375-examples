@@ -10,7 +10,7 @@
 
 use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
 use bip375_crypto::script_type_string;
-use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
+use bip375_helpers::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
 use secp256k1::SecretKey;
 
 /// Get the silent payment recipient address (same for all signers)
@@ -20,22 +20,47 @@ pub fn get_recipient_address() -> SilentPaymentAddress {
     SilentPaymentAddress::new(scan_key, spend_key, None)
 }
 
-/// Get Alice's virtual wallet
+/// Get a party's virtual wallet by name
+pub fn get_party_wallet(party_name: &str) -> VirtualWallet {
+    VirtualWallet::multi_signer_wallet(&format!(
+        "{}_multi_signer_silent_payment_test_seed",
+        party_name.to_lowercase()
+    ))
+}
+
+/// Get Alice's virtual wallet (legacy)
 pub fn get_alice_wallet() -> VirtualWallet {
-    VirtualWallet::multi_signer_wallet("alice_multi_signer_silent_payment_test_seed")
+    get_party_wallet("Alice")
 }
 
-/// Get Bob's virtual wallet
+/// Get Bob's virtual wallet (legacy)
 pub fn get_bob_wallet() -> VirtualWallet {
-    VirtualWallet::multi_signer_wallet("bob_multi_signer_silent_payment_test_seed")
+    get_party_wallet("Bob")
 }
 
-/// Get Charlie's virtual wallet
+/// Get Charlie's virtual wallet (legacy)
 pub fn get_charlie_wallet() -> VirtualWallet {
-    VirtualWallet::multi_signer_wallet("charlie_multi_signer_silent_payment_test_seed")
+    get_party_wallet("Charlie")
 }
 
-/// Get the transaction inputs for the multi-signer scenario
+/// Get transaction inputs from MultiPartyConfig
+pub fn get_transaction_inputs_from_config(config: &MultiPartyConfig) -> Vec<PsbtInput> {
+    let mut inputs = Vec::new();
+
+    for party in &config.parties {
+        let wallet = get_party_wallet(&party.name);
+        inputs.extend(
+            wallet
+                .select_by_ids(&party.tx_config.selected_utxo_ids)
+                .into_iter()
+                .map(|u| u.to_psbt_input()),
+        );
+    }
+
+    inputs
+}
+
+/// Get the transaction inputs for the multi-signer scenario (legacy)
 ///
 /// 3 inputs controlled by different parties:
 /// - Input 0: Alice's UTXO (from her wallet, selected by config)
@@ -81,22 +106,28 @@ pub fn get_transaction_inputs(
     inputs
 }
 
-/// Get Alice's private key for her controlled input
+/// Get a party's private key by name
+pub fn get_party_private_key(party_name: &str) -> SecretKey {
+    let wallet = SimpleWallet::new(&format!(
+        "{}_multi_signer_silent_payment_test_seed",
+        party_name.to_lowercase()
+    ));
+    wallet.input_key_pair(0).0
+}
+
+/// Get Alice's private key for her controlled input (legacy)
 pub fn get_alice_private_key() -> SecretKey {
-    let alice_wallet = SimpleWallet::new("alice_multi_signer_silent_payment_test_seed");
-    alice_wallet.input_key_pair(0).0
+    get_party_private_key("Alice")
 }
 
-/// Get Bob's private key for his controlled input
+/// Get Bob's private key for his controlled input (legacy)
 pub fn get_bob_private_key() -> SecretKey {
-    let bob_wallet = SimpleWallet::new("bob_multi_signer_silent_payment_test_seed");
-    bob_wallet.input_key_pair(0).0
+    get_party_private_key("Bob")
 }
 
-/// Get Charlie's private key for his controlled input
+/// Get Charlie's private key for his controlled input (legacy)
 pub fn get_charlie_private_key() -> SecretKey {
-    let charlie_wallet = SimpleWallet::new("charlie_multi_signer_silent_payment_test_seed");
-    charlie_wallet.input_key_pair(0).0
+    get_party_private_key("Charlie")
 }
 
 /// Get the transaction outputs for the multi-signer scenario
@@ -228,4 +259,13 @@ pub fn get_default_configs() -> (
     );
 
     (alice_config, bob_config, charlie_config, combined_config)
+}
+
+/// Create default MultiPartyConfig for the standard three-party scenario
+pub fn create_multi_party_config_default() -> Result<MultiPartyConfig, String> {
+    let alice_wallet = get_alice_wallet();
+    let bob_wallet = get_bob_wallet();
+    let charlie_wallet = get_charlie_wallet();
+
+    MultiPartyConfig::default_three_party(&alice_wallet, &bob_wallet, &charlie_wallet)
 }

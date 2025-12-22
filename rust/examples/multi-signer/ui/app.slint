@@ -150,6 +150,7 @@ export component AppWindow inherits Window {
     in-out property <bool> has-validation: false;
 
     // Callbacks
+    callback configure-parties();
     callback alice-creates();
     callback bob-signs();
     callback charlie-finalizes();
@@ -177,11 +178,14 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: workflow-state == "Ready" ? "⚪ Ready" :
-                          workflow-state == "AliceComplete" ? "🔵 Alice Complete (1/3)" :
-                          workflow-state == "BobComplete" ? "🟡 Bob Complete (2/3)" :
-                          workflow-state == "CharlieComplete" ? "🟢 Charlie Complete (3/3)" :
-                          "✅ Transaction Extracted";
+                    text: workflow-state == "ConfiguringParties" ? "⚪ Configuring" :
+                          workflow-state == "PsbtCreated" ? "🔵 PSBT Created" :
+                          workflow-state == "PartialSigned(1)" ? "🔵 Partial (1/3)" :
+                          workflow-state == "PartialSigned(2)" ? "🟡 Partial (2/3)" :
+                          workflow-state == "FullySigned" ? "🟢 Fully Signed" :
+                          workflow-state == "Finalized" ? "🟢 Finalized" :
+                          workflow-state == "TransactionExtracted" ? "✅ Extracted" :
+                          "⚪ Ready";
                     font-size: 16px;
                     font-weight: 700;
                 }
@@ -263,19 +267,33 @@ export component AppWindow inherits Window {
                         }
 
                         Text {
-                            text: workflow-state == "Ready" ? "● Ready" :
-                                  workflow-state == "AliceComplete" ? "● Alice Complete" :
-                                  workflow-state == "BobComplete" ? "● Bob Complete" :
-                                  workflow-state == "CharlieComplete" ? "● Charlie Complete" :
-                                  "● Transaction Extracted";
-                            color: workflow-state == "Ready" ? #808080 :
-                                   workflow-state == "AliceComplete" ? #3399e6 :
-                                   workflow-state == "BobComplete" ? #e6b300 :
-                                   workflow-state == "CharlieComplete" ? #9966e6 :
-                                   #33cc33;
+                            text: workflow-state == "ConfiguringParties" ? "● Configuring" :
+                                  workflow-state == "PsbtCreated" ? "● PSBT Created" :
+                                  workflow-state == "PartialSigned(1)" ? "● Partial (1/3)" :
+                                  workflow-state == "PartialSigned(2)" ? "● Partial (2/3)" :
+                                  workflow-state == "FullySigned" ? "● Fully Signed" :
+                                  workflow-state == "Finalized" ? "● Finalized" :
+                                  workflow-state == "TransactionExtracted" ? "● Extracted" :
+                                  "● Ready";
+                            color: workflow-state == "ConfiguringParties" ? #808080 :
+                                   workflow-state == "PsbtCreated" ? #3399e6 :
+                                   workflow-state == "PartialSigned(1)" ? #3399e6 :
+                                   workflow-state == "PartialSigned(2)" ? #e6b300 :
+                                   workflow-state == "FullySigned" ? #9966e6 :
+                                   workflow-state == "Finalized" ? #9966e6 :
+                                   workflow-state == "TransactionExtracted" ? #33cc33 :
+                                   #808080;
                             font-size: 14px;
                         }
                     }
+
+                    // Configuration button
+                    if workflow-state == "ConfiguringParties": MenuButton {
+                        text: "⚙️  Configure Parties";
+                        clicked => { root.configure-parties(); }
+                    }
+
+                    if workflow-state == "ConfiguringParties": Rectangle { height: 1px; background: #666666; }
 
                     // Step buttons
                     VerticalBox {
@@ -284,19 +302,19 @@ export component AppWindow inherits Window {
 
                         MenuButton {
                             text: "1. Alice Creates PSBT\n(Creator + Signer)";
-                            enabled: workflow-state == "Ready" || workflow-state == "TransactionExtracted";
+                            enabled: workflow-state == "ConfiguringParties" || workflow-state == "TransactionExtracted";
                             clicked => { root.alice-creates(); }
                         }
 
                         MenuButton {
                             text: "2. Bob Signs\n(Signer)";
-                            enabled: workflow-state == "AliceComplete";
+                            enabled: workflow-state == "PartialSigned(1)";
                             clicked => { root.bob-signs(); }
                         }
 
                         MenuButton {
                             text: "3. Charlie Finalizes\n(Signer + Extractor)";
-                            enabled: workflow-state == "BobComplete";
+                            enabled: workflow-state == "PartialSigned(2)";
                             clicked => { root.charlie-finalizes(); }
                         }
                     }
