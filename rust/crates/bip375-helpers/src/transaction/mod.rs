@@ -8,7 +8,7 @@ use bitcoin::Amount;
 pub use assignment::{assign_inputs_to_parties, validate_assignments, InputAssignment};
 
 pub fn build_inputs_from_configs(
-    configs: &[(&TransactionConfig, &VirtualWallet)]
+    configs: &[(&TransactionConfig, &VirtualWallet)],
 ) -> Result<Vec<PsbtInput>, String> {
     let mut inputs = Vec::new();
 
@@ -30,7 +30,7 @@ pub fn build_inputs_from_configs(
 }
 
 pub fn build_inputs_from_multi_party_config(
-    config: &MultiPartyConfig
+    config: &MultiPartyConfig,
 ) -> Result<Vec<PsbtInput>, String> {
     let mut inputs = Vec::new();
 
@@ -40,7 +40,7 @@ pub fn build_inputs_from_multi_party_config(
             party.name.to_lowercase()
         ));
 
-        let utxos = wallet.select_by_ids(&party.tx_config.selected_utxo_ids);
+        let mut utxos = wallet.select_by_ids(&party.tx_config.selected_utxo_ids);
 
         if utxos.len() != party.tx_config.selected_utxo_ids.len() {
             return Err(format!(
@@ -49,6 +49,22 @@ pub fn build_inputs_from_multi_party_config(
                 utxos.len(),
                 party.tx_config.selected_utxo_ids.len()
             ));
+        }
+
+        // If custom input amounts are provided, override the default wallet amounts
+        if let Some(ref custom_amounts) = party.input_amounts {
+            if custom_amounts.len() != utxos.len() {
+                return Err(format!(
+                    "Party '{}' has {} custom amounts but {} UTXOs",
+                    party.name,
+                    custom_amounts.len(),
+                    utxos.len()
+                ));
+            }
+
+            for (utxo, &custom_amount) in utxos.iter_mut().zip(custom_amounts.iter()) {
+                utxo.amount = bitcoin::Amount::from_sat(custom_amount);
+            }
         }
 
         inputs.extend(utxos.into_iter().map(|u| u.to_psbt_input()));
@@ -68,7 +84,10 @@ pub fn build_outputs(
 
     Ok(vec![
         PsbtOutput::regular(Amount::from_sat(change_amount), change_script),
-        PsbtOutput::silent_payment(Amount::from_sat(recipient_amount), recipient_address.clone()),
+        PsbtOutput::silent_payment(
+            Amount::from_sat(recipient_amount),
+            recipient_address.clone(),
+        ),
     ])
 }
 
@@ -104,29 +123,21 @@ pub fn get_party_wallet(party_name: &str) -> VirtualWallet {
     ))
 }
 
-pub fn get_party_simple_wallet(party_name: &str) -> SimpleWallet {
-    SimpleWallet::new(&format!(
-        "{}_multi_signer_silent_payment_test_seed",
-        party_name.to_lowercase()
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_build_inputs_from_configs() {
-        let wallet1 = VirtualWallet::multi_signer_wallet("alice_multi_signer_silent_payment_test_seed");
-        let wallet2 = VirtualWallet::multi_signer_wallet("bob_multi_signer_silent_payment_test_seed");
+        let wallet1 =
+            VirtualWallet::multi_signer_wallet("alice_multi_signer_silent_payment_test_seed");
+        let wallet2 =
+            VirtualWallet::multi_signer_wallet("bob_multi_signer_silent_payment_test_seed");
 
         let config1 = TransactionConfig::multi_signer_auto();
         let config2 = TransactionConfig::multi_signer_auto();
 
-        let inputs = build_inputs_from_configs(&[
-            (&config1, &wallet1),
-            (&config2, &wallet2),
-        ]);
+        let inputs = build_inputs_from_configs(&[(&config1, &wallet1), (&config2, &wallet2)]);
 
         assert!(inputs.is_ok());
         assert_eq!(inputs.unwrap().len(), 2);

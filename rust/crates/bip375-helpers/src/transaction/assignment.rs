@@ -9,7 +9,11 @@ pub struct InputAssignment {
 }
 
 impl InputAssignment {
-    pub fn new(input_index: usize, party_name: impl Into<String>, utxo_source: impl Into<String>) -> Self {
+    pub fn new(
+        input_index: usize,
+        party_name: impl Into<String>,
+        utxo_source: impl Into<String>,
+    ) -> Self {
         Self {
             input_index,
             party_name: party_name.into(),
@@ -18,9 +22,7 @@ impl InputAssignment {
     }
 }
 
-pub fn assign_inputs_to_parties(
-    configs: &[PartyConfig]
-) -> Result<Vec<InputAssignment>, String> {
+pub fn assign_inputs_to_parties(configs: &[PartyConfig]) -> Result<Vec<InputAssignment>, String> {
     let mut assignments = Vec::new();
     let mut input_index = 0;
 
@@ -29,7 +31,7 @@ pub fn assign_inputs_to_parties(
             let assignment = InputAssignment::new(
                 input_index,
                 config.name.clone(),
-                format!("{}_utxo_{}", config.name, utxo_id)
+                format!("{}_utxo_{}", config.name, utxo_id),
             );
             assignments.push(assignment);
             input_index += 1;
@@ -112,9 +114,7 @@ mod tests {
 
     #[test]
     fn test_validate_assignments_missing() {
-        let assignments = vec![
-            InputAssignment::new(0, "Alice", "alice_utxo_0"),
-        ];
+        let assignments = vec![InputAssignment::new(0, "Alice", "alice_utxo_0")];
 
         let result = validate_assignments(&assignments, 2);
         assert!(result.is_err());
@@ -123,9 +123,7 @@ mod tests {
 
     #[test]
     fn test_validate_assignments_out_of_bounds() {
-        let assignments = vec![
-            InputAssignment::new(5, "Alice", "alice_utxo_0"),
-        ];
+        let assignments = vec![InputAssignment::new(5, "Alice", "alice_utxo_0")];
 
         let result = validate_assignments(&assignments, 2);
         assert!(result.is_err());

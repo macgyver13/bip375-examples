@@ -1,7 +1,11 @@
 // BIP-375 Multi-Signer GUI
 // 3-party signing workflow visualization
 
-import { Button, VerticalBox, HorizontalBox, ScrollView, Palette } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, ScrollView, Palette, ComboBox } from "std-widgets.slint";
+import { PartyConfigDialog, PartyInfo } from "party_config_dialog.slint";
+
+// Re-export types so they're available in Rust
+export { PartyConfigDialog, PartyInfo }
 
 // Data structures
 export struct PsbtField {
@@ -115,6 +119,10 @@ export component AppWindow inherits Window {
     // Properties
     in-out property <string> workflow-state: "Ready";
     in-out property <bool> has-psbt: false;
+    in-out property <string> creator-party: "Alice";
+    in-out property <bool> has-unsigned-parties: false;
+    in-out property <string> selected-party: "";
+    in-out property <[string]> available-parties;
 
     // PSBT fields
     in-out property <[PsbtField]> global-fields: [];
@@ -151,9 +159,9 @@ export component AppWindow inherits Window {
 
     // Callbacks
     callback configure-parties();
-    callback alice-creates();
-    callback bob-signs();
-    callback charlie-finalizes();
+    callback create-psbt();
+    callback sign-party(string);
+    callback finalize-transaction();
     callback reset();
     callback export-psbt();
 
@@ -287,9 +295,9 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    // Configuration button
+                    // Configuration button (optional)
                     if workflow-state == "ConfiguringParties": MenuButton {
-                        text: "⚙️  Configure Parties";
+                        text: "⚙️  Configure Parties (Optional)";
                         clicked => { root.configure-parties(); }
                     }
 
@@ -301,21 +309,40 @@ export component AppWindow inherits Window {
                         padding: 0px;
 
                         MenuButton {
-                            text: "1. Alice Creates PSBT\n(Creator + Signer)";
-                            enabled: workflow-state == "ConfiguringParties" || workflow-state == "TransactionExtracted";
-                            clicked => { root.alice-creates(); }
+                            text: "1. Create PSBT\n(Inputs + Outputs)";
+                            enabled: workflow-state == "ConfiguringParties" || workflow-state == "PsbtCreated" || workflow-state == "TransactionExtracted";
+                            clicked => { root.create-psbt(); }
+                        }
+
+                        // Party selector dropdown
+                        if has-unsigned-parties || workflow-state == "PartialSigned(0)": HorizontalBox {
+                            spacing: 8px;
+                            alignment: LayoutAlignment.start;
+
+                            Text {
+                                text: "Select Party:";
+                                vertical-alignment: center;
+                                font-size: 14px;
+                            }
+
+                            ComboBox {
+                                model: available-parties;
+                                current-value <=> selected-party;
+                            }
                         }
 
                         MenuButton {
-                            text: "2. Bob Signs\n(Signer)";
-                            enabled: workflow-state == "PartialSigned(1)";
-                            clicked => { root.bob-signs(); }
+                            text: "2. Sign as Selected Party\n(ECDH + Signature)";
+                            enabled: selected-party != "" && (has-unsigned-parties || workflow-state == "PartialSigned(0)");
+                            clicked => {
+                                root.sign-party(selected-party);
+                            }
                         }
 
                         MenuButton {
-                            text: "3. Charlie Finalizes\n(Signer + Extractor)";
-                            enabled: workflow-state == "PartialSigned(2)";
-                            clicked => { root.charlie-finalizes(); }
+                            text: "3. Finalize Transaction\n(Extract)";
+                            enabled: workflow-state == "FullySigned";
+                            clicked => { root.finalize-transaction(); }
                         }
                     }
 

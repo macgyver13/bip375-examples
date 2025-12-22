@@ -494,14 +494,14 @@ impl VirtualWallet {
         Ok(Self::new(
             "hardware_wallet_coldcard_demo",
             &[
-                (50_000, ScriptType::P2WPKH, false),  // ID 0
+                (250_000, ScriptType::P2TR, false),   // ID 0
                 (100_000, ScriptType::P2TR, true),    // ID 1 - SP
                 (150_000, ScriptType::P2WPKH, false), // ID 2
                 (250_000, ScriptType::P2TR, true),    // ID 3 - SP
                 (75_000, ScriptType::P2WPKH, false),  // ID 4
                 (300_000, ScriptType::P2TR, true),    // ID 5 - SP
                 (125_000, ScriptType::P2WPKH, false), // ID 6
-                (250_000, ScriptType::P2TR, false),   // ID 7
+                (50_000, ScriptType::P2WPKH, false),  // ID 7
             ],
             wallet,
         ))
@@ -622,9 +622,9 @@ impl TransactionConfig {
     pub fn multi_signer_auto() -> Self {
         Self {
             selected_utxo_ids: vec![0], // One input per party
-            recipient_amount: 340_000,
+            recipient_amount: 195_000,
             change_amount: 100_000,
-            fee: 10_000,
+            fee: 5_000,
         }
     }
 

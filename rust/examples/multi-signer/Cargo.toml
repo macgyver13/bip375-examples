@@ -6,25 +6,12 @@ license.workspace = true
 default-run = "multi-signer"
 
 [features]
-default = []
+default = ["gui"]
 gui = ["slint","slint-build"]
-
-[[bin]]
-name = "alice-creates"
-path = "src/bin/alice-creates.rs"
-
-[[bin]]
-name = "bob-signs"
-path = "src/bin/bob-signs.rs"
-
-[[bin]]
-name = "charlie-finalizes"
-path = "src/bin/charlie-finalizes.rs"
 
 [[bin]]
 name = "multi-signer"
 path = "src/main.rs"
-required-features = ["gui"]
 
 [dependencies]
 bip375-core.workspace = true
