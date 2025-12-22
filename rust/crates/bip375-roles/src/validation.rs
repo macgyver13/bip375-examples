@@ -266,7 +266,7 @@ fn validate_output_scripts(
         get_output_sp_keys,
     };
     use bip375_crypto::{
-        compute_input_hash, derive_silent_payment_output_pubkey, pubkey_to_p2tr_script,
+        compute_input_hash, derive_silent_payment_output_pubkey, tweaked_key_to_p2tr_script,
     };
     use std::collections::HashMap;
 
@@ -351,7 +351,7 @@ fn validate_output_scripts(
             derive_silent_payment_output_pubkey(secp, &spend_key, &shared_secret_bytes, k)
                 .map_err(|e| Error::Other(format!("Failed to derive output pubkey: {}", e)))?;
 
-        let expected_script = pubkey_to_p2tr_script(&expected_pubkey);
+        let expected_script = tweaked_key_to_p2tr_script(&expected_pubkey);
 
         if output.script_pubkey != expected_script {
             return Err(Error::Other(format!(

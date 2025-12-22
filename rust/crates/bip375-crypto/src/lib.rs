@@ -15,3 +15,6 @@ pub use bip352::*;
 pub use dleq::*;
 pub use error::{CryptoError, Result};
 pub use signing::*;
+
+// Explicitly re-export the new taproot script functions
+pub use bip352::{internal_key_to_p2tr_script, tweaked_key_to_p2tr_script};

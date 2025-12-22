@@ -4,7 +4,10 @@
 //! utilities for building BIP-375 demonstration applications.
 
 use bip375_core::PsbtInput;
-use bip375_crypto::{pubkey_to_p2tr_script, pubkey_to_p2wpkh_script, script_type_string};
+use bip375_crypto::{
+    internal_key_to_p2tr_script, pubkey_to_p2wpkh_script, script_type_string,
+    tweaked_key_to_p2tr_script,
+};
 use bip39::{Language, Mnemonic};
 use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
@@ -427,9 +430,17 @@ impl VirtualWallet {
                     (pubkey, None)
                 };
 
-                let script_pubkey = match script_type {
-                    ScriptType::P2WPKH => pubkey_to_p2wpkh_script(&final_pubkey),
-                    ScriptType::P2TR => pubkey_to_p2tr_script(&final_pubkey),
+                let script_pubkey = match (script_type, has_sp_tweak) {
+                    (ScriptType::P2WPKH, _) => pubkey_to_p2wpkh_script(&final_pubkey),
+                    (ScriptType::P2TR, true) => {
+                        // Silent Payment output - key is already tweaked via BIP-352
+                        tweaked_key_to_p2tr_script(&final_pubkey)
+                    }
+                    (ScriptType::P2TR, false) => {
+                        // Regular BIP-86 taproot - needs BIP-341 tweak
+                        internal_key_to_p2tr_script(&final_pubkey)
+                            .expect("Failed to create P2TR script")
+                    }
                 };
 
                 let description = match (script_type, has_sp_tweak) {

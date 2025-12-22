@@ -38,9 +38,9 @@ pub fn bip352_compute_ecdh_share(
 //     Ok(script.to_bytes())
 // }
 
-// pub fn bip352_pubkey_to_p2tr_script(pubkey: Vec<u8>) -> Result<Vec<u8>, Bip375Error> {
+// pub fn bip352_tweaked_key_to_p2tr_script(pubkey: Vec<u8>) -> Result<Vec<u8>, Bip375Error> {
 //     let pk = PublicKey::from_slice(&pubkey).map_err(|_| Bip375Error::InvalidKey)?;
-//     let script = crypto::bip352::pubkey_to_p2tr_script(&pk)?;
+//     let script = crypto::bip352::tweaked_key_to_p2tr_script(&pk)?;
 //     Ok(script.to_bytes())
 // }
 
