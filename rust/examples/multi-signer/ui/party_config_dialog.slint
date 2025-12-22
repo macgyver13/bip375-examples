@@ -9,7 +9,7 @@ export struct PartyInfo {
     total-amount: int,
 }
 
-export component PartyConfigDialog inherits Window {
+export component PartyConfigDialog inherits Dialog {
     title: "Configure Multi-Party Transaction";
     preferred-width: 600px;
     preferred-height: 500px;
@@ -22,9 +22,9 @@ export component PartyConfigDialog inherits Window {
         { name: "Charlie", utxo-count: 1, total-amount: 100000 },
     ];
 
-    in-out property <int> recipient-amount: 185000;
+    in-out property <int> recipient-amount: 195000;
     in-out property <int> change-amount: 100000;
-    in-out property <int> fee-amount: 15000;
+    in-out property <int> fee-amount: 5000;
 
     // Callbacks
     callback start-workflow();
@@ -190,7 +190,7 @@ export component PartyConfigDialog inherits Window {
             padding: 10px;
 
             Text {
-                text: "📝 Note: Using default configuration with 1 input per party.\nEach party will sign their assigned input in order.";
+                text: "📝 Note: Using default configuration with 1 input per party.\nEach party will sign their assigned input.";
                 font-size: 12px;
                 color: #666666;
                 wrap: word-wrap;

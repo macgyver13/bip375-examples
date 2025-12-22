@@ -3,29 +3,50 @@
 //! Provides a graphical interface that visualizes the 3-party signing workflow
 //! with progressive ECDH coverage and per-input state tracking.
 
-pub mod app_state;
-pub mod workflow_orchestrator;
+// Re-export core modules for backward compatibility
+pub use crate::core::app_state;
+pub use crate::core::workflow_orchestrator;
 
-use app_state::*;
+use crate::core::{AppState, WorkflowOrchestrator, WorkflowState};
 use std::rc::Rc;
-use workflow_orchestrator::WorkflowOrchestrator;
 
 slint::include_modules!();
 
 /// Convert AppState to Slint data structures
 fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
-    // Update workflow state
-    let state_str = match &state.workflow_state {
-        WorkflowState::ConfiguringParties => "ConfiguringParties",
-        WorkflowState::PsbtCreated => "PsbtCreated",
+    // Update workflow state and has_unsigned_parties
+    match &state.workflow_state {
         WorkflowState::PartialSigned(n) => {
-            return window.set_workflow_state(format!("PartialSigned({})", n).into());
+            window.set_workflow_state(format!("PartialSigned({})", n).into());
+            // Check if there are unsigned parties
+            let has_unsigned = state
+                .multi_config
+                .parties
+                .iter()
+                .any(|p| !state.signing_progress.parties_completed.contains(&p.name));
+            window.set_has_unsigned_parties(has_unsigned);
         }
-        WorkflowState::FullySigned => "FullySigned",
-        WorkflowState::Finalized => "Finalized",
-        WorkflowState::TransactionExtracted => "TransactionExtracted",
-    };
-    window.set_workflow_state(state_str.into());
+        WorkflowState::ConfiguringParties => {
+            window.set_workflow_state("ConfiguringParties".into());
+            window.set_has_unsigned_parties(false);
+        }
+        WorkflowState::PsbtCreated => {
+            window.set_workflow_state("PsbtCreated".into());
+            window.set_has_unsigned_parties(false);
+        }
+        WorkflowState::FullySigned => {
+            window.set_workflow_state("FullySigned".into());
+            window.set_has_unsigned_parties(false);
+        }
+        WorkflowState::Finalized => {
+            window.set_workflow_state("Finalized".into());
+            window.set_has_unsigned_parties(false);
+        }
+        WorkflowState::TransactionExtracted => {
+            window.set_workflow_state("TransactionExtracted".into());
+            window.set_has_unsigned_parties(false);
+        }
+    }
 
     // Update PSBT fields
     if let Some(psbt) = &state.current_psbt {
@@ -74,7 +95,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         .iter()
         .map(|s| InputState {
             index: s.index as i32,
-            signer_name: s.signer_name().into(),
+            signer_name: s.party_name().into(),
             has_ecdh: s.has_ecdh_share,
             has_dleq: s.has_dleq_proof,
             has_sig: s.has_signature,
@@ -95,6 +116,29 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         });
     } else {
         window.set_has_validation(false);
+    }
+
+    // Populate dropdown with unsigned parties
+    let unsigned_parties: Vec<slint::SharedString> = state
+        .multi_config
+        .parties
+        .iter()
+        .filter(|p| WorkflowOrchestrator::can_party_sign(state, &p.name))
+        .map(|p| slint::SharedString::from(p.name.as_str()))
+        .collect();
+
+    window.set_available_parties(slint::ModelRc::new(slint::VecModel::from(
+        unsigned_parties.clone(),
+    )));
+
+    // Auto-select first unsigned party if none selected or current selection completed
+    let current_selected = window.get_selected_party();
+    if current_selected.is_empty() || !unsigned_parties.iter().any(|p| p == &current_selected) {
+        if let Some(first) = unsigned_parties.first() {
+            window.set_selected_party(first.clone());
+        } else {
+            window.set_selected_party(slint::SharedString::from(""));
+        }
     }
 }
 
@@ -122,41 +166,49 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
         let window_weak = window.as_weak();
         let state_rc = Rc::new(std::cell::RefCell::new(state.clone()));
 
-        window.on_alice_creates({
+        window.on_create_psbt({
             let window_weak = window_weak.clone();
             let state_rc = state_rc.clone();
             move || {
                 let mut state = state_rc.borrow_mut();
-                if let Err(e) = WorkflowOrchestrator::execute_alice_creates(&mut state) {
-                    eprintln!("Error in Alice creates: {}", e);
+                if let Err(e) = WorkflowOrchestrator::execute_create_psbt_flexible(&mut state) {
+                    eprintln!("Error creating PSBT: {}", e);
+                    return;
                 }
+                eprintln!("✓ PSBT created successfully");
                 if let Some(window) = window_weak.upgrade() {
                     sync_state_to_ui(&window, &state);
                 }
             }
         });
 
-        window.on_bob_signs({
+        window.on_sign_party({
             let window_weak = window_weak.clone();
             let state_rc = state_rc.clone();
-            move || {
+            move |party_name: slint::SharedString| {
                 let mut state = state_rc.borrow_mut();
-                if let Err(e) = WorkflowOrchestrator::execute_bob_signs(&mut state) {
-                    eprintln!("Error in Bob signs: {}", e);
+                let party_str = party_name.as_str();
+
+                eprintln!("Signing as: {}", party_str);
+                if let Err(e) =
+                    WorkflowOrchestrator::execute_sign_for_party_flexible(&mut state, party_str)
+                {
+                    eprintln!("Error signing as {}: {}", party_str, e);
                 }
+
                 if let Some(window) = window_weak.upgrade() {
                     sync_state_to_ui(&window, &state);
                 }
             }
         });
 
-        window.on_charlie_finalizes({
+        window.on_finalize_transaction({
             let window_weak = window_weak.clone();
             let state_rc = state_rc.clone();
             move || {
                 let mut state = state_rc.borrow_mut();
-                if let Err(e) = WorkflowOrchestrator::execute_charlie_finalizes(&mut state) {
-                    eprintln!("Error in Charlie finalizes: {}", e);
+                if let Err(e) = WorkflowOrchestrator::execute_finalize_flexible(&mut state) {
+                    eprintln!("Error finalizing: {}", e);
                 }
                 if let Some(window) = window_weak.upgrade() {
                     sync_state_to_ui(&window, &state);
@@ -190,14 +242,128 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
             let window_weak = window_weak.clone();
             let state_rc = state_rc.clone();
             move || {
-                // For now, just initialize with default config
-                let mut state = state_rc.borrow_mut();
-                if let Ok(config) = crate::shared_utils::create_multi_party_config_default() {
-                    state.multi_config = Some(config);
-                    eprintln!("✓ Configured with default 3-party setup (Alice, Bob, Charlie)");
-                }
-                if let Some(window) = window_weak.upgrade() {
-                    sync_state_to_ui(&window, &state);
+                if let Some(_window) = window_weak.upgrade() {
+                    // Create party configuration dialog
+                    if let Ok(dialog) = PartyConfigDialog::new() {
+                        // Set up default party info
+                        let parties = vec![
+                            PartyInfo {
+                                name: "Alice".into(),
+                                utxo_count: 1,
+                                total_amount: 100_000,
+                            },
+                            PartyInfo {
+                                name: "Bob".into(),
+                                utxo_count: 1,
+                                total_amount: 90_000,
+                            },
+                            PartyInfo {
+                                name: "Charlie".into(),
+                                utxo_count: 1,
+                                total_amount: 110_000,
+                            },
+                        ];
+
+                        dialog.set_parties(slint::ModelRc::new(slint::VecModel::from(parties)));
+                        dialog.set_creator_party("Alice".into());
+                        dialog.set_recipient_amount(195_000);
+                        dialog.set_change_amount(100_000);
+                        dialog.set_fee_amount(5_000);
+
+                        // Handle "Start Workflow" button
+                        dialog.on_start_workflow({
+                            let state_rc = state_rc.clone();
+                            let window_weak = window_weak.clone();
+                            let dialog_weak = dialog.as_weak();
+                            move || {
+                                let mut state = state_rc.borrow_mut();
+
+                                // Get creator from dialog
+                                let creator = if let Some(d) = dialog_weak.upgrade() {
+                                    d.get_creator_party().to_string()
+                                } else {
+                                    "Alice".to_string()
+                                };
+
+                                // Update creator index based on selected party
+                                let creator_index = match creator.as_str() {
+                                    "Alice" => 0,
+                                    "Bob" => 1,
+                                    "Charlie" => 2,
+                                    _ => 0,
+                                };
+                                state.multi_config.creator_index = creator_index;
+
+                                eprintln!("✓ Ready to start workflow (Creator: {})", creator);
+                                state.workflow_state = WorkflowState::PsbtCreated;
+
+                                if let Some(window) = window_weak.upgrade() {
+                                    window.set_creator_party(creator.into());
+                                    sync_state_to_ui(&window, &state);
+                                }
+
+                                // Close dialog
+                                if let Some(d) = dialog_weak.upgrade() {
+                                    d.hide().ok();
+                                }
+                            }
+                        });
+
+                        // Handle "Use Default Config" button
+                        dialog.on_use_default_config({
+                            let state_rc = state_rc.clone();
+                            let window_weak = window_weak.clone();
+                            let dialog_weak = dialog.as_weak();
+                            move || {
+                                let mut state = state_rc.borrow_mut();
+
+                                // Get creator from dialog
+                                let creator = if let Some(d) = dialog_weak.upgrade() {
+                                    d.get_creator_party().to_string()
+                                } else {
+                                    "Alice".to_string()
+                                };
+
+                                // Update creator index based on selected party
+                                let creator_index = match creator.as_str() {
+                                    "Alice" => 0,
+                                    "Bob" => 1,
+                                    "Charlie" => 2,
+                                    _ => 0,
+                                };
+                                state.multi_config.creator_index = creator_index;
+
+                                eprintln!(
+                                    "✓ Using default 3-party configuration (Creator: {})",
+                                    creator
+                                );
+                                state.workflow_state = WorkflowState::PsbtCreated;
+
+                                if let Some(window) = window_weak.upgrade() {
+                                    window.set_creator_party(creator.into());
+                                    sync_state_to_ui(&window, &state);
+                                }
+
+                                // Close dialog
+                                if let Some(d) = dialog_weak.upgrade() {
+                                    d.hide().ok();
+                                }
+                            }
+                        });
+
+                        // Handle cancel button
+                        dialog.on_cancel({
+                            let dialog_weak = dialog.as_weak();
+                            move || {
+                                if let Some(d) = dialog_weak.upgrade() {
+                                    d.hide().ok();
+                                }
+                            }
+                        });
+
+                        // Show the dialog
+                        dialog.show().ok();
+                    }
                 }
             }
         });

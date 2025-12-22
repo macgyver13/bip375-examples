@@ -130,10 +130,10 @@ pub fn pubkey_to_p2wpkh_script(pubkey: &PublicKey) -> ScriptBuf {
 pub fn internal_key_to_p2tr_script(internal_key: &PublicKey) -> Result<ScriptBuf> {
     let secp = Secp256k1::new();
     let (xonly, _parity) = internal_key.x_only_public_key();
-    
+
     // Apply BIP-341 taproot tweak (no script tree)
     let (tweaked, _parity) = xonly.tap_tweak(&secp, None);
-    
+
     Ok(ScriptBuf::new_p2tr_tweaked(tweaked))
 }
 

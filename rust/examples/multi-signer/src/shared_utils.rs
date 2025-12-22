@@ -1,7 +1,6 @@
 //! Shared utilities and data for multi-signer silent payment example
 //!
 //! Contains common transaction inputs, outputs, keys and utility functions
-//! shared across all three multi-signer scripts (alice_creates, bob_signs, charlie_finalizes).
 //!
 //! This implements a realistic 3-of-3 multi-signer workflow where:
 //! - Alice controls input 0
@@ -28,21 +27,6 @@ pub fn get_party_wallet(party_name: &str) -> VirtualWallet {
     ))
 }
 
-/// Get Alice's virtual wallet (legacy)
-pub fn get_alice_wallet() -> VirtualWallet {
-    get_party_wallet("Alice")
-}
-
-/// Get Bob's virtual wallet (legacy)
-pub fn get_bob_wallet() -> VirtualWallet {
-    get_party_wallet("Bob")
-}
-
-/// Get Charlie's virtual wallet (legacy)
-pub fn get_charlie_wallet() -> VirtualWallet {
-    get_party_wallet("Charlie")
-}
-
 /// Get transaction inputs from MultiPartyConfig
 pub fn get_transaction_inputs_from_config(config: &MultiPartyConfig) -> Vec<PsbtInput> {
     let mut inputs = Vec::new();
@@ -60,52 +44,6 @@ pub fn get_transaction_inputs_from_config(config: &MultiPartyConfig) -> Vec<Psbt
     inputs
 }
 
-/// Get the transaction inputs for the multi-signer scenario (legacy)
-///
-/// 3 inputs controlled by different parties:
-/// - Input 0: Alice's UTXO (from her wallet, selected by config)
-/// - Input 1: Bob's UTXO (from his wallet, selected by config)
-/// - Input 2: Charlie's UTXO (from his wallet, selected by config)
-///
-/// Each party selects UTXOs from their own VirtualWallet based on their config.
-pub fn get_transaction_inputs(
-    alice_config: &TransactionConfig,
-    bob_config: &TransactionConfig,
-    charlie_config: &TransactionConfig,
-) -> Vec<PsbtInput> {
-    let alice_wallet = get_alice_wallet();
-    let bob_wallet = get_bob_wallet();
-    let charlie_wallet = get_charlie_wallet();
-
-    let mut inputs = Vec::new();
-
-    // Add Alice's selected UTXOs (converted to PsbtInput)
-    inputs.extend(
-        alice_wallet
-            .select_by_ids(&alice_config.selected_utxo_ids)
-            .into_iter()
-            .map(|u| u.to_psbt_input()),
-    );
-
-    // Add Bob's selected UTXOs (converted to PsbtInput)
-    inputs.extend(
-        bob_wallet
-            .select_by_ids(&bob_config.selected_utxo_ids)
-            .into_iter()
-            .map(|u| u.to_psbt_input()),
-    );
-
-    // Add Charlie's selected UTXOs (converted to PsbtInput)
-    inputs.extend(
-        charlie_wallet
-            .select_by_ids(&charlie_config.selected_utxo_ids)
-            .into_iter()
-            .map(|u| u.to_psbt_input()),
-    );
-
-    inputs
-}
-
 /// Get a party's private key by name
 pub fn get_party_private_key(party_name: &str) -> SecretKey {
     let wallet = SimpleWallet::new(&format!(
@@ -113,21 +51,6 @@ pub fn get_party_private_key(party_name: &str) -> SecretKey {
         party_name.to_lowercase()
     ));
     wallet.input_key_pair(0).0
-}
-
-/// Get Alice's private key for her controlled input (legacy)
-pub fn get_alice_private_key() -> SecretKey {
-    get_party_private_key("Alice")
-}
-
-/// Get Bob's private key for his controlled input (legacy)
-pub fn get_bob_private_key() -> SecretKey {
-    get_party_private_key("Bob")
-}
-
-/// Get Charlie's private key for his controlled input (legacy)
-pub fn get_charlie_private_key() -> SecretKey {
-    get_party_private_key("Charlie")
 }
 
 /// Get the transaction outputs for the multi-signer scenario
@@ -237,35 +160,7 @@ pub fn print_scenario_overview(inputs: &[PsbtInput], config: &TransactionConfig)
     println!();
 }
 
-/// Get default configuration for multi-signer scenario
-/// This creates configs for each party (Alice, Bob, Charlie) each contributing one input
-pub fn get_default_configs() -> (
-    TransactionConfig,
-    TransactionConfig,
-    TransactionConfig,
-    TransactionConfig,
-) {
-    let alice_config = TransactionConfig::multi_signer_auto(); // Alice contributes UTXO ID 0 (100k)
-    let bob_config = TransactionConfig::multi_signer_auto(); // Bob contributes UTXO ID 0 (100k)
-    let charlie_config = TransactionConfig::multi_signer_auto(); // Charlie contributes UTXO ID 0 (100k)
-
-    // Combined config for outputs (totals)
-    // Total inputs: 300k, outputs: 185k + 100k + 15k = 300k
-    let combined_config = TransactionConfig::new(
-        vec![0, 0, 0], // Not used for outputs
-        185_000,       // recipient amount
-        100_000,       // change amount
-        15_000,        // fee
-    );
-
-    (alice_config, bob_config, charlie_config, combined_config)
-}
-
 /// Create default MultiPartyConfig for the standard three-party scenario
 pub fn create_multi_party_config_default() -> Result<MultiPartyConfig, String> {
-    let alice_wallet = get_alice_wallet();
-    let bob_wallet = get_bob_wallet();
-    let charlie_wallet = get_charlie_wallet();
-
-    MultiPartyConfig::default_three_party(&alice_wallet, &bob_wallet, &charlie_wallet)
+    MultiPartyConfig::default_three_party()
 }

@@ -12,8 +12,8 @@ pub use bip375_helpers::display::field_identifier::{FieldIdentifier, Transaction
 /// Main application state for multi-signer workflow
 #[derive(Clone, Debug)]
 pub struct AppState {
-    /// Multi-party configuration
-    pub multi_config: Option<MultiPartyConfig>,
+    /// Multi-party configuration (always present)
+    pub multi_config: MultiPartyConfig,
 
     /// Current workflow state
     pub workflow_state: WorkflowState,
@@ -42,8 +42,12 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
+        // Initialize with default 3-party configuration
+        let multi_config = crate::shared_utils::create_multi_party_config_default()
+            .expect("Failed to create default multi-party config");
+
         Self {
-            multi_config: None,
+            multi_config,
             workflow_state: WorkflowState::ConfiguringParties,
             signing_progress: SigningProgress::default(),
             current_psbt: None,
@@ -64,16 +68,6 @@ pub enum WorkflowState {
     PartialSigned(usize),
     FullySigned,
     Finalized,
-    TransactionExtracted,
-}
-
-/// Legacy workflow state (for backward compatibility during migration)
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MultiSignerState {
-    Ready,
-    AliceComplete,
-    BobComplete,
-    CharlieComplete,
     TransactionExtracted,
 }
 
@@ -184,21 +178,6 @@ impl InputState {
 
     pub fn party_name(&self) -> &str {
         self.assigned_party.as_deref().unwrap_or("Unassigned")
-    }
-
-    /// Legacy compatibility: Get signer name (deprecated, use party_name instead)
-    pub fn signer_name(&self) -> &str {
-        self.party_name()
-    }
-
-    /// Legacy compatibility: Get signer index (deprecated)
-    pub fn signer(&self) -> Option<usize> {
-        match self.assigned_party.as_deref() {
-            Some("Alice") => Some(0),
-            Some("Bob") => Some(1),
-            Some("Charlie") => Some(2),
-            _ => None,
-        }
     }
 }
 

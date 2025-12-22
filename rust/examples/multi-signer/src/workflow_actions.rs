@@ -1,10 +1,10 @@
 use bip375_core::{PsbtInput, SilentPaymentAddress, SilentPaymentPsbt};
 use bip375_crypto::script_type_string;
 use bip375_helpers::display::psbt_io::{load_psbt, save_psbt};
-use bip375_helpers::wallet::{MultiPartyConfig, PartyConfig, SimpleWallet};
 use bip375_helpers::transaction::{
     build_inputs_from_multi_party_config, build_outputs, validate_transaction_balance,
 };
+use bip375_helpers::wallet::{MultiPartyConfig, PartyConfig, SimpleWallet};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
     constructor::{add_inputs, add_outputs},
@@ -18,10 +18,8 @@ use bitcoin::Transaction;
 use secp256k1::{Secp256k1, SecretKey};
 use std::collections::HashMap;
 
-pub fn create_initial_psbt(
-    config: &MultiPartyConfig,
-    secp: &Secp256k1<secp256k1::All>,
-) -> Result<SilentPaymentPsbt, String> {
+/// Create a new PSBT with inputs and outputs (no ECDH shares, no signatures)
+pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, String> {
     let num_inputs = config.get_total_inputs();
     let num_outputs = 2;
 
@@ -48,40 +46,9 @@ pub fn create_initial_psbt(
         &change_wallet,
     )?;
 
-    add_outputs(&mut psbt, &outputs)
-        .map_err(|e| format!("Failed to add outputs: {}", e))?;
+    add_outputs(&mut psbt, &outputs).map_err(|e| format!("Failed to add outputs: {}", e))?;
 
     validate_transaction_balance(&inputs, &outputs, config.total_fee)?;
-
-    let creator_party = config.get_creator();
-    let creator_private_key = get_party_private_key(&creator_party.name)?;
-
-    let scan_keys = vec![scan_key];
-    let controlled_indices = &creator_party.controlled_input_indices;
-
-    add_ecdh_shares_partial(
-        secp,
-        &mut psbt,
-        &inputs,
-        &scan_keys,
-        controlled_indices,
-        true,
-    )
-    .map_err(|e| format!("Failed to add ECDH shares: {}", e))?;
-
-    let inputs_with_keys: Vec<PsbtInput> = inputs
-        .into_iter()
-        .enumerate()
-        .map(|(idx, mut input)| {
-            if controlled_indices.contains(&idx) {
-                input.private_key = Some(creator_private_key);
-            }
-            input
-        })
-        .collect();
-
-    sign_inputs(secp, &mut psbt, &inputs_with_keys)
-        .map_err(|e| format!("Failed to sign inputs: {}", e))?;
 
     Ok(psbt)
 }
@@ -154,9 +121,7 @@ pub fn get_party_private_key(party_name: &str) -> Result<SecretKey, String> {
     Ok(wallet.input_key_pair(0).0)
 }
 
-pub fn create_input_assignments_metadata(
-    config: &MultiPartyConfig,
-) -> HashMap<usize, String> {
+pub fn create_input_assignments_metadata(config: &MultiPartyConfig) -> HashMap<usize, String> {
     let mut assignments = HashMap::new();
     for party in &config.parties {
         for &input_idx in &party.controlled_input_indices {
@@ -230,29 +195,7 @@ pub fn print_transaction_summary(config: &MultiPartyConfig, inputs: &[PsbtInput]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bip375_helpers::wallet::{TransactionConfig, VirtualWallet};
-
-    #[test]
-    fn test_create_initial_psbt() {
-        let secp = Secp256k1::new();
-
-        let alice_wallet =
-            VirtualWallet::multi_signer_wallet("alice_multi_signer_silent_payment_test_seed");
-        let bob_wallet =
-            VirtualWallet::multi_signer_wallet("bob_multi_signer_silent_payment_test_seed");
-        let charlie_wallet =
-            VirtualWallet::multi_signer_wallet("charlie_multi_signer_silent_payment_test_seed");
-
-        let config = MultiPartyConfig::default_three_party(&alice_wallet, &bob_wallet, &charlie_wallet)
-            .expect("Failed to create config");
-
-        let result = create_initial_psbt(&config, &secp);
-        assert!(result.is_ok());
-
-        let psbt = result.unwrap();
-        assert_eq!(psbt.inputs.len(), 3);
-        assert_eq!(psbt.outputs.len(), 2);
-    }
+    use bip375_helpers::wallet::TransactionConfig;
 
     #[test]
     fn test_get_party_private_key() {

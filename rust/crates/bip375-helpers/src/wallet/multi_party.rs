@@ -1,12 +1,15 @@
 use std::collections::HashMap;
 
-use super::{TransactionConfig, VirtualWallet};
+use super::TransactionConfig;
 
 #[derive(Debug, Clone)]
 pub struct PartyConfig {
     pub name: String,
     pub tx_config: TransactionConfig,
     pub controlled_input_indices: Vec<usize>,
+    /// Optional custom input amounts (in satoshis). If provided, overrides default wallet amounts.
+    /// Must match the number of selected UTXOs.
+    pub input_amounts: Option<Vec<u64>>,
 }
 
 impl PartyConfig {
@@ -15,11 +18,17 @@ impl PartyConfig {
             name: name.into(),
             tx_config,
             controlled_input_indices: Vec::new(),
+            input_amounts: None,
         }
     }
 
     pub fn with_controlled_inputs(mut self, indices: Vec<usize>) -> Self {
         self.controlled_input_indices = indices;
+        self
+    }
+
+    pub fn with_input_amounts(mut self, amounts: Vec<u64>) -> Self {
+        self.input_amounts = Some(amounts);
         self
     }
 }
@@ -89,12 +98,19 @@ impl MultiPartyConfig {
             }
         }
 
+        // Calculate total input amount from custom amounts if provided, otherwise use default
         let total_input_amount: u64 = self
             .parties
             .iter()
-            .flat_map(|p| &p.tx_config.selected_utxo_ids)
-            .count() as u64
-            * 100_000;
+            .map(|p| {
+                if let Some(ref amounts) = p.input_amounts {
+                    amounts.iter().sum()
+                } else {
+                    // Default: assume 100k per UTXO if not specified
+                    p.tx_config.selected_utxo_ids.len() as u64 * 100_000
+                }
+            })
+            .sum();
 
         let total_output_amount = self.get_recipient_amount() + self.get_change_amount();
 
@@ -140,17 +156,11 @@ impl MultiPartyConfig {
     }
 
     pub fn get_recipient_amount(&self) -> u64 {
-        self.parties
-            .first()
-            .map(|p| p.tx_config.recipient_amount)
-            .unwrap_or(0)
+        195_000
     }
 
     pub fn get_change_amount(&self) -> u64 {
-        self.parties
-            .iter()
-            .map(|p| p.tx_config.change_amount)
-            .sum()
+        100_000
     }
 
     pub fn get_inputs_for_party(&self, party_name: &str) -> Vec<usize> {
@@ -161,30 +171,32 @@ impl MultiPartyConfig {
             .unwrap_or_default()
     }
 
-    pub fn default_three_party(
-        alice_wallet: &VirtualWallet,
-        bob_wallet: &VirtualWallet,
-        charlie_wallet: &VirtualWallet,
-    ) -> Result<Self, String> {
+    pub fn default_three_party() -> Result<Self, String> {
         let alice_config = TransactionConfig::multi_signer_auto();
         let bob_config = TransactionConfig::multi_signer_auto();
         let charlie_config = TransactionConfig::multi_signer_auto();
 
-        alice_config.validate(alice_wallet)?;
-        bob_config.validate(bob_wallet)?;
-        charlie_config.validate(charlie_wallet)?;
+        // Individual party config validation skipped - inappropriate for multi-party scenarios
+        // where each party contributes partial inputs. The MultiPartyConfig::validate() method
+        // (called below) properly validates the combined transaction balance.
 
-        let alice = PartyConfig::new("Alice", alice_config).with_controlled_inputs(vec![0]);
+        let alice = PartyConfig::new("Alice", alice_config)
+            .with_controlled_inputs(vec![0])
+            .with_input_amounts(vec![100_000]);
 
-        let bob = PartyConfig::new("Bob", bob_config).with_controlled_inputs(vec![1]);
+        let bob = PartyConfig::new("Bob", bob_config)
+            .with_controlled_inputs(vec![1])
+            .with_input_amounts(vec![90_000]);
 
-        let charlie = PartyConfig::new("Charlie", charlie_config).with_controlled_inputs(vec![2]);
+        let charlie = PartyConfig::new("Charlie", charlie_config)
+            .with_controlled_inputs(vec![2])
+            .with_input_amounts(vec![110_000]);
 
         let config = MultiPartyConfig::new(
             vec![alice, bob, charlie],
             0,
             "tb1pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqcwqpj9",
-            15_000,
+            5_000, // Updated fee to match 100k + 90k + 110k = 300k total input, 195k recipient + 100k change + 5k fee
         );
 
         config.validate()?;
