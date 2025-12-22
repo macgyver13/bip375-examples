@@ -288,7 +288,8 @@ impl SimpleWallet {
     /// - For BIP84 (P2WPKH): m/84'/0'/0'/0/index
     /// - For BIP86 (P2TR): m/86'/0'/0'/0/index
     ///
-    /// For seed-based wallets: Returns None since they don't use BIP32
+    /// For seed-based wallets (demo mode): Returns BIP84 path
+    /// for demonstration purposes, even though seed wallets don't use hierarchical derivation.
     ///
     /// # Arguments
     /// * `index` - The UTXO/input index
@@ -297,7 +298,11 @@ impl SimpleWallet {
     /// Vec of path components as u32 values with hardening applied (0x80000000 bit set)
     pub fn get_input_derivation_path(&self, index: u32) -> Option<Vec<u32>> {
         match &self.source {
-            WalletSource::Seed(_) => None,
+            WalletSource::Seed(_) => {
+                // For demo purposes, return BIP84 path for seed-based wallets
+                // This allows PSBT bip32 input derviations to be added to psbt
+                Some(vec![0x80000054, 0x80000000, 0x80000000, 0, index]) // m/84'/0'/0'/0/index
+            }
             WalletSource::Mnemonic {
                 derivation_path, ..
             } => {
