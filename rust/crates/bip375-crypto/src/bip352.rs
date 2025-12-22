@@ -117,11 +117,37 @@ pub fn pubkey_to_p2wpkh_script(pubkey: &PublicKey) -> ScriptBuf {
     ScriptBuf::new_p2wpkh(&pubkey_hash)
 }
 
-/// Convert public key to P2TR (Taproot) script
+/// Convert an UNTWEAKED internal key to P2TR script (BIP-86 standard)
+///
+/// Applies BIP-341 taproot tweak: Q = P + hash_TapTweak(P) * G
+/// Use this for regular BIP-86 taproot addresses where the internal key
+/// needs to be tweaked according to BIP-341.
+///
+/// For keypath-only spends (no script tree), the tweak is computed as:
+/// t = hash_TapTweak(P || 0x00) where 0x00 represents empty merkle root
+///
+/// Returns: OP_1 <32-byte-tweaked-xonly-pubkey>
+pub fn internal_key_to_p2tr_script(internal_key: &PublicKey) -> Result<ScriptBuf> {
+    let secp = Secp256k1::new();
+    let (xonly, _parity) = internal_key.x_only_public_key();
+    
+    // Apply BIP-341 taproot tweak (no script tree)
+    let (tweaked, _parity) = xonly.tap_tweak(&secp, None);
+    
+    Ok(ScriptBuf::new_p2tr_tweaked(tweaked))
+}
+
+/// Convert an ALREADY-TWEAKED output key to P2TR script
+///
+/// Use this for Silent Payment outputs where the pubkey is already
+/// tweaked via BIP-352 derivation: output_pubkey = spend_key + t_k * G
+///
+/// The key has already been modified by the Silent Payment protocol,
+/// so no additional BIP-341 taproot tweak should be applied.
 ///
 /// Returns: OP_1 <32-byte-xonly-pubkey>
-pub fn pubkey_to_p2tr_script(pubkey: &PublicKey) -> ScriptBuf {
-    let xonly = pubkey.x_only_public_key().0;
+pub fn tweaked_key_to_p2tr_script(tweaked_output_key: &PublicKey) -> ScriptBuf {
+    let xonly = tweaked_output_key.x_only_public_key().0;
     ScriptBuf::new_p2tr_tweaked(xonly.dangerous_assume_tweaked())
 }
 
@@ -297,7 +323,7 @@ mod tests {
         let privkey = SecretKey::from_slice(&[1u8; 32]).unwrap();
         let pubkey = PublicKey::from_secret_key(&secp, &privkey);
 
-        let script = pubkey_to_p2tr_script(&pubkey);
+        let script = tweaked_key_to_p2tr_script(&pubkey);
 
         // P2TR scripts are 34 bytes: OP_1 (0x51) + PUSH_32 (0x20) + 32-byte x-only key
         assert_eq!(script.len(), 34);
@@ -315,14 +341,14 @@ mod tests {
 
     #[test]
     fn test_p2tr_script_compatibility() {
-        // Verify that pubkey_to_p2tr_script produces identical results
+        // Verify that tweaked_key_to_p2tr_script produces identical results
         // to the manual construction previously used in validation.rs and input_finalizer.rs
         let secp = Secp256k1::new();
         let privkey = SecretKey::from_slice(&[42u8; 32]).unwrap();
         let pubkey = PublicKey::from_secret_key(&secp, &privkey);
 
         // New method
-        let new_script = pubkey_to_p2tr_script(&pubkey);
+        let new_script = tweaked_key_to_p2tr_script(&pubkey);
 
         // Old method (manual construction)
         let (xonly, _parity) = pubkey.x_only_public_key();

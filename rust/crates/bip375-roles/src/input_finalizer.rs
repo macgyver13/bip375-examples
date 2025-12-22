@@ -4,7 +4,7 @@
 
 use bip375_core::{aggregate_ecdh_shares, Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
 use bip375_crypto::{
-    apply_label_to_spend_key, derive_silent_payment_output_pubkey, pubkey_to_p2tr_script,
+    apply_label_to_spend_key, derive_silent_payment_output_pubkey, tweaked_key_to_p2tr_script,
 };
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
@@ -72,8 +72,10 @@ pub fn finalize_inputs(
         )
         .map_err(|e| Error::Other(format!("Output derivation failed: {}", e)))?;
 
-        // Create P2TR output script
-        let output_script = pubkey_to_p2tr_script(&output_pubkey);
+        // Create P2TR output script from already-tweaked Silent Payment output key
+        // The output_pubkey is already tweaked via BIP-352 derivation, so we use
+        // tweaked_key_to_p2tr_script (no additional BIP-341 tweak needed)
+        let output_script = tweaked_key_to_p2tr_script(&output_pubkey);
 
         // Add output script to PSBT
         psbt.outputs[output_idx].script_pubkey = output_script;

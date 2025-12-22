@@ -496,7 +496,9 @@ impl HardwareDevice {
                     let candidate_script = if witness_utxo.script_pubkey.is_p2wpkh() {
                         bip375_crypto::pubkey_to_p2wpkh_script(&candidate_pubkey)
                     } else if witness_utxo.script_pubkey.is_p2tr() {
-                        bip375_crypto::pubkey_to_p2tr_script(&candidate_pubkey)
+                        // For regular BIP-86 taproot, apply BIP-341 tweak
+                        bip375_crypto::internal_key_to_p2tr_script(&candidate_pubkey)
+                            .expect("Failed to create P2TR script")
                     } else {
                         continue; // Unsupported script type
                     };

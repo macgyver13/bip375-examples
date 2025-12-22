@@ -584,7 +584,7 @@ pub fn add_input_bip32_derivations(
     for (input_idx, &utxo_id) in selected_utxo_ids.iter().enumerate() {
         // Get the derivation path from the wallet for this input index
         let Some(path) = wallet.get_input_derivation_path(utxo_id as u32) else {
-            continue; // Skip seed-based wallets (no BIP32 derivation)
+            continue; // no BIP32 derivation associated with input, SKIP)
         };
 
         let (_privkey, pubkey) = wallet.input_key_pair(utxo_id as u32);
