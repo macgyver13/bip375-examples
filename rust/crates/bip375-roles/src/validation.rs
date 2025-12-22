@@ -4,7 +4,7 @@
 
 use bip375_core::{Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
 use bip375_crypto::dleq_verify_proof;
-use secp256k1::{PublicKey, Secp256k1};
+use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
 use std::collections::HashSet;
 
 /// Validation level for PSBT checks
@@ -397,7 +397,32 @@ fn validate_dleq_proofs(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymentPs
             }
 
             if let Some(proof) = share.dleq_proof {
-                let input_pubkey = get_input_pubkey(psbt, input_idx)?;
+                let mut input_pubkey = get_input_pubkey(psbt, input_idx)?;
+
+                // If this is a Silent Payment input, derive the tweaked public key
+                if let Some(tweak) = psbt.get_input_sp_tweak(input_idx) {
+                    let tweak_scalar = Scalar::from_be_bytes(tweak)
+                        .map_err(|_| Error::Other("Invalid SP tweak scalar".to_string()))?;
+                    let tweak_key = SecretKey::from_slice(&tweak_scalar.to_be_bytes())?;
+                    let tweak_point = PublicKey::from_secret_key(secp, &tweak_key);
+
+                    input_pubkey = input_pubkey.combine(&tweak_point)?; // A' = A + tweak*G
+
+                    // Handle parity for P2TR Silent Payment inputs ONLY
+                    // Regular P2TR inputs use the internal key for ECDH, not the tweaked key
+                    let input = psbt
+                        .inputs
+                        .get(input_idx)
+                        .ok_or(Error::InvalidInputIndex(input_idx))?;
+                    if let Some(ref witness_utxo) = input.witness_utxo {
+                        if witness_utxo.script_pubkey.is_p2tr() {
+                            let (_, parity) = input_pubkey.x_only_public_key();
+                            if parity == secp256k1::Parity::Odd {
+                                input_pubkey = input_pubkey.negate(secp);
+                            }
+                        }
+                    }
+                }
 
                 let is_valid = dleq_verify_proof(
                     secp,

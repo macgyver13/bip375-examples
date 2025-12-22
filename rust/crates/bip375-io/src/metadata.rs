@@ -109,6 +109,32 @@ impl PsbtMetadata {
         self
     }
 
+    /// Set input assignments
+    pub fn set_input_assignments(&mut self, assignments: HashMap<usize, String>) -> &mut Self {
+        self.input_assignments = Some(assignments);
+        self
+    }
+
+    /// Add a single input assignment
+    pub fn add_input_assignment(
+        &mut self,
+        input_index: usize,
+        party_name: impl Into<String>,
+    ) -> &mut Self {
+        self.input_assignments
+            .get_or_insert_with(HashMap::new)
+            .insert(input_index, party_name.into());
+        self
+    }
+
+    /// Get the party assigned to an input
+    pub fn get_party_for_input(&self, input_index: usize) -> Option<&str> {
+        self.input_assignments
+            .as_ref()
+            .and_then(|map| map.get(&input_index))
+            .map(|s| s.as_str())
+    }
+
     /// Add a custom metadata field
     pub fn add_custom(&mut self, key: impl Into<String>, value: serde_json::Value) -> &mut Self {
         self.custom.insert(key.into(), value);
