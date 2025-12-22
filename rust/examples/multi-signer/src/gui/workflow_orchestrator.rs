@@ -1,13 +1,16 @@
 //! Workflow Orchestrator for Multi-Signer GUI
 //!
-//! Orchestrates the 3-party signing workflow and captures PSBT changes
+//! Orchestrates flexible multi-party signing workflow and captures PSBT changes
 
 use super::app_state::*;
 use crate::alice_creates::alice_creates;
 use crate::bob_signs::bob_signs;
 use crate::charlie_finalizes::charlie_finalizes;
+use crate::workflow_actions;
 use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
-use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
+use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt, psbt_io::save_psbt};
+use bip375_io::PsbtMetadata;
+use secp256k1::Secp256k1;
 
 /// Orchestrates multi-party workflow steps
 pub struct WorkflowOrchestrator;
@@ -25,7 +28,7 @@ impl WorkflowOrchestrator {
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
 
         // Update workflow state
-        state.workflow_state = MultiSignerState::AliceComplete;
+        state.workflow_state = WorkflowState::PartialSigned(1);
 
         Ok(())
     }
@@ -42,7 +45,7 @@ impl WorkflowOrchestrator {
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
 
         // Update workflow state
-        state.workflow_state = MultiSignerState::BobComplete;
+        state.workflow_state = WorkflowState::PartialSigned(2);
 
         Ok(())
     }
@@ -59,7 +62,7 @@ impl WorkflowOrchestrator {
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
 
         // Update workflow state
-        state.workflow_state = MultiSignerState::CharlieComplete;
+        state.workflow_state = WorkflowState::TransactionExtracted;
 
         Ok(())
     }
@@ -105,9 +108,15 @@ impl WorkflowOrchestrator {
             // Check for signature (partial_sig in structured field)
             state.has_signature = !input.partial_sigs.is_empty();
 
-            // Determine signer based on index (Alice=0, Bob=1, Charlie=2)
+            // Determine assigned party based on index (Alice=0, Bob=1, Charlie=2)
             if state.has_signature {
-                state.signer = Some(index);
+                let party_name = match index {
+                    0 => "Alice",
+                    1 => "Bob",
+                    2 => "Charlie",
+                    _ => "Unknown",
+                };
+                state.assigned_party = Some(party_name.to_string());
             }
 
             states.push(state);

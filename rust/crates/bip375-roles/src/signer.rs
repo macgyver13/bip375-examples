@@ -12,6 +12,7 @@ use bip375_crypto::{
     apply_tweak_to_privkey, compute_ecdh_share, dleq_generate_proof, sign_p2pkh_input,
     sign_p2tr_input, sign_p2wpkh_input,
 };
+use bitcoin::key::TapTweak;
 use bitcoin::ScriptBuf;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::collections::HashSet;

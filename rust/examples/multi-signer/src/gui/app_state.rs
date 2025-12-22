@@ -1,8 +1,9 @@
 //! Application state management for multi-signer GUI
 //!
-//! Manages state for the 3-party signing workflow (Alice → Bob → Charlie)
+//! Manages state for flexible multi-party signing workflow
 
 use bip375_core::SilentPaymentPsbt;
+use bip375_helpers::wallet::MultiPartyConfig;
 use std::collections::HashSet;
 
 // Re-export types from gui-common for convenience
@@ -11,8 +12,14 @@ pub use bip375_helpers::display::field_identifier::{FieldIdentifier, Transaction
 /// Main application state for multi-signer workflow
 #[derive(Clone, Debug)]
 pub struct AppState {
+    /// Multi-party configuration
+    pub multi_config: Option<MultiPartyConfig>,
+
     /// Current workflow state
-    pub workflow_state: MultiSignerState,
+    pub workflow_state: WorkflowState,
+
+    /// Signing progress tracking
+    pub signing_progress: SigningProgress,
 
     /// Current PSBT (may be None if not created yet)
     pub current_psbt: Option<SilentPaymentPsbt>,
@@ -36,7 +43,9 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            workflow_state: MultiSignerState::Ready,
+            multi_config: None,
+            workflow_state: WorkflowState::ConfiguringParties,
+            signing_progress: SigningProgress::default(),
             current_psbt: None,
             highlighted_fields: HashSet::new(),
             ecdh_coverage: EcdhCoverageState::default(),
@@ -47,7 +56,18 @@ impl Default for AppState {
     }
 }
 
-/// Workflow state for multi-party signing
+/// Flexible workflow state for multi-party signing
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorkflowState {
+    ConfiguringParties,
+    PsbtCreated,
+    PartialSigned(usize),
+    FullySigned,
+    Finalized,
+    TransactionExtracted,
+}
+
+/// Legacy workflow state (for backward compatibility during migration)
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MultiSignerState {
     Ready,
@@ -55,6 +75,40 @@ pub enum MultiSignerState {
     BobComplete,
     CharlieComplete,
     TransactionExtracted,
+}
+
+/// Signing progress tracking
+#[derive(Clone, Debug, Default)]
+pub struct SigningProgress {
+    pub total_inputs: usize,
+    pub signed_inputs: HashSet<usize>,
+    pub parties_completed: HashSet<String>,
+}
+
+impl SigningProgress {
+    pub fn new(total_inputs: usize) -> Self {
+        Self {
+            total_inputs,
+            signed_inputs: HashSet::new(),
+            parties_completed: HashSet::new(),
+        }
+    }
+
+    pub fn mark_input_signed(&mut self, input_index: usize) {
+        self.signed_inputs.insert(input_index);
+    }
+
+    pub fn mark_party_completed(&mut self, party_name: String) {
+        self.parties_completed.insert(party_name);
+    }
+
+    pub fn is_fully_signed(&self) -> bool {
+        self.signed_inputs.len() >= self.total_inputs && self.total_inputs > 0
+    }
+
+    pub fn completion_fraction(&self) -> String {
+        format!("{}/{}", self.signed_inputs.len(), self.total_inputs)
+    }
 }
 
 /// ECDH coverage tracking
@@ -97,8 +151,8 @@ impl EcdhCoverageState {
 pub struct InputState {
     /// Input index
     pub index: usize,
-    /// Who signed this input (Alice=0, Bob=1, Charlie=2)
-    pub signer: Option<usize>,
+    /// Party assigned to sign this input
+    pub assigned_party: Option<String>,
     /// Has ECDH share
     pub has_ecdh_share: bool,
     /// Has DLEQ proof
@@ -111,20 +165,39 @@ impl InputState {
     pub fn new(index: usize) -> Self {
         Self {
             index,
-            signer: None,
+            assigned_party: None,
             has_ecdh_share: false,
             has_dleq_proof: false,
             has_signature: false,
         }
     }
 
-    /// Get signer name
-    pub fn signer_name(&self) -> &'static str {
-        match self.signer {
-            Some(0) => "Alice",
-            Some(1) => "Bob",
-            Some(2) => "Charlie",
-            _ => "None",
+    pub fn with_party(index: usize, party_name: String) -> Self {
+        Self {
+            index,
+            assigned_party: Some(party_name),
+            has_ecdh_share: false,
+            has_dleq_proof: false,
+            has_signature: false,
+        }
+    }
+
+    pub fn party_name(&self) -> &str {
+        self.assigned_party.as_deref().unwrap_or("Unassigned")
+    }
+
+    /// Legacy compatibility: Get signer name (deprecated, use party_name instead)
+    pub fn signer_name(&self) -> &str {
+        self.party_name()
+    }
+
+    /// Legacy compatibility: Get signer index (deprecated)
+    pub fn signer(&self) -> Option<usize> {
+        match self.assigned_party.as_deref() {
+            Some("Alice") => Some(0),
+            Some("Bob") => Some(1),
+            Some("Charlie") => Some(2),
+            _ => None,
         }
     }
 }

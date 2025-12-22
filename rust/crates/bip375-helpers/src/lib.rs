@@ -5,8 +5,10 @@
 //! This library provides:
 //! - **Display**: PSBT field visualization, analysis, and formatting for GUIs
 //! - **Wallet**: Virtual wallet and transaction configuration for demos
+//! - **Transaction**: Transaction building, input/output management, and validation
 //! - **GUI**: Shared GUI utilities and callbacks
 
 pub mod display;
 pub mod gui;
+pub mod transaction;
 pub mod wallet;

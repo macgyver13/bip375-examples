@@ -210,6 +210,7 @@ impl PsbtMetadata {
             ecdh_complete: None,
             signatures_complete: None,
             scripts_computed: None,
+            input_assignments: None,
             custom: Default::default(),
         }
     }

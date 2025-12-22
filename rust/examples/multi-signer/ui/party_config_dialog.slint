@@ -1,0 +1,225 @@
+// Party Configuration Dialog for Multi-Signer
+// Allows configuring which party creates the PSBT and input assignments
+
+import { Button, ComboBox, VerticalBox, HorizontalBox, GroupBox } from "std-widgets.slint";
+
+export struct PartyInfo {
+    name: string,
+    utxo-count: int,
+    total-amount: int,
+}
+
+export component PartyConfigDialog inherits Window {
+    title: "Configure Multi-Party Transaction";
+    preferred-width: 600px;
+    preferred-height: 500px;
+
+    // Properties
+    in-out property <string> creator-party: "Alice";
+    in-out property <[PartyInfo]> parties: [
+        { name: "Alice", utxo-count: 1, total-amount: 100000 },
+        { name: "Bob", utxo-count: 1, total-amount: 100000 },
+        { name: "Charlie", utxo-count: 1, total-amount: 100000 },
+    ];
+
+    in-out property <int> recipient-amount: 185000;
+    in-out property <int> change-amount: 100000;
+    in-out property <int> fee-amount: 15000;
+
+    // Callbacks
+    callback start-workflow();
+    callback use-default-config();
+    callback cancel();
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 20px;
+
+        // Header
+        Text {
+            text: "Multi-Party Transaction Configuration";
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        Rectangle { height: 1px; background: #cccccc; }
+
+        // Creator Selection
+        GroupBox {
+            title: "Transaction Creator";
+
+            HorizontalBox {
+                spacing: 10px;
+
+                Text {
+                    text: "Who will create the initial PSBT?";
+                    vertical-alignment: center;
+                }
+
+                ComboBox {
+                    model: ["Alice", "Bob", "Charlie"];
+                    current-value: root.creator-party;
+                    selected(value) => {
+                        root.creator-party = value;
+                    }
+                }
+            }
+        }
+
+        // Party Summary
+        GroupBox {
+            title: "Party Inputs (Default Configuration)";
+
+            VerticalBox {
+                spacing: 8px;
+
+                for party in root.parties: HorizontalBox {
+                    spacing: 10px;
+
+                    Text {
+                        text: party.name + ":";
+                        font-weight: 700;
+                        min-width: 80px;
+                    }
+
+                    Text {
+                        text: party.utxo-count + " UTXO" + (party.utxo-count > 1 ? "s" : "");
+                        min-width: 80px;
+                    }
+
+                    Text {
+                        text: party.total-amount + " sats";
+                        color: #666666;
+                    }
+                }
+
+                Rectangle { height: 1px; background: #eeeeee; }
+
+                HorizontalBox {
+                    spacing: 10px;
+
+                    Text {
+                        text: "Total Input:";
+                        font-weight: 700;
+                        min-width: 80px;
+                    }
+
+                    Text {
+                        text: (parties[0].total-amount + parties[1].total-amount + parties[2].total-amount) + " sats";
+                    }
+                }
+            }
+        }
+
+        // Transaction Amounts
+        GroupBox {
+            title: "Transaction Amounts";
+
+            VerticalBox {
+                spacing: 8px;
+
+                HorizontalBox {
+                    spacing: 10px;
+
+                    Text {
+                        text: "Recipient (SP):";
+                        min-width: 120px;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: root.recipient-amount + " sats";
+                        color: #0066cc;
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+
+                    Text {
+                        text: "Change:";
+                        min-width: 120px;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: root.change-amount + " sats";
+                        color: #666666;
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+
+                    Text {
+                        text: "Fee:";
+                        min-width: 120px;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: root.fee-amount + " sats";
+                        color: #ff6600;
+                    }
+                }
+
+                Rectangle { height: 1px; background: #eeeeee; }
+
+                HorizontalBox {
+                    spacing: 10px;
+
+                    Text {
+                        text: "Balance Check:";
+                        font-weight: 700;
+                        min-width: 120px;
+                    }
+
+                    Text {
+                        text: "✓ Balanced";
+                        color: #00cc00;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Info box
+        Rectangle {
+            background: #f0f0f0;
+            border-radius: 4px;
+            padding: 10px;
+
+            Text {
+                text: "📝 Note: Using default configuration with 1 input per party.\nEach party will sign their assigned input in order.";
+                font-size: 12px;
+                color: #666666;
+                wrap: word-wrap;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Action Buttons
+        HorizontalBox {
+            spacing: 10px;
+
+            Button {
+                text: "Use Default";
+                clicked => { root.use-default-config(); }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: "Cancel";
+                clicked => { root.cancel(); }
+            }
+
+            Button {
+                text: "Start Workflow →";
+                primary: true;
+                clicked => { root.start-workflow(); }
+            }
+        }
+    }
+}

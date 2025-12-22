@@ -52,6 +52,10 @@ pub struct PsbtMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scripts_computed: Option<bool>,
 
+    /// Input assignments mapping input index to party name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_assignments: Option<HashMap<usize, String>>,
+
     /// Custom key-value pairs
     #[serde(flatten)]
     pub custom: HashMap<String, serde_json::Value>,

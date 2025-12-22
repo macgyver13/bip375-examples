@@ -15,12 +15,15 @@ slint::include_modules!();
 /// Convert AppState to Slint data structures
 fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
     // Update workflow state
-    let state_str = match state.workflow_state {
-        MultiSignerState::Ready => "Ready",
-        MultiSignerState::AliceComplete => "AliceComplete",
-        MultiSignerState::BobComplete => "BobComplete",
-        MultiSignerState::CharlieComplete => "CharlieComplete",
-        MultiSignerState::TransactionExtracted => "TransactionExtracted",
+    let state_str = match &state.workflow_state {
+        WorkflowState::ConfiguringParties => "ConfiguringParties",
+        WorkflowState::PsbtCreated => "PsbtCreated",
+        WorkflowState::PartialSigned(n) => {
+            return window.set_workflow_state(format!("PartialSigned({})", n).into());
+        }
+        WorkflowState::FullySigned => "FullySigned",
+        WorkflowState::Finalized => "Finalized",
+        WorkflowState::TransactionExtracted => "TransactionExtracted",
     };
     window.set_workflow_state(state_str.into());
 
@@ -180,6 +183,22 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
             move || {
                 let state = state_rc.borrow();
                 bip375_helpers::gui::export_psbt_callback(state.current_psbt.as_ref());
+            }
+        });
+
+        window.on_configure_parties({
+            let window_weak = window_weak.clone();
+            let state_rc = state_rc.clone();
+            move || {
+                // For now, just initialize with default config
+                let mut state = state_rc.borrow_mut();
+                if let Ok(config) = crate::shared_utils::create_multi_party_config_default() {
+                    state.multi_config = Some(config);
+                    eprintln!("✓ Configured with default 3-party setup (Alice, Bob, Charlie)");
+                }
+                if let Some(window) = window_weak.upgrade() {
+                    sync_state_to_ui(&window, &state);
+                }
             }
         });
     }
