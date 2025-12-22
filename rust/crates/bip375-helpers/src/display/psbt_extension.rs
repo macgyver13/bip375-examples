@@ -283,6 +283,27 @@ impl InputFieldsExt for psbt_v2::v2::Input {
             fields.push((field_type, key_data, value_data));
         }
 
+        // PSBT_IN_TAP_BIP32_DERIVATION (0x16) - Multiple entries possible
+        for (xonly_pubkey, (leaf_hashes, key_source)) in &self.tap_key_origins {
+            let field_type = 0x16;
+            let key_data = xonly_pubkey.serialize().to_vec();
+            let mut value_data = Vec::new();
+
+            // Encode leaf_hashes (compact size + hashes)
+            value_data.push(leaf_hashes.len() as u8);
+            for leaf_hash in leaf_hashes {
+                value_data.extend_from_slice(leaf_hash.as_ref());
+            }
+
+            // Encode key_source (fingerprint + derivation path)
+            value_data.extend_from_slice(&key_source.0.to_bytes());
+            for child in &key_source.1 {
+                value_data.extend_from_slice(&u32::from(*child).to_le_bytes());
+            }
+
+            fields.push((field_type, key_data, value_data));
+        }
+
         // PSBT_IN_SP_ECDH_SHARE (0x1d) - BIP-375, multiple entries possible
         for (scan_key, ecdh_share) in &self.sp_ecdh_shares {
             let field_type = 0x1d;

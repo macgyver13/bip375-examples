@@ -141,12 +141,10 @@ impl WalletCoordinator {
                 println!("   {} PSBT_GLOBAL_XPUB entries", xpub_count);
             }
             println!("   Hardware wallet can match keys using BIP32 paths\n");
-        } else if mnemonic.is_some() {
-            println!("  UPDATER: No BIP32 derivation paths (privacy mode)");
-            println!("   Hardware wallet will match public keys internally\n");
         } else {
-            println!("  UPDATER: No BIP32 derivation paths (seed-based wallet)");
-            println!("   Hardware wallet will match public keys internally\n");
+            // With our change, seed-based wallets now get BIP84 derivations for demo purposes
+            println!("  UPDATER: Using BIP84 derivation paths for demo (seed-based wallet)");
+            println!("   Note: Seed wallets use default m/84'/0'/0' path for PSBT compatibility\n");
         }
 
         // Save to transfer file

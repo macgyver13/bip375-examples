@@ -619,11 +619,8 @@ pub fn add_output_bip32_derivations(
     let mut count = 0;
     let master_fingerprint = wallet.master_fingerprint();
 
-    // Skip BIP32 derivations for seed-based wallets (fingerprint = [0, 0, 0, 0])
-    if master_fingerprint == [0u8; 4] {
-        println!("  UPDATER: Seed-based wallet detected - skipping BIP32 derivations");
-        return Ok(0);
-    }
+    // For demo purposes, seed-based wallets now use BIP84 paths
+    // Note: In production, you'd only add derivations for true HD wallets
 
     // Get wallet's own keys for ownership verification
     let (hw_scan_pubkey, hw_spend_pubkey) = wallet.scan_spend_keys();
