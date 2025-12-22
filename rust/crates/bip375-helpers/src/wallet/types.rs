@@ -497,7 +497,7 @@ impl VirtualWallet {
                 (50_000, ScriptType::P2WPKH, false),  // ID 0
                 (100_000, ScriptType::P2TR, true),    // ID 1 - SP
                 (150_000, ScriptType::P2WPKH, false), // ID 2
-                (200_000, ScriptType::P2TR, true),    // ID 3 - SP
+                (250_000, ScriptType::P2TR, true),    // ID 3 - SP
                 (75_000, ScriptType::P2WPKH, false),  // ID 4
                 (300_000, ScriptType::P2TR, true),    // ID 5 - SP
                 (125_000, ScriptType::P2WPKH, false), // ID 6

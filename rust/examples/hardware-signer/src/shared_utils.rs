@@ -557,7 +557,7 @@ impl Default for TweakDatabase {
 // BIP32 Derivation Utilities
 // =============================================================================
 
-use bip375_core::SilentPaymentPsbt;
+use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
 use bip375_roles::updater::{add_input_bip32_derivation, add_output_bip32_derivation};
 
 /// Add BIP32 derivation info for transaction inputs
@@ -587,7 +587,14 @@ pub fn add_input_bip32_derivations(
             continue; // no BIP32 derivation associated with input, SKIP)
         };
 
-        let (_privkey, pubkey) = wallet.input_key_pair(utxo_id as u32);
+        // For SP inputs, use spend key instead of input key
+        // This matches what the hardware device will use for signing
+        // Check if this input has PSBT_IN_SP_TWEAK set (must be done before this function is called)
+        let (_privkey, pubkey) = if psbt.get_input_sp_tweak(input_idx).is_some() {
+            wallet.spend_key_pair()
+        } else {
+            wallet.input_key_pair(utxo_id as u32)
+        };
 
         add_input_bip32_derivation(psbt, input_idx, &pubkey, master_fingerprint, path)
             .map_err(|e| format!("Failed to add input derivation: {}", e))?;

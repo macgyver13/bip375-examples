@@ -524,7 +524,19 @@ pub fn get_input_pubkey(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<Pu
         .get(input_idx)
         .ok_or_else(|| Error::InvalidInputIndex(input_idx))?;
 
-    // Method 1: Extract from BIP32 derivation field (HIGHEST PRIORITY)
+    // Method 1: Extract from Taproot BIP32 derivation (tap_key_origins for P2TR)
+    if !input.tap_key_origins.is_empty() {
+        // Return the first key, converting x-only to full pubkey (even Y)
+        if let Some(xonly_key) = input.tap_key_origins.keys().next() {
+            let mut pubkey_bytes = vec![0x02];
+            pubkey_bytes.extend_from_slice(&xonly_key.serialize());
+            if let Ok(pubkey) = PublicKey::from_slice(&pubkey_bytes) {
+                return Ok(pubkey);
+            }
+        }
+    }
+
+    // Method 2: Extract from BIP32 derivation field (for non-Taproot)
     if !input.bip32_derivations.is_empty() {
         // Return the first key
         if let Some(key) = input.bip32_derivations.keys().next() {
@@ -532,7 +544,7 @@ pub fn get_input_pubkey(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<Pu
         }
     }
 
-    // Method 2: Extract from Taproot internal key (for Taproot inputs)
+    // Method 3: Extract from Taproot internal key (for Taproot inputs)
     if let Some(tap_key) = input.tap_internal_key {
         // tap_key is bitcoin::XOnlyPublicKey
         // We need to convert to secp256k1::PublicKey (even y)
@@ -547,7 +559,7 @@ pub fn get_input_pubkey(psbt: &SilentPaymentPsbt, input_idx: usize) -> Result<Pu
         }
     }
 
-    // Method 3: Extract from partial signature field
+    // Method 4: Extract from partial signature field
     if !input.partial_sigs.is_empty() {
         if let Some(key) = input.partial_sigs.keys().next() {
             return Ok(key.inner);

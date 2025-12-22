@@ -66,19 +66,15 @@ impl WalletCoordinator {
             outputs.len()
         );
 
-        // UPDATER ROLE: Add BIP32 derivation paths
-        let input_deriv_count =
-            add_input_bip32_derivations(&mut psbt, &hw_wallet, &config.selected_utxo_ids)?;
-        let output_deriv_count = add_output_bip32_derivations(&mut psbt, &outputs, &hw_wallet)?;
-        let xpub_count = add_global_xpubs(&mut psbt, mnemonic)?;
-
         // UPDATER ROLE: Add silent payment tweaks for spending (if any)
         //
         // This demonstrates spending silent payment outputs. The wallet coordinator
         // maintains a database of tweaks discovered during blockchain scanning.
         // When spending a silent payment UTXO, the coordinator adds PSBT_IN_SP_TWEAK
         // so the hardware signer can apply the tweak to its spend key.
-        // Note: virtual_wallet already created above with correct derivation path
+        //
+        // Note: This must be done BEFORE adding BIP32 derivations, so the derivation
+        // code can detect SP inputs and use the correct key (spend key vs input key).
         let tweak_db = TweakDatabase::from_virtual_wallet(&virtual_wallet);
         let mut sp_input_count = 0;
 
@@ -97,6 +93,13 @@ impl WalletCoordinator {
             );
             println!("   Note: Tweaks were stored during wallet scanning\n");
         }
+
+        // UPDATER ROLE: Add BIP32 derivation paths
+        // Note: This is done after SP tweaks so we can detect SP inputs
+        let input_deriv_count =
+            add_input_bip32_derivations(&mut psbt, &hw_wallet, &config.selected_utxo_ids)?;
+        let output_deriv_count = add_output_bip32_derivations(&mut psbt, &outputs, &hw_wallet)?;
+        let xpub_count = add_global_xpubs(&mut psbt, mnemonic)?;
 
         // Add BIP-353 DNSSEC proof to recipient output (Output 1)
         //
@@ -220,10 +223,11 @@ impl WalletCoordinator {
         }
 
         // Verify PSBT is actually signed
+        // Note: P2WPKH uses partial_sigs, P2TR uses tap_key_sig
         let has_signatures = psbt
             .inputs
             .iter()
-            .any(|input| !input.partial_sigs.is_empty());
+            .any(|input| !input.partial_sigs.is_empty() || input.tap_key_sig.is_some());
 
         if !has_signatures {
             return Err("PSBT is not signed yet! Hardware device must sign first.".into());
