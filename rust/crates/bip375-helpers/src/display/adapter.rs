@@ -4,8 +4,7 @@
 
 use super::field_identifier::FieldIdentifier;
 use super::formatting::{self, FieldCategory};
-use super::psbt_extension::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
-use bip375_core::SilentPaymentPsbt;
+use spdk_core::psbt::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt, SilentPaymentPsbt};
 use std::collections::HashSet;
 
 /// A generic representation of a PSBT field for display

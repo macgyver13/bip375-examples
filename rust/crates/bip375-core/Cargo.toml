@@ -10,9 +10,10 @@ repository.workspace = true
 bitcoin.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
+silentpayments.workspace = true
 thiserror.workspace = true
 hex.workspace = true
-psbt-v2.workspace = true
+spdk-core.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
