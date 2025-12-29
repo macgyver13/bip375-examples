@@ -4,8 +4,9 @@
 //! computing differences between PSBT states, and identifying field types.
 
 use super::field_identifier::{FieldIdentifier, TransactionSummary};
-use super::psbt_extension::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt};
-use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, SilentPaymentPsbt};
+
+use bip375_core::extensions::PSBT_OUT_DNSSEC_PROOF;
+use spdk_core::psbt::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt, SilentPaymentPsbt};
 use std::collections::HashSet;
 
 /// Extract all field identifiers from a PSBT

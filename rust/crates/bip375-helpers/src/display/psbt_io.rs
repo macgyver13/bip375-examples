@@ -3,8 +3,8 @@
 //! Provides functions for importing PSBTs from various formats (base64, files)
 //! and exporting them for sharing or storage.
 
-use bip375_core::SilentPaymentPsbt;
-use bip375_io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
+use spdk_core::psbt::io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
+use spdk_core::psbt::SilentPaymentPsbt;
 
 use std::cell::RefCell;
 use std::fs;
@@ -81,10 +81,8 @@ pub fn export_psbt_with_dialog(psbt: &SilentPaymentPsbt) -> Result<PathBuf, Stri
 ///
 /// # Errors
 /// Returns an error if the file cannot be read or parsed.
-pub fn load_from_file(
-    path: &str,
-) -> Result<(SilentPaymentPsbt, Option<bip375_io::PsbtMetadata>), String> {
-    bip375_io::load_psbt_with_metadata(path).map_err(|e| format!("File load error: {}", e))
+pub fn load_from_file(path: &str) -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), String> {
+    load_psbt_with_metadata(path).map_err(|e| format!("File load error: {}", e))
 }
 
 /// Export a PSBT to a JSON file
@@ -94,8 +92,7 @@ pub fn load_from_file(
 /// # Errors
 /// Returns an error if the file cannot be written.
 pub fn export_to_file(psbt: &SilentPaymentPsbt, path: &str) -> Result<(), String> {
-    bip375_io::save_psbt_with_metadata(psbt, None, path)
-        .map_err(|e| format!("File save error: {}", e))
+    save_psbt_with_metadata(psbt, None, path).map_err(|e| format!("File save error: {}", e))
 }
 
 /// Export PSBT to clipboard (platform-specific)

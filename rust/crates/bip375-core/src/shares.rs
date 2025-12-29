@@ -16,7 +16,8 @@
 //!
 //! This module automatically detects which mode is being used and aggregates accordingly.
 
-use crate::{Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
+use crate::{Error, Result, SilentPaymentPsbt};
+use silentpayments::psbt::Bip375PsbtExt;
 use secp256k1::PublicKey;
 use std::collections::HashMap;
 
@@ -102,7 +103,7 @@ impl AggregatedShares {
 ///     .ok_or_else(|| Error::Other("Missing share".to_string()))?;
 /// ```
 pub fn aggregate_ecdh_shares(psbt: &SilentPaymentPsbt) -> Result<AggregatedShares> {
-    let num_inputs = psbt.num_inputs();
+    let num_inputs = psbt.inputs.len();
     if num_inputs == 0 {
         return Err(Error::Other(
             "Cannot aggregate ECDH shares: no inputs".to_string(),

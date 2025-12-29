@@ -1,4 +1,4 @@
-use bip375_core::{PsbtInput, SilentPaymentAddress, SilentPaymentPsbt};
+use bip375_core::{PsbtInput, SilentPaymentOutputInfo, SilentPaymentPsbt};
 use bip375_crypto::script_type_string;
 use bip375_helpers::display::psbt_io::{load_psbt, save_psbt};
 use bip375_helpers::transaction::{
@@ -32,7 +32,7 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
 
     let recipient_wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
     let (scan_key, spend_key) = recipient_wallet.scan_spend_keys();
-    let recipient_address = SilentPaymentAddress::new(scan_key, spend_key, None);
+    let recipient_address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
 
     let change_wallet = SimpleWallet::new("change_address_for_multi_signer_test");
 

@@ -14,17 +14,15 @@ name = "multi-signer"
 path = "src/main.rs"
 
 [dependencies]
-bip375-core.workspace = true
-bip375-crypto.workspace = true
 bip375-helpers.workspace = true
-bip375-io.workspace = true
-bip375-roles.workspace = true
 bitcoin.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
 sha2.workspace = true
+silentpayments.workspace = true
+spdk-core.workspace = true
 ripemd.workspace = true
 chrono.workspace = true
 

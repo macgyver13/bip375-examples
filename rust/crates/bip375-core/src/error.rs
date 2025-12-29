@@ -1,5 +1,6 @@
 //! Error types for BIP-375 operations
 
+use silentpayments::psbt::Bip375Error;
 use thiserror::Error;
 
 /// Result type alias for BIP-375 operations
@@ -75,4 +76,7 @@ pub enum Error {
 
     #[error("Other error: {0}")]
     Other(String),
+
+    #[error("Bip375 error: {0}")]
+    Bip375Error(#[from] Bip375Error),
 }
