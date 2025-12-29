@@ -38,7 +38,7 @@ def sample_psbt(test_keys):
         Output(
             amount=90000,
             recipient=OutputRecipient.SILENT_PAYMENT(
-                address=SilentPaymentAddress(
+                address=SilentPaymentOutputInfo(
                     scan_key=test_keys["scan_key"],
                     spend_key=test_keys["spend_key"],
                     label=None,
@@ -57,8 +57,8 @@ class TestCoreTypes:
     """Test core data types."""
 
     def test_silent_payment_address(self, test_keys):
-        """Test SilentPaymentAddress creation."""
-        addr = SilentPaymentAddress(
+        """Test SilentPaymentOutputInfo creation."""
+        addr = SilentPaymentOutputInfo(
             scan_key=test_keys["scan_key"],
             spend_key=test_keys["spend_key"],
             label=None,
@@ -68,8 +68,8 @@ class TestCoreTypes:
         assert addr.label is None
 
     def test_silent_payment_address_with_label(self, test_keys):
-        """Test SilentPaymentAddress with label."""
-        addr = SilentPaymentAddress(
+        """Test SilentPaymentOutputInfo with label."""
+        addr = SilentPaymentOutputInfo(
             scan_key=test_keys["scan_key"],
             spend_key=test_keys["spend_key"],
             label=42,

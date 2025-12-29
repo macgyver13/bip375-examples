@@ -16,8 +16,9 @@ bip375-roles = { path = "../bip375-roles" }
 
 # Bitcoin
 bitcoin.workspace = true
-secp256k1.workspace = true
 psbt-v2.workspace = true
+secp256k1.workspace = true
+silentpayments.workspace = true
 
 # UniFFI
 uniffi = { version = "0.28", features = ["build"] }

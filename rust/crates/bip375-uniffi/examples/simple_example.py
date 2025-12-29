@@ -20,7 +20,7 @@ from bip375 import (
     dleq_verify_proof,
     Utxo,
     Output,
-    SilentPaymentAddress,
+    SilentPaymentOutputInfo,
     OutputRecipient,
     SilentPaymentPsbt
 )
@@ -56,7 +56,7 @@ def main():
         Output(
             amount=90000,  # 90,000 sats (10k fee)
             recipient=OutputRecipient.SILENT_PAYMENT(
-                SilentPaymentAddress(
+                SilentPaymentOutputInfo(
                     scan_key=scan_key,
                     spend_key=spend_key,
                     label=None,

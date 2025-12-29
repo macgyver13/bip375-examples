@@ -6,9 +6,10 @@
 mod resources;
 mod test_vector_helper;
 
-use bip375_core::SilentPaymentPsbt;
 use bip375_helpers::display::{adapter, psbt_analyzer, psbt_io};
 use slint::Model;
+use spdk_core::psbt::io::file_io::load_psbt;
+use spdk_core::psbt::SilentPaymentPsbt;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -192,7 +193,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let window = window_weak.unwrap();
 
         if let Some(path) = resources::browse_for_psbt_file() {
-            match bip375_io::file_io::load_psbt(&path) {
+            match load_psbt(&path) {
                 Ok((psbt, metadata)) => {
                     display_psbt(&window, &psbt, &current_psbt_clone);
                     let msg = if let Some(meta) = metadata {

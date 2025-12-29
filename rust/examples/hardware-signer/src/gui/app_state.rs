@@ -2,8 +2,8 @@
 //!
 //! This module defines the single source of truth for the GUI application state.
 
-use bip375_core::SilentPaymentPsbt;
 use bip375_helpers::wallet::TransactionConfig;
+use spdk_core::psbt::SilentPaymentPsbt;
 use std::collections::HashSet;
 
 // Re-export types from gui-common for convenience
