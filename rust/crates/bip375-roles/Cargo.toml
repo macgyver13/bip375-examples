@@ -10,8 +10,9 @@ repository.workspace = true
 bip375-core.workspace = true
 bip375-crypto.workspace = true
 bitcoin.workspace = true
-secp256k1.workspace = true
 psbt-v2.workspace = true
+secp256k1.workspace = true
+silentpayments.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

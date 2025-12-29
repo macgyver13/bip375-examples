@@ -2,14 +2,15 @@
 //!
 //! Adds inputs and outputs to the PSBT.
 
-use bip375_core::{Bip375PsbtExt, Error, PsbtInput, PsbtOutput, Result, SilentPaymentPsbt};
+use bip375_core::{Error, PsbtInput, PsbtOutput, Result, SilentPaymentPsbt};
+use silentpayments::psbt::Bip375PsbtExt;
 
 /// Add inputs to the PSBT
 pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[PsbtInput]) -> Result<()> {
-    if psbt.num_inputs() != inputs.len() {
+    if psbt.inputs.len() != inputs.len() {
         return Err(Error::Other(format!(
             "PSBT has {} input slots but {} inputs provided",
-            psbt.num_inputs(),
+            psbt.inputs.len(),
             inputs.len()
         )));
     }
@@ -54,10 +55,10 @@ pub fn add_inputs(psbt: &mut SilentPaymentPsbt, inputs: &[PsbtInput]) -> Result<
 
 /// Add outputs to the PSBT
 pub fn add_outputs(psbt: &mut SilentPaymentPsbt, outputs: &[PsbtOutput]) -> Result<()> {
-    if psbt.num_outputs() != outputs.len() {
+    if psbt.outputs.len() != outputs.len() {
         return Err(Error::Other(format!(
             "PSBT has {} output slots but {} outputs provided",
-            psbt.num_outputs(),
+            psbt.outputs.len(),
             outputs.len()
         )));
     }

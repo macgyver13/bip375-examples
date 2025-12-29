@@ -20,11 +20,13 @@ bip375-helpers.workspace = true
 bip375-io.workspace = true
 bip375-roles.workspace = true
 bitcoin.workspace = true
+psbt-v2.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
 sha2.workspace = true
+silentpayments.workspace = true
 ripemd.workspace = true
 chrono.workspace = true
 

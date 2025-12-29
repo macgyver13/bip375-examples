@@ -123,7 +123,6 @@ fn base64_decode(data: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bip375_core::Bip375PsbtExt;
     use tempfile::TempDir;
 
     fn create_test_psbt() -> SilentPaymentPsbt {
@@ -158,8 +157,8 @@ mod tests {
         save_psbt_binary(&psbt, &path).unwrap();
 
         let loaded = load_psbt_binary(&path).unwrap();
-        assert_eq!(psbt.num_inputs(), loaded.num_inputs());
-        assert_eq!(psbt.num_outputs(), loaded.num_outputs());
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
+        assert_eq!(psbt.outputs.len(), loaded.outputs.len());
     }
 
     #[test]
@@ -174,7 +173,7 @@ mod tests {
         save_psbt_with_metadata(&psbt, Some(metadata.clone()), &path).unwrap();
 
         let (loaded, loaded_metadata) = load_psbt_with_metadata(&path).unwrap();
-        assert_eq!(psbt.num_inputs(), loaded.num_inputs());
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
         assert!(loaded_metadata.is_some());
         assert_eq!(loaded_metadata.unwrap().creator, metadata.creator);
     }
@@ -188,13 +187,13 @@ mod tests {
         let psbt = create_test_psbt();
         save_psbt(&psbt, None, &json_path).unwrap();
         let (loaded, _) = load_psbt(&json_path).unwrap();
-        assert_eq!(psbt.num_inputs(), loaded.num_inputs());
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
 
         // Test binary format
         let binary_path = temp_dir.path().join("test.psbt");
         save_psbt(&psbt, None, &binary_path).unwrap();
         let (loaded, _) = load_psbt(&binary_path).unwrap();
-        assert_eq!(psbt.num_inputs(), loaded.num_inputs());
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
     }
 
     #[test]

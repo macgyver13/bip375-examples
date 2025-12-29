@@ -2,8 +2,9 @@
 //!
 //! Validates PSBTs according to BIP-375 rules.
 
-use bip375_core::{Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
+use bip375_core::{Error, Result, SilentPaymentPsbt};
 use bip375_crypto::dleq_verify_proof;
+use silentpayments::psbt::Bip375PsbtExt;
 use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
 use std::collections::HashSet;
 
@@ -33,8 +34,7 @@ pub fn validate_psbt(
     // Validate SP tweak fields (if any inputs have them)
     validate_sp_tweak_fields(psbt, false)?;
 
-    // Check if this PSBT has silent payment outputs
-    let has_sp_outputs = (0..psbt.num_outputs()).any(|i| psbt.get_output_sp_address(i).is_some());
+    let has_sp_outputs = psbt.has_silent_payment_outputs();
 
     if has_sp_outputs {
         // Rule 6: Segwit version restrictions (must be v0 or v1 for silent payments)
@@ -211,11 +211,11 @@ fn validate_sighash_types(psbt: &SilentPaymentPsbt) -> Result<()> {
 
 /// Validate ECDH coverage for silent payment outputs
 fn validate_ecdh_coverage(psbt: &SilentPaymentPsbt) -> Result<()> {
-    let num_inputs = psbt.num_inputs();
+    let num_inputs = psbt.inputs.len();
 
     // Collect all scan keys from outputs
     let mut scan_keys = HashSet::new();
-    for i in 0..psbt.num_outputs() {
+    for i in 0..psbt.outputs.len() {
         if let Some(sp_address) = psbt.get_output_sp_address(i) {
             scan_keys.insert(sp_address.scan_key);
         }
@@ -274,7 +274,7 @@ fn validate_output_scripts(
     let mut outpoints: Vec<Vec<u8>> = Vec::new();
     let mut input_pubkeys: Vec<PublicKey> = Vec::new();
 
-    for input_idx in 0..psbt.num_inputs() {
+    for input_idx in 0..psbt.inputs.len() {
         let outpoint = get_input_outpoint_bytes(psbt, input_idx)?;
         outpoints.push(outpoint);
 
@@ -326,7 +326,7 @@ fn validate_output_scripts(
 
     let mut scan_key_output_indices: HashMap<PublicKey, u32> = HashMap::new();
 
-    for output_idx in 0..psbt.num_outputs() {
+    for output_idx in 0..psbt.outputs.len() {
         let output = &psbt.outputs[output_idx];
         if output.script_pubkey.is_empty() {
             continue;
@@ -385,7 +385,7 @@ fn validate_dleq_proofs(secp: &Secp256k1<secp256k1::All>, psbt: &SilentPaymentPs
     }
 
     // Validate per-input ECDH shares
-    for input_idx in 0..psbt.num_inputs() {
+    for input_idx in 0..psbt.inputs.len() {
         let shares = psbt.get_input_ecdh_shares(input_idx);
 
         for share in shares {
@@ -454,12 +454,12 @@ pub fn validate_ready_for_extraction(psbt: &SilentPaymentPsbt) -> Result<()> {
     // Validate SP tweak fields with signature requirement
     validate_sp_tweak_fields(psbt, true)?;
 
-    for input_idx in 0..psbt.num_inputs() {
+    for input_idx in 0..psbt.inputs.len() {
         let input = &psbt.inputs[input_idx];
 
         // Check for either tap_key_sig (P2TR) or partial_sigs (P2WPKH)
         let has_tap_sig = input.tap_key_sig.is_some();
-        let has_partial_sigs = !psbt.get_input_partial_sigs(input_idx).is_empty();
+        let has_partial_sigs = !psbt.inputs[input_idx].partial_sigs.is_empty();
 
         if !has_tap_sig && !has_partial_sigs {
             return Err(Error::ExtractionFailed(format!(
@@ -469,7 +469,7 @@ pub fn validate_ready_for_extraction(psbt: &SilentPaymentPsbt) -> Result<()> {
         }
     }
 
-    for output_idx in 0..psbt.num_outputs() {
+    for output_idx in 0..psbt.outputs.len() {
         if psbt.outputs[output_idx].script_pubkey.is_empty() {
             return Err(Error::ExtractionFailed(format!(
                 "Output {} missing script",
@@ -488,11 +488,12 @@ mod tests {
         constructor::{add_inputs, add_outputs},
         creator::create_psbt,
     };
-    use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
+    use bip375_core::{PsbtInput, PsbtOutput};
     use bip375_crypto::pubkey_to_p2wpkh_script;
     use bitcoin::hashes::Hash;
     use bitcoin::{Amount, OutPoint, Sequence, TxOut, Txid};
     use secp256k1::SecretKey;
+    use silentpayments::psbt::{EcdhShareData, SilentPaymentOutputInfo};
 
     #[test]
     fn test_validate_psbt_version() {
@@ -542,8 +543,6 @@ mod tests {
 
     #[test]
     fn test_validate_ecdh_coverage() {
-        use bip375_core::{Bip375PsbtExt, EcdhShareData};
-
         let secp = Secp256k1::new();
         let mut psbt = create_psbt(2, 1).unwrap(); // 2 inputs, 1 output
 
@@ -553,7 +552,7 @@ mod tests {
         let spend_priv = SecretKey::from_slice(&[3u8; 32]).unwrap();
         let spend_pub = PublicKey::from_secret_key(&secp, &spend_priv);
 
-        let sp_addr = SilentPaymentAddress::new(scan_pub, spend_pub, None);
+        let sp_addr = SilentPaymentOutputInfo::new(scan_pub, spend_pub, None);
 
         // Add SP output
         let outputs = vec![PsbtOutput::silent_payment(Amount::from_sat(10000), sp_addr)];
@@ -607,7 +606,7 @@ mod tests {
             let share = EcdhShareData::without_proof(scan_pub, share_point);
 
             // Add to all inputs
-            for i in 0..psbt_inputs.num_inputs() {
+            for i in 0..psbt_inputs.inputs.len() {
                 psbt_inputs.add_input_ecdh_share(i, &share).unwrap();
             }
 

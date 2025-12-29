@@ -2,10 +2,11 @@
 //!
 //! Aggregates ECDH shares and computes final output scripts for silent payments.
 
-use bip375_core::{aggregate_ecdh_shares, Bip375PsbtExt, Error, Result, SilentPaymentPsbt};
+use bip375_core::{aggregate_ecdh_shares, Error, Result, SilentPaymentPsbt};
 use bip375_crypto::{
     apply_label_to_spend_key, derive_silent_payment_output_pubkey, tweaked_key_to_p2tr_script,
 };
+use silentpayments::psbt::Bip375PsbtExt;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 
@@ -22,7 +23,7 @@ pub fn finalize_inputs(
     let mut scan_key_output_indices: HashMap<PublicKey, u32> = HashMap::new();
 
     // Process each output
-    for output_idx in 0..psbt.num_outputs() {
+    for output_idx in 0..psbt.outputs.len() {
         // Check if this is a silent payment output
         let sp_address = match psbt.get_output_sp_address(output_idx) {
             Some(addr) => addr,
@@ -35,7 +36,7 @@ pub fn finalize_inputs(
             .ok_or(Error::IncompleteEcdhCoverage(output_idx))?;
 
         // Verify all inputs contributed shares (unless it's a global share)
-        if !aggregated.is_global && aggregated.num_inputs != psbt.num_inputs() {
+        if !aggregated.is_global && aggregated.num_inputs != psbt.inputs.len() {
             return Err(Error::IncompleteEcdhCoverage(output_idx));
         }
 
@@ -95,9 +96,10 @@ pub fn finalize_inputs(
 mod tests {
     use super::*;
     use crate::{constructor::add_outputs, creator::create_psbt, signer::add_ecdh_shares_full};
-    use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
+    use bip375_core::{PsbtInput, PsbtOutput};
     use bitcoin::hashes::Hash;
     use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
+    use silentpayments::psbt::SilentPaymentOutputInfo;
     use secp256k1::SecretKey;
 
     #[test]
@@ -113,7 +115,7 @@ mod tests {
         let spend_privkey = SecretKey::from_slice(&[20u8; 32]).unwrap();
         let spend_key = PublicKey::from_secret_key(&secp, &spend_privkey);
 
-        let sp_address = SilentPaymentAddress::new(scan_key, spend_key, None);
+        let sp_address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
 
         // Add output
         let outputs = vec![PsbtOutput::silent_payment(
@@ -181,7 +183,7 @@ mod tests {
         let spend_privkey = SecretKey::from_slice(&[20u8; 32]).unwrap();
         let spend_key = PublicKey::from_secret_key(&secp, &spend_privkey);
 
-        let sp_address = SilentPaymentAddress::new(scan_key, spend_key, None);
+        let sp_address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
 
         // Add output
         let outputs = vec![PsbtOutput::silent_payment(
@@ -231,7 +233,7 @@ mod tests {
         let spend_privkey = SecretKey::from_slice(&[20u8; 32]).unwrap();
         let spend_key = PublicKey::from_secret_key(&secp, &spend_privkey);
 
-        let sp_address = SilentPaymentAddress::new(scan_key, spend_key, None);
+        let sp_address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
 
         // Add output
         let outputs = vec![PsbtOutput::silent_payment(

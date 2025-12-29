@@ -8,9 +8,10 @@
 //! - Hardware device: Air-gapped device that signs transactions
 //! - File-based transfer: Simulates QR codes or USB transfer
 
-use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
+use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentOutputInfo};
 use bip375_crypto::script_type_string;
 use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
+use silentpayments::psbt::Bip375PsbtExt;
 
 /// Wallet seeds for deterministic key generation
 pub const HW_WALLET_SEED: &str = "hardware_wallet_coldcard_demo";
@@ -30,17 +31,17 @@ pub fn get_hardware_wallet(mnemonic: Option<&str>) -> Result<SimpleWallet, Strin
 }
 
 /// Get the recipient address for silent payment
-pub fn get_recipient_address() -> SilentPaymentAddress {
+pub fn get_recipient_address() -> SilentPaymentOutputInfo {
     let wallet = SimpleWallet::new(RECIPIENT_SEED);
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, None)
+    SilentPaymentOutputInfo::new(scan_key, spend_key, None)
 }
 
 /// Get the attacker's address (for attack simulation)
-pub fn get_attacker_address() -> SilentPaymentAddress {
+pub fn get_attacker_address() -> SilentPaymentOutputInfo {
     let wallet = SimpleWallet::new(ATTACKER_SEED);
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, None)
+    SilentPaymentOutputInfo::new(scan_key, spend_key, None)
 }
 
 /// Get the virtual wallet with pre-configured UTXOs
@@ -88,7 +89,7 @@ pub fn create_transaction_outputs(
     let (scan_key, spend_key) = hw_wallet.scan_spend_keys();
 
     // Change output: Silent payment back to hardware wallet with label=0 (reserved for change per BIP 352)
-    let change_address = SilentPaymentAddress::new(scan_key, spend_key, Some(0));
+    let change_address = SilentPaymentOutputInfo::new(scan_key, spend_key, Some(0));
 
     let mut outputs = Vec::new();
     if config.change_amount > 0 {
@@ -557,7 +558,7 @@ impl Default for TweakDatabase {
 // BIP32 Derivation Utilities
 // =============================================================================
 
-use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
+use bip375_core::SilentPaymentPsbt;
 use bip375_roles::updater::{add_input_bip32_derivation, add_output_bip32_derivation};
 
 /// Add BIP32 derivation info for transaction inputs

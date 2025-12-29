@@ -86,14 +86,13 @@ pub fn create_psbt(num_inputs: usize, num_outputs: usize) -> Result<SilentPaymen
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bip375_core::Bip375PsbtExt;
 
     #[test]
     fn test_create_psbt() {
         let psbt = create_psbt(2, 3).unwrap();
 
-        assert_eq!(psbt.num_inputs(), 2);
-        assert_eq!(psbt.num_outputs(), 3);
+        assert_eq!(psbt.inputs.len(), 2);
+        assert_eq!(psbt.outputs.len(), 3);
 
         // Check version field
         assert_eq!(psbt.global.version, psbt_v2::V2);

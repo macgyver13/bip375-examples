@@ -8,11 +8,12 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, Bip375PsbtExt, PsbtInput, SilentPaymentPsbt};
+use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, PsbtInput, SilentPaymentPsbt};
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bip375_io::PsbtMetadata;
 use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use bitcoin::{OutPoint, Sequence};
+use silentpayments::psbt::Bip375PsbtExt;
 use secp256k1::{PublicKey, Secp256k1};
 use std::io::{self, Write};
 
@@ -564,7 +565,7 @@ impl HardwareDevice {
         }
 
         // Check ECDH coverage
-        let num_inputs = psbt.num_inputs();
+        let num_inputs = psbt.inputs.len();
         let mut inputs_with_ecdh = 0;
         for i in 0..num_inputs {
             let shares = psbt.get_input_ecdh_shares(i);

@@ -7,16 +7,17 @@
 //! - Bob controls input 1
 //! - Charlie controls input 2
 
-use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
+use bip375_core::{PsbtInput, PsbtOutput};
 use bip375_crypto::script_type_string;
 use bip375_helpers::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
+use silentpayments::psbt::SilentPaymentOutputInfo;
 use secp256k1::SecretKey;
 
 /// Get the silent payment recipient address (same for all signers)
-pub fn get_recipient_address() -> SilentPaymentAddress {
+pub fn get_recipient_address() -> SilentPaymentOutputInfo {
     let wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, None)
+    SilentPaymentOutputInfo::new(scan_key, spend_key, None)
 }
 
 /// Get a party's virtual wallet by name

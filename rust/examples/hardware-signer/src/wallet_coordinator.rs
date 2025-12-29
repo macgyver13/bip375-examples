@@ -9,7 +9,7 @@
 
 use crate::shared_utils::TweakDatabase;
 use crate::shared_utils::*;
-use bip375_core::Bip375PsbtExt;
+use bip375_core::extensions::HrnPsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bip375_io::PsbtMetadata;
 use bip375_roles::{
@@ -19,6 +19,7 @@ use bip375_roles::{
     input_finalizer::finalize_inputs,
     validation::{validate_psbt, ValidationLevel},
 };
+use silentpayments::psbt::Bip375PsbtExt;
 use secp256k1::Secp256k1;
 use std::collections::HashSet;
 

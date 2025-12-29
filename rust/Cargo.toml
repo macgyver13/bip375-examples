@@ -12,6 +12,8 @@ bip375-core.workspace = true
 bip375-crypto.workspace = true
 bip375-io.workspace = true
 bip375-roles.workspace = true
+psbt-v2.workspace = true
+silentpayments.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -42,7 +44,9 @@ repository = "https://github.com/bitcoin/bips"
 [workspace.dependencies]
 bitcoin = "0.32.6"
 secp256k1 = { version = "0.29", features = ["rand", "global-context", "serde"] }
-psbt-v2 = { git = "https://github.com/tcharding/rust-psbt", features = ["silent-payments"] }
+#psbt-v2 = { git = "https://github.com/tcharding/rust-psbt", features = ["silent-payments"] }
+psbt-v2 = { path = "/Users/ron/src/rust-psbt", features = ["silent-payments"] }
+silentpayments = { path = "/Users/ron/src/rust-silentpayments", features = ["psbt"] }
 
 # Cryptography
 bitcoin_hashes = "0.13"

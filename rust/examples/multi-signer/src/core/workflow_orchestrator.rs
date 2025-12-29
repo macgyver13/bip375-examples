@@ -4,8 +4,9 @@
 
 use super::app_state::*;
 use crate::workflow_actions;
-use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
+use bip375_core::SilentPaymentPsbt;
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
+use silentpayments::psbt::Bip375PsbtExt;
 use secp256k1::Secp256k1;
 
 /// Orchestrates multi-party workflow steps
@@ -24,7 +25,7 @@ impl WorkflowOrchestrator {
 
     /// Compute ECDH coverage from PSBT
     pub fn compute_ecdh_coverage(psbt: &SilentPaymentPsbt) -> EcdhCoverageState {
-        let total_inputs = psbt.num_inputs();
+        let total_inputs = psbt.inputs.len();
         let mut inputs_with_ecdh = 0;
 
         // Count inputs that have ECDH shares

@@ -1,9 +1,10 @@
 pub mod assignment;
 
 use crate::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
-use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
+use bip375_core::{PsbtInput, PsbtOutput};
 use bip375_crypto::pubkey_to_p2wpkh_script;
 use bitcoin::Amount;
+use silentpayments::psbt::SilentPaymentOutputInfo;
 
 pub use assignment::{assign_inputs_to_parties, validate_assignments, InputAssignment};
 
@@ -76,7 +77,7 @@ pub fn build_inputs_from_multi_party_config(
 pub fn build_outputs(
     recipient_amount: u64,
     change_amount: u64,
-    recipient_address: &SilentPaymentAddress,
+    recipient_address: &SilentPaymentOutputInfo,
     change_wallet: &SimpleWallet,
 ) -> Result<Vec<PsbtOutput>, String> {
     let change_pubkey = change_wallet.input_key_pair(0).1;
@@ -152,7 +153,7 @@ mod tests {
 
         let recipient = SimpleWallet::new("recipient_test_seed");
         let (scan_key, spend_key) = recipient.scan_spend_keys();
-        let address = SilentPaymentAddress::new(scan_key, spend_key, None);
+        let address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
 
         let change_wallet = SimpleWallet::new("change_test_seed");
 
@@ -171,7 +172,7 @@ mod tests {
 
         let recipient = SimpleWallet::new("recipient_test_seed");
         let (scan_key, spend_key) = recipient.scan_spend_keys();
-        let address = SilentPaymentAddress::new(scan_key, spend_key, None);
+        let address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
 
         let change_wallet = SimpleWallet::new("change_test_seed");
 

@@ -7,13 +7,14 @@
 //! - **P2TR SP inputs**: Use [`sign_sp_inputs()`] with tweaked key + Schnorr → `tap_key_sig`
 //! - **Mixed transactions**: Call both functions as needed for different input types
 
-use bip375_core::{Bip375PsbtExt, EcdhShareData, Error, PsbtInput, Result, SilentPaymentPsbt};
+use bip375_core::{Error, PsbtInput, Result, SilentPaymentPsbt};
 use bip375_crypto::{
     apply_tweak_to_privkey, compute_ecdh_share, dleq_generate_proof, sign_p2pkh_input,
     sign_p2tr_input, sign_p2wpkh_input,
 };
 use bitcoin::key::TapTweak;
 use bitcoin::ScriptBuf;
+use silentpayments::psbt::{EcdhShareData, Bip375PsbtExt};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use std::collections::HashSet;
 
