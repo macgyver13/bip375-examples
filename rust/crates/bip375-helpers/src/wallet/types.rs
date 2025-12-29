@@ -3,11 +3,12 @@
 //! Provides virtual wallet, UTXO management, and transaction configuration
 //! utilities for building BIP-375 demonstration applications.
 
-use bip375_core::PsbtInput;
-use bip375_crypto::{
-    internal_key_to_p2tr_script, pubkey_to_p2wpkh_script, script_type_string,
-    tweaked_key_to_p2tr_script,
+use spdk_core::psbt::crypto::{
+    apply_tweak_to_privkey, internal_key_to_p2tr_script, pubkey_to_p2wpkh_script,
+    script_type_string, tweaked_key_to_p2tr_script,
 };
+use spdk_core::psbt::PsbtInput;
+
 use bip39::{Language, Mnemonic};
 use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
@@ -422,8 +423,8 @@ impl VirtualWallet {
                 let (final_pubkey, tweak) = if has_sp_tweak {
                     // Generate a deterministic tweak for this UTXO
                     let tweak = Self::generate_demo_tweak(idx);
-                    let tweaked_privkey = bip375_crypto::apply_tweak_to_privkey(&privkey, &tweak)
-                        .expect("Valid tweak");
+                    let tweaked_privkey =
+                        apply_tweak_to_privkey(&privkey, &tweak).expect("Valid tweak");
                     let tweaked_pubkey = PublicKey::from_secret_key(&secp, &tweaked_privkey);
                     (tweaked_pubkey, Some(tweak))
                 } else {
@@ -439,7 +440,6 @@ impl VirtualWallet {
                     (ScriptType::P2TR, false) => {
                         // Regular BIP-86 taproot - needs BIP-341 tweak
                         internal_key_to_p2tr_script(&final_pubkey)
-                            .expect("Failed to create P2TR script")
                     }
                 };
 

@@ -8,9 +8,11 @@
 //! - Hardware device: Air-gapped device that signs transactions
 //! - File-based transfer: Simulates QR codes or USB transfer
 
-use bip375_core::{PsbtInput, PsbtOutput, SilentPaymentAddress};
-use bip375_crypto::script_type_string;
 use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
+use silentpayments::Network;
+use silentpayments::SilentPaymentAddress;
+use spdk_core::psbt::crypto::script_type_string;
+use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, PsbtOutput};
 
 /// Wallet seeds for deterministic key generation
 pub const HW_WALLET_SEED: &str = "hardware_wallet_coldcard_demo";
@@ -33,14 +35,16 @@ pub fn get_hardware_wallet(mnemonic: Option<&str>) -> Result<SimpleWallet, Strin
 pub fn get_recipient_address() -> SilentPaymentAddress {
     let wallet = SimpleWallet::new(RECIPIENT_SEED);
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, None)
+    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
+        .expect("Failed to create recipient address")
 }
 
 /// Get the attacker's address (for attack simulation)
 pub fn get_attacker_address() -> SilentPaymentAddress {
     let wallet = SimpleWallet::new(ATTACKER_SEED);
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, None)
+    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
+        .expect("Failed to create attacker address")
 }
 
 /// Get the virtual wallet with pre-configured UTXOs
@@ -88,19 +92,22 @@ pub fn create_transaction_outputs(
     let (scan_key, spend_key) = hw_wallet.scan_spend_keys();
 
     // Change output: Silent payment back to hardware wallet with label=0 (reserved for change per BIP 352)
-    let change_address = SilentPaymentAddress::new(scan_key, spend_key, Some(0));
+    let change_address = SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
+        .expect("Failed to create change address");
 
     let mut outputs = Vec::new();
     if config.change_amount > 0 {
         outputs.push(PsbtOutput::silent_payment(
             Amount::from_sat(config.change_amount),
             change_address,
+            Some(0), // label=0 reserved for change
         ));
     }
     if config.recipient_amount > 0 {
         outputs.push(PsbtOutput::silent_payment(
             Amount::from_sat(config.recipient_amount),
             get_recipient_address(),
+            None, // no label for recipient
         ));
     }
 
@@ -149,8 +156,12 @@ pub fn display_transaction_summary_with_dnssec(
     println!("  Outputs:");
     for (i, output) in outputs.iter().enumerate() {
         match output {
-            PsbtOutput::SilentPayment { amount, address } => {
-                let label_info = match address.label {
+            PsbtOutput::SilentPayment {
+                amount,
+                address,
+                label,
+            } => {
+                let label_info = match label {
                     Some(0) => " (Change - label 0)",
                     Some(n) => &format!(" (label {})", n),
                     None => "",
@@ -158,11 +169,11 @@ pub fn display_transaction_summary_with_dnssec(
                 println!("   Output {}{}: {} sats", i, label_info, amount.to_sat());
                 println!(
                     "      Scan Key:  {}",
-                    hex::encode(address.scan_key.serialize())
+                    hex::encode(address.get_scan_key().serialize())
                 );
                 println!(
                     "      Spend Key: {}",
-                    hex::encode(address.spend_key.serialize())
+                    hex::encode(address.get_spend_key().serialize())
                 );
 
                 // Display DNSSEC proof inline if available for this output
@@ -557,8 +568,8 @@ impl Default for TweakDatabase {
 // BIP32 Derivation Utilities
 // =============================================================================
 
-use bip375_core::{Bip375PsbtExt, SilentPaymentPsbt};
-use bip375_roles::updater::{add_input_bip32_derivation, add_output_bip32_derivation};
+use spdk_core::psbt::roles::updater::{add_input_bip32_derivation, add_output_bip32_derivation};
+use spdk_core::psbt::SilentPaymentPsbt;
 
 /// Add BIP32 derivation info for transaction inputs
 ///
@@ -596,7 +607,12 @@ pub fn add_input_bip32_derivations(
             wallet.input_key_pair(utxo_id as u32)
         };
 
-        add_input_bip32_derivation(psbt, input_idx, &pubkey, master_fingerprint, path)
+        let derivation = spdk_core::psbt::roles::updater::Bip32Derivation {
+            master_fingerprint,
+            path,
+        };
+
+        add_input_bip32_derivation(psbt, input_idx, &pubkey, &derivation)
             .map_err(|e| format!("Failed to add input derivation: {}", e))?;
 
         count += 1;
@@ -638,8 +654,8 @@ pub fn add_output_bip32_derivations(
             PsbtOutput::SilentPayment { address, .. } => {
                 // Change detection logic: Compare scan AND spend keys
                 // Only add derivations if BOTH keys match (wallet owns this output)
-                let is_change = address.scan_key.serialize() == hw_scan_pubkey.serialize()
-                    && address.spend_key.serialize() == hw_spend_pubkey.serialize();
+                let is_change = address.get_scan_key().serialize() == hw_scan_pubkey.serialize()
+                    && address.get_spend_key().serialize() == hw_spend_pubkey.serialize();
 
                 if !is_change {
                     // This is a recipient output - skip (we don't own these keys)
@@ -669,22 +685,28 @@ pub fn add_output_bip32_derivations(
                 ];
 
                 // Add BOTH derivations (scan + spend)
+                let scan_derivation = spdk_core::psbt::roles::updater::Bip32Derivation {
+                    master_fingerprint,
+                    path: scan_path,
+                };
                 add_output_bip32_derivation(
                     psbt,
                     output_index,
-                    &address.scan_key,
-                    master_fingerprint,
-                    scan_path,
+                    &address.get_scan_key(),
+                    &scan_derivation,
                 )
                 .map_err(|e| format!("Failed to add scan key derivation: {}", e))?;
                 count += 1;
 
+                let spend_derivation = spdk_core::psbt::roles::updater::Bip32Derivation {
+                    master_fingerprint,
+                    path: spend_path,
+                };
                 add_output_bip32_derivation(
                     psbt,
                     output_index,
-                    &address.spend_key,
-                    master_fingerprint,
-                    spend_path,
+                    &address.get_spend_key(),
+                    &spend_derivation,
                 )
                 .map_err(|e| format!("Failed to add spend key derivation: {}", e))?;
                 count += 1;

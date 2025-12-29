@@ -5,8 +5,8 @@
 
 use super::app_state::*;
 use crate::{hw_device::HardwareDevice, wallet_coordinator::WalletCoordinator};
-use bip375_core::SilentPaymentPsbt;
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
+use spdk_core::psbt::SilentPaymentPsbt;
 use std::collections::HashSet;
 
 /// Orchestrates workflow steps and captures PSBT changes

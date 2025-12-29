@@ -29,7 +29,7 @@ enum Bip375Error {
   "PsbtError",
 };
 
-dictionary SilentPaymentAddress {
+dictionary SilentPaymentOutputInfo {
   bytes scan_key;
   bytes spend_key;
   u32? label;
@@ -46,7 +46,7 @@ dictionary Utxo {
 
 [Enum]
 interface OutputRecipient {
-  SilentPayment(SilentPaymentAddress address);
+  SilentPayment(SilentPaymentOutputInfo address);
   Address(bytes script_pubkey);
 };
 
@@ -94,7 +94,7 @@ interface SilentPaymentPsbt {
   sequence<EcdhShare> get_input_ecdh_shares(u32 input_index);
 
   [Throws=Bip375Error]
-  SilentPaymentAddress? get_output_sp_address(u32 output_index);
+  SilentPaymentOutputInfo? get_output_sp_address(u32 output_index);
 
   [Throws=Bip375Error]
   bytes get_output_script(u32 output_index);

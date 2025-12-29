@@ -2,7 +2,8 @@
 
 use crate::errors::Bip375Error;
 use bip375_core as core;
-use bip375_core::Bip375PsbtExt;
+use silentpayments::psbt;
+use silentpayments::psbt::{Bip375PsbtExt, EcdhShareData};
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -10,14 +11,14 @@ use std::sync::{Arc, Mutex};
 // ============================================================================
 
 #[derive(Clone)]
-pub struct SilentPaymentAddress {
+pub struct SilentPaymentOutputInfo {
     pub scan_key: Vec<u8>,
     pub spend_key: Vec<u8>,
     pub label: Option<u32>,
 }
 
-impl SilentPaymentAddress {
-    pub fn from_core(addr: &core::types::SilentPaymentAddress) -> Self {
+impl SilentPaymentOutputInfo {
+    pub fn from_core(addr: &psbt::SilentPaymentOutputInfo) -> Self {
         Self {
             scan_key: addr.scan_key.serialize().to_vec(),
             spend_key: addr.spend_key.serialize().to_vec(),
@@ -25,7 +26,7 @@ impl SilentPaymentAddress {
         }
     }
 
-    pub fn to_core(&self) -> Result<core::types::SilentPaymentAddress, Bip375Error> {
+    pub fn to_core(&self) -> Result<psbt::SilentPaymentOutputInfo, Bip375Error> {
         use secp256k1::PublicKey;
 
         let scan_key =
@@ -33,7 +34,7 @@ impl SilentPaymentAddress {
         let spend_key =
             PublicKey::from_slice(&self.spend_key).map_err(|_| Bip375Error::InvalidKey)?;
 
-        Ok(core::types::SilentPaymentAddress {
+        Ok(psbt::SilentPaymentOutputInfo {
             scan_key,
             spend_key,
             label: self.label,
@@ -53,7 +54,7 @@ pub struct EcdhShare {
 }
 
 impl EcdhShare {
-    pub fn from_core(share: &core::types::EcdhShareData) -> Self {
+    pub fn from_core(share: &EcdhShareData) -> Self {
         Self {
             scan_key: share.scan_key.serialize().to_vec(),
             share_point: share.share.serialize().to_vec(),
@@ -61,7 +62,7 @@ impl EcdhShare {
         }
     }
 
-    pub fn to_core(&self) -> Result<core::types::EcdhShareData, Bip375Error> {
+    pub fn to_core(&self) -> Result<EcdhShareData, Bip375Error> {
         use secp256k1::PublicKey;
 
         let scan_key =
@@ -80,7 +81,7 @@ impl EcdhShare {
             None
         };
 
-        Ok(core::types::EcdhShareData {
+        Ok(EcdhShareData {
             scan_key,
             share,
             dleq_proof,
@@ -143,7 +144,7 @@ impl Utxo {
 
 #[derive(Clone)]
 pub enum OutputRecipient {
-    SilentPayment { address: SilentPaymentAddress },
+    SilentPayment { address: SilentPaymentOutputInfo },
     Address { script_pubkey: Vec<u8> },
 }
 
@@ -318,14 +319,14 @@ impl SilentPaymentPsbt {
 
     pub fn num_inputs(&self) -> u32 {
         let psbt = self.inner.lock().unwrap();
-        psbt.num_inputs() as u32
+        psbt.inputs.len() as u32
     }
 
     pub fn get_input_ecdh_shares(&self, input_index: u32) -> Result<Vec<EcdhShare>, Bip375Error> {
         let psbt = self.inner.lock().unwrap();
         let idx = input_index as usize;
 
-        if idx >= psbt.num_inputs() {
+        if idx >= psbt.inputs.len() {
             return Err(Bip375Error::InvalidData);
         }
 
@@ -336,30 +337,30 @@ impl SilentPaymentPsbt {
 
     pub fn num_outputs(&self) -> u32 {
         let psbt = self.inner.lock().unwrap();
-        psbt.num_outputs() as u32
+        psbt.outputs.len() as u32
     }
 
     pub fn get_output_sp_address(
         &self,
         output_index: u32,
-    ) -> Result<Option<SilentPaymentAddress>, Bip375Error> {
+    ) -> Result<Option<SilentPaymentOutputInfo>, Bip375Error> {
         let psbt = self.inner.lock().unwrap();
         let idx = output_index as usize;
 
-        if idx >= psbt.num_outputs() {
+        if idx >= psbt.outputs.len() {
             return Err(Bip375Error::InvalidData);
         }
 
         Ok(psbt
             .get_output_sp_address(idx)
-            .map(|addr| SilentPaymentAddress::from_core(&addr)))
+            .map(|addr| SilentPaymentOutputInfo::from_core(&addr)))
     }
 
     pub fn get_output_script(&self, output_index: u32) -> Result<Vec<u8>, Bip375Error> {
         let psbt = self.inner.lock().unwrap();
         let idx = output_index as usize;
 
-        if idx >= psbt.num_outputs() {
+        if idx >= psbt.outputs.len() {
             return Err(Bip375Error::InvalidData);
         }
 

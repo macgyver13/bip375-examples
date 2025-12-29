@@ -9,17 +9,17 @@
 
 use crate::shared_utils::TweakDatabase;
 use crate::shared_utils::*;
-use bip375_core::Bip375PsbtExt;
+use bip375_core::extensions::HrnPsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
-use bip375_io::PsbtMetadata;
-use bip375_roles::{
+use secp256k1::Secp256k1;
+use spdk_core::psbt::roles::{
     constructor::{add_inputs, add_outputs},
     creator::create_psbt,
     extractor::extract_transaction,
     input_finalizer::finalize_inputs,
     validation::{validate_psbt, ValidationLevel},
 };
-use secp256k1::Secp256k1;
+use spdk_core::psbt::{io::PsbtMetadata, Bip375PsbtExt, PsbtOutput};
 use std::collections::HashSet;
 
 pub struct WalletCoordinator;
@@ -54,7 +54,7 @@ impl WalletCoordinator {
         display_transaction_summary(config, &hw_wallet, mnemonic);
 
         // Create PSBT
-        let mut psbt = create_psbt(inputs.len(), outputs.len())?;
+        let mut psbt = create_psbt(inputs.len(), outputs.len());
 
         // Add inputs and outputs
         add_inputs(&mut psbt, &inputs)?;
@@ -118,7 +118,7 @@ impl WalletCoordinator {
         // and falls back to mock proof if resolution fails (for demo purposes)
         let dnssec_proof = create_dnssec_proof(dns_name);
 
-        psbt.set_output_dnssec_proof(outputs.len() - 1, dnssec_proof.clone())?;
+        HrnPsbtExt::set_output_dnssec_proof(&mut psbt, outputs.len() - 1, dnssec_proof.clone())?;
 
         println!("   Added DNSSEC proof for recipient output");
         println!("   Proof Format: <1-byte-length><dns_name><RFC 9102 proof>");
@@ -248,7 +248,7 @@ impl WalletCoordinator {
         // Collect expected scan keys
         let hw_scan_key = hw_wallet.scan_key_pair().1;
         let recipient_address = get_recipient_address();
-        let recipient_scan_key = recipient_address.scan_key;
+        let recipient_scan_key = recipient_address.get_scan_key();
 
         let expected_scan_keys: HashSet<Vec<u8>> = [
             hw_scan_key.serialize().to_vec(),
@@ -318,8 +318,8 @@ impl WalletCoordinator {
         let total_output: u64 = outputs
             .iter()
             .map(|o| match o {
-                bip375_core::PsbtOutput::SilentPayment { amount, .. } => amount.to_sat(),
-                bip375_core::PsbtOutput::Regular(txout) => txout.value.to_sat(),
+                PsbtOutput::SilentPayment { amount, .. } => amount.to_sat(),
+                PsbtOutput::Regular(txout) => txout.value.to_sat(),
             })
             .sum();
         let fee = total_input - total_output;

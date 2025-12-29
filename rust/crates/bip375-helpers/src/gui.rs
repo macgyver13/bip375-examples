@@ -2,7 +2,7 @@
 //!
 //! Shared GUI functionality for BIP-375 applications
 
-use bip375_core::SilentPaymentPsbt;
+use spdk_core::psbt::SilentPaymentPsbt;
 
 // Re-export the export function from psbt_io for convenience
 pub use crate::display::psbt_io::export_psbt_with_dialog;
