@@ -9,8 +9,7 @@
 //! - File-based transfer: Simulates QR codes or USB transfer
 
 use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
-use silentpayments::Network;
-use silentpayments::SilentPaymentAddress;
+use silentpayments::{Network, SilentPaymentAddress};
 use spdk_core::psbt::crypto::script_type_string;
 use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, PsbtOutput};
 

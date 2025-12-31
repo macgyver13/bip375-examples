@@ -1,12 +1,14 @@
-use bip375_core::{PsbtInput, SilentPaymentOutputInfo, SilentPaymentPsbt};
-use bip375_crypto::script_type_string;
 use bip375_helpers::display::psbt_io::{load_psbt, save_psbt};
 use bip375_helpers::transaction::{
     build_inputs_from_multi_party_config, build_outputs, validate_transaction_balance,
 };
 use bip375_helpers::wallet::{MultiPartyConfig, PartyConfig, SimpleWallet};
-use bip375_io::PsbtMetadata;
-use bip375_roles::{
+use bitcoin::Transaction;
+use secp256k1::{Secp256k1, SecretKey};
+use silentpayments::{Network, SilentPaymentAddress};
+use spdk_core::psbt::crypto::script_type_string;
+use spdk_core::psbt::io::PsbtMetadata;
+use spdk_core::psbt::roles::{
     constructor::{add_inputs, add_outputs},
     creator::create_psbt,
     extractor::extract_transaction,
@@ -14,8 +16,7 @@ use bip375_roles::{
     signer::{add_ecdh_shares_partial, sign_inputs},
     validation::{self, ValidationLevel},
 };
-use bitcoin::Transaction;
-use secp256k1::{Secp256k1, SecretKey};
+use spdk_core::psbt::{PsbtInput, SilentPaymentPsbt};
 use std::collections::HashMap;
 
 /// Create a new PSBT with inputs and outputs (no ECDH shares, no signatures)
@@ -23,8 +24,7 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
     let num_inputs = config.get_total_inputs();
     let num_outputs = 2;
 
-    let mut psbt = create_psbt(num_inputs, num_outputs)
-        .map_err(|e| format!("Failed to create PSBT: {}", e))?;
+    let mut psbt = create_psbt(num_inputs, num_outputs);
 
     let inputs = build_inputs_from_multi_party_config(config)?;
 
@@ -32,7 +32,8 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
 
     let recipient_wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
     let (scan_key, spend_key) = recipient_wallet.scan_spend_keys();
-    let recipient_address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
+    let recipient_address = SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
+        .map_err(|e| format!("Failed to create recipient address: {}", e))?;
 
     let change_wallet = SimpleWallet::new("change_address_for_multi_signer_test");
 
@@ -131,14 +132,12 @@ pub fn create_input_assignments_metadata(config: &MultiPartyConfig) -> HashMap<u
     assignments
 }
 
-pub fn save_psbt_with_party_metadata(
+pub fn save_psbt_with_metadata(
     psbt: &SilentPaymentPsbt,
-    config: &MultiPartyConfig,
     description: impl Into<String>,
 ) -> Result<(), String> {
     let mut metadata = PsbtMetadata::with_description(description);
     metadata.set_counts(psbt.inputs.len(), psbt.outputs.len());
-    metadata.set_input_assignments(create_input_assignments_metadata(config));
     metadata.update_timestamps();
 
     save_psbt(psbt, Some(metadata)).map_err(|e| format!("Failed to save PSBT: {:?}", e))?;
