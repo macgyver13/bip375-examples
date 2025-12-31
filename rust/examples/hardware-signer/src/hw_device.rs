@@ -8,7 +8,7 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::extensions::PSBT_OUT_DNSSEC_PROOF;
+use bip375_helpers::{HrnPsbtExt, PSBT_OUT_DNSSEC_PROOF};
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bitcoin::{OutPoint, Sequence};
 use secp256k1::{PublicKey, Secp256k1};
