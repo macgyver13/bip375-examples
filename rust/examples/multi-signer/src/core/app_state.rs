@@ -2,8 +2,8 @@
 //!
 //! Manages state for flexible multi-party signing workflow
 
-use bip375_core::SilentPaymentPsbt;
 use bip375_helpers::wallet::MultiPartyConfig;
+use spdk_core::psbt::SilentPaymentPsbt;
 use std::collections::HashSet;
 
 // Re-export types from gui-common for convenience
