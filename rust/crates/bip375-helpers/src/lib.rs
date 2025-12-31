@@ -10,8 +10,8 @@
 
 pub mod display;
 pub mod gui;
+pub mod hrn_ext;
 pub mod transaction;
 pub mod wallet;
-pub mod hrn_ext;
 
 pub use hrn_ext::{HrnPsbtExt, PSBT_OUT_DNSSEC_PROOF};

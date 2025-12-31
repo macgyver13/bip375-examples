@@ -1,3 +1,3 @@
 fn main() {
-    uniffi::generate_scaffolding("src/bip375.udl").unwrap();
+    uniffi::generate_scaffolding("src/spdk_psbt.udl").unwrap();
 }

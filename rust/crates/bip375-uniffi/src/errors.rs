@@ -35,44 +35,77 @@ impl fmt::Display for Bip375Error {
 
 impl std::error::Error for Bip375Error {}
 
-// Conversion from core errors
-impl From<bip375_core::Error> for Bip375Error {
-    fn from(err: bip375_core::Error) -> Self {
+// Conversion from spdk-core errors
+impl From<spdk_core::psbt::Error> for Bip375Error {
+    fn from(err: spdk_core::psbt::Error) -> Self {
         match err {
-            bip375_core::Error::InvalidFieldData(_) => Bip375Error::InvalidData,
-            bip375_core::Error::Serialization(_) => Bip375Error::SerializationError,
-            bip375_core::Error::Deserialization(_) => Bip375Error::SerializationError,
-            bip375_core::Error::InvalidAddress(_) => Bip375Error::InvalidAddress,
-            bip375_core::Error::InvalidSignature(_) => Bip375Error::InvalidProof,
-            bip375_core::Error::DleqVerificationFailed(_) => Bip375Error::InvalidProof,
-            _ => Bip375Error::PsbtError,
+            // Field and data errors
+            spdk_core::psbt::Error::InvalidFieldData(_) => Bip375Error::InvalidData,
+            spdk_core::psbt::Error::InvalidFieldType(_) => Bip375Error::InvalidData,
+            spdk_core::psbt::Error::MissingField(_) => Bip375Error::InvalidData,
+
+            // Serialization errors
+            spdk_core::psbt::Error::Serialization(_) => Bip375Error::SerializationError,
+            spdk_core::psbt::Error::Deserialization(_) => Bip375Error::SerializationError,
+            spdk_core::psbt::Error::InvalidMagic => Bip375Error::SerializationError,
+            spdk_core::psbt::Error::InvalidVersion { .. } => Bip375Error::SerializationError,
+
+            // Address and key errors
+            spdk_core::psbt::Error::InvalidAddress(_) => Bip375Error::InvalidAddress,
+            spdk_core::psbt::Error::InvalidPublicKey => Bip375Error::InvalidKey,
+
+            // Signature and proof errors
+            spdk_core::psbt::Error::InvalidSignature(_) => Bip375Error::InvalidProof,
+            spdk_core::psbt::Error::DleqVerificationFailed(_) => Bip375Error::InvalidProof,
+            spdk_core::psbt::Error::InvalidEcdhShare(_) => Bip375Error::InvalidProof,
+
+            // PSBT operation errors
+            spdk_core::psbt::Error::ExtractionFailed(_) => Bip375Error::PsbtError,
+            spdk_core::psbt::Error::InvalidInputIndex(_) => Bip375Error::InvalidData,
+            spdk_core::psbt::Error::InvalidOutputIndex(_) => Bip375Error::InvalidData,
+            spdk_core::psbt::Error::IncompleteEcdhCoverage(_) => Bip375Error::ValidationError,
+            spdk_core::psbt::Error::StandardFieldNotAllowed(_) => Bip375Error::InvalidData,
+
+            // Wrapped errors
+            spdk_core::psbt::Error::Bitcoin(_) => Bip375Error::PsbtError,
+            spdk_core::psbt::Error::Secp256k1(_) => Bip375Error::CryptoError,
+            spdk_core::psbt::Error::Hex(_) => Bip375Error::InvalidData,
+            spdk_core::psbt::Error::Io(_) => Bip375Error::IoError,
+            spdk_core::psbt::Error::Other(_) => Bip375Error::PsbtError,
         }
     }
 }
 
-// Conversion from crypto errors
-impl From<bip375_crypto::CryptoError> for Bip375Error {
-    fn from(err: bip375_crypto::CryptoError) -> Self {
+// Conversion from spdk-core crypto errors
+impl From<spdk_core::psbt::crypto::CryptoError> for Bip375Error {
+    fn from(err: spdk_core::psbt::crypto::CryptoError) -> Self {
+        use spdk_core::psbt::crypto::CryptoError;
         match err {
-            bip375_crypto::CryptoError::InvalidPrivateKey => Bip375Error::InvalidKey,
-            bip375_crypto::CryptoError::InvalidPublicKey => Bip375Error::InvalidKey,
-            bip375_crypto::CryptoError::InvalidSignature => Bip375Error::InvalidProof,
-            bip375_crypto::CryptoError::DleqGenerationFailed(_) => Bip375Error::SigningError,
-            bip375_crypto::CryptoError::DleqVerificationFailed => Bip375Error::InvalidProof,
-            _ => Bip375Error::CryptoError,
+            CryptoError::InvalidPrivateKey | CryptoError::InvalidPublicKey => Bip375Error::InvalidKey,
+            CryptoError::InvalidSignature => Bip375Error::InvalidProof,
+            CryptoError::DleqGenerationFailed(_) => Bip375Error::SigningError,
+            CryptoError::DleqVerificationFailed => Bip375Error::InvalidProof,
+            CryptoError::InvalidEcdh => Bip375Error::CryptoError,
+            CryptoError::InvalidDleqProofLength(_) => Bip375Error::InvalidProof,
+            CryptoError::HashError(_) => Bip375Error::CryptoError,
+            CryptoError::Secp256k1(_) => Bip375Error::CryptoError,
+            CryptoError::Other(_) => Bip375Error::CryptoError,
         }
     }
 }
 
-// Conversion from I/O errors
-impl From<bip375_io::IoError> for Bip375Error {
-    fn from(err: bip375_io::IoError) -> Self {
+// Conversion from spdk-core I/O errors
+impl From<spdk_core::psbt::io::IoError> for Bip375Error {
+    fn from(err: spdk_core::psbt::io::IoError) -> Self {
+        use spdk_core::psbt::io::IoError;
         match err {
-            bip375_io::IoError::Io(_) => Bip375Error::IoError,
-            bip375_io::IoError::Psbt(e) => e.into(),
-            bip375_io::IoError::InvalidFormat(_) => Bip375Error::ValidationError,
-            bip375_io::IoError::NotFound(_) => Bip375Error::IoError,
-            _ => Bip375Error::IoError,
+            IoError::Io(_) => Bip375Error::IoError,
+            IoError::Json(_) => Bip375Error::SerializationError,
+            IoError::Psbt(e) => e.into(),
+            IoError::Hex(_) => Bip375Error::InvalidData,
+            IoError::InvalidFormat(_) => Bip375Error::ValidationError,
+            IoError::NotFound(_) => Bip375Error::IoError,
+            IoError::Other(_) => Bip375Error::IoError,
         }
     }
 }
