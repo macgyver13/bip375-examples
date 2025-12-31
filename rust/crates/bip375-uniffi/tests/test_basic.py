@@ -3,9 +3,9 @@ Basic tests for BIP-375 Python bindings.
 """
 
 import pytest
-import bip375
+import spdk_psbt
 
-from bip375 import *
+from spdk_psbt import *
 
 
 # Test fixtures
@@ -35,15 +35,13 @@ def sample_psbt(test_keys):
     ]
 
     outputs = [
-        Output(
+        PsbtOutput.SILENT_PAYMENT(
             amount=90000,
-            recipient=OutputRecipient.SILENT_PAYMENT(
-                address=SilentPaymentOutputInfo(
-                    scan_key=test_keys["scan_key"],
-                    spend_key=test_keys["spend_key"],
-                    label=None,
-                )
+            address=SilentPaymentAddress(
+                scan_key=test_keys["scan_key"],
+                spend_key=test_keys["spend_key"],
             ),
+            label=None,
         )
     ]
 
@@ -58,27 +56,25 @@ class TestCoreTypes:
 
     def test_silent_payment_address(self, test_keys):
         """Test SilentPaymentOutputInfo creation."""
-        addr = SilentPaymentOutputInfo(
+        addr = SilentPaymentAddress(
             scan_key=test_keys["scan_key"],
             spend_key=test_keys["spend_key"],
-            label=None,
         )
         assert addr.scan_key == test_keys["scan_key"]
         assert addr.spend_key == test_keys["spend_key"]
-        assert addr.label is None
 
-    def test_silent_payment_address_with_label(self, test_keys):
-        """Test SilentPaymentOutputInfo with label."""
-        addr = SilentPaymentOutputInfo(
-            scan_key=test_keys["scan_key"],
-            spend_key=test_keys["spend_key"],
-            label=42,
-        )
-        assert addr.label == 42
+    # def test_silent_payment_address_with_label(self, test_keys):
+    #     """Test SilentPaymentOutputInfo with label."""
+    #     addr = SilentPaymentAddress(
+    #         scan_key=test_keys["scan_key"],
+    #         spend_key=test_keys["spend_key"],
+    #         label=42,
+    #     )
+    #     assert addr.label == 42
 
     def test_ecdh_share(self, test_keys):
         """Test EcdhShare creation."""
-        share = bip375.EcdhShare(
+        share = EcdhShare(
             scan_key=test_keys["scan_key"],
             share_point=test_keys["pubkey"],
             dleq_proof=None,
@@ -103,7 +99,7 @@ class TestPsbt:
         assert len(serialized) > 0
 
         # Deserialize
-        deserialized = bip375.SilentPaymentPsbt.deserialize(serialized)
+        deserialized = SilentPaymentPsbt.deserialize(serialized)
         assert deserialized.num_inputs() == sample_psbt.num_inputs()
         assert deserialized.num_outputs() == sample_psbt.num_outputs()
 
@@ -147,7 +143,7 @@ class TestRoles:
     def test_add_ecdh_shares(self, sample_psbt, test_keys):
         """Test adding ECDH shares."""
         inputs = [
-            bip375.Utxo(
+            Utxo(
                 txid="a" * 64,
                 vout=0,
                 amount=100000,
@@ -169,7 +165,7 @@ class TestRoles:
     #     """Test ECDH share aggregation."""
     #     # First add ECDH shares
     #     inputs = [
-    #         bip375.Utxo(
+    #         Utxo(
     #             txid="a" * 64,
     #             vout=0,
     #             amount=100000,
@@ -210,7 +206,7 @@ class TestFileIO:
         """Test JSON PSBT save/load with metadata."""
         file_path = str(tmp_path / "test.json")
 
-        metadata = bip375.PsbtMetadata(
+        metadata = PsbtMetadata(
             creator="test-suite",
             stage="created",
             description="Test PSBT",

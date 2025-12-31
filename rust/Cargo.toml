@@ -20,7 +20,7 @@ base64.workspace = true
 resolver = "2"
 members = [
     "crates/bip375-helpers",
-    "crates/bip375-uniffi",
+    "crates/spdk-uniffi",
     "examples/hardware-signer",
     "examples/multi-signer",
     "tools/psbt-viewer",
@@ -36,8 +36,8 @@ repository = "https://github.com/bitcoin/bips"
 [workspace.dependencies]
 bitcoin = "0.32.6"
 secp256k1 = { version = "0.29", features = ["rand", "global-context", "serde"] }
-silentpayments = { path = "/Users/ron/src/rust-silentpayments" }
-spdk-core = { path = "/Users/ron/src/spdk/spdk-core" }
+silentpayments = { git = "https://github.com/macgyver13/rust-silentpayments.git", branch = "bip375-additions" }
+spdk-core = { git = "https://github.com/macgyver13/spdk.git", branch = "rust-dleq-testing" }
 
 # Cryptography
 bitcoin_hashes = "0.13"
