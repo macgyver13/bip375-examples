@@ -8,7 +8,6 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-bip375-core.workspace = true
 silentpayments.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
@@ -20,9 +19,8 @@ base64.workspace = true
 [workspace]
 resolver = "2"
 members = [
-    "crates/bip375-core",
     "crates/bip375-helpers",
-    # "crates/bip375-uniffi",
+    "crates/bip375-uniffi",
     "examples/hardware-signer",
     "examples/multi-signer",
     "tools/psbt-viewer",
@@ -66,7 +64,6 @@ dnssec-prover = { version = "0.6", features = ["std", "tokio", "validation"] }
 tokio = { version = "1", features = ["rt", "macros", "net"] }
 
 # Internal crates
-bip375-core = { path = "crates/bip375-core" }
 bip375-helpers = { path = "crates/bip375-helpers" }
 
 [profile.release]

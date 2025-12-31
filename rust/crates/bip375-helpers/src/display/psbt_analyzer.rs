@@ -5,7 +5,7 @@
 
 use super::field_identifier::{FieldIdentifier, TransactionSummary};
 
-use bip375_core::extensions::PSBT_OUT_DNSSEC_PROOF;
+use crate::PSBT_OUT_DNSSEC_PROOF;
 use spdk_core::psbt::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt, SilentPaymentPsbt};
 use std::collections::HashSet;
 

@@ -9,7 +9,7 @@
 
 use crate::shared_utils::TweakDatabase;
 use crate::shared_utils::*;
-use bip375_core::extensions::HrnPsbtExt;
+use bip375_helpers::HrnPsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use secp256k1::Secp256k1;
 use spdk_core::psbt::roles::{
