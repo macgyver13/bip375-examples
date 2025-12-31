@@ -7,17 +7,20 @@
 //! - Bob controls input 1
 //! - Charlie controls input 2
 
-use bip375_core::{PsbtInput, PsbtOutput};
-use bip375_crypto::script_type_string;
 use bip375_helpers::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
+use bitcoin::Amount;
 use secp256k1::SecretKey;
-use silentpayments::psbt::SilentPaymentOutputInfo;
+use silentpayments::{Network, SilentPaymentAddress};
+use spdk_core::psbt::crypto::{pubkey_to_p2wpkh_script, script_type_string};
+use spdk_core::psbt::{PsbtInput, PsbtOutput};
 
 /// Get the silent payment recipient address (same for all signers)
-pub fn get_recipient_address() -> SilentPaymentOutputInfo {
+pub fn get_recipient_address() -> SilentPaymentAddress {
     let wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentOutputInfo::new(scan_key, spend_key, None)
+
+    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
+        .expect("Failed to create recipient address")
 }
 
 /// Get a party's virtual wallet by name
@@ -62,8 +65,6 @@ pub fn get_party_private_key(party_name: &str) -> SecretKey {
 ///
 /// The config should be the combined config with total amounts.
 pub fn get_transaction_outputs(config: &TransactionConfig) -> Vec<PsbtOutput> {
-    use bip375_crypto::pubkey_to_p2wpkh_script;
-    use bitcoin::Amount;
     // Change output to a regular P2WPKH address
     let change_wallet = SimpleWallet::new("change_address_for_multi_signer_test");
     let change_pubkey = change_wallet.input_key_pair(0).1;
@@ -76,6 +77,7 @@ pub fn get_transaction_outputs(config: &TransactionConfig) -> Vec<PsbtOutput> {
         PsbtOutput::silent_payment(
             Amount::from_sat(config.recipient_amount),
             get_recipient_address(),
+            None,
         ),
     ]
 }
@@ -128,7 +130,11 @@ pub fn print_scenario_overview(inputs: &[PsbtInput], config: &TransactionConfig)
     println!("  Outputs:");
     for (i, output) in outputs.iter().enumerate() {
         match output {
-            PsbtOutput::SilentPayment { amount, address } => {
+            PsbtOutput::SilentPayment {
+                amount,
+                address,
+                label,
+            } => {
                 println!("   Output {} (Silent Payment): {} sats", i, amount.to_sat());
                 println!(
                     "      Scan Key:  {}",
