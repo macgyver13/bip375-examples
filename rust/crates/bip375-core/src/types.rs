@@ -3,7 +3,7 @@
 //! Core types for silent payments in PSBTs.
 
 use bitcoin::{Amount, OutPoint, ScriptBuf, Sequence, TxOut};
-use silentpayments::psbt::SilentPaymentOutputInfo;
+// use silentpayments::psbt::SilentPaymentOutputInfo;
 use secp256k1::SecretKey;
 
 

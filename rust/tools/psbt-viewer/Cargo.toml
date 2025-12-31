@@ -5,11 +5,11 @@ edition.workspace = true
 
 [dependencies]
 bip375-core.workspace = true
-bip375-helpers = { workspace = true }
-bip375-io.workspace = true
+bip375-helpers.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+spdk-core.workspace = true
 slint = "1.8"
-serde = { workspace = true }
-serde_json = { workspace = true }
 rfd = "0.15"
 
 [build-dependencies]

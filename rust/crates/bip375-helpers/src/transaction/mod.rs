@@ -1,10 +1,10 @@
 pub mod assignment;
 
 use crate::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
-use bip375_core::{PsbtInput, PsbtOutput};
-use bip375_crypto::pubkey_to_p2wpkh_script;
 use bitcoin::Amount;
-use silentpayments::psbt::SilentPaymentOutputInfo;
+use silentpayments::SilentPaymentAddress;
+use spdk_core::psbt::crypto::pubkey_to_p2wpkh_script;
+use spdk_core::psbt::{PsbtInput, PsbtOutput};
 
 pub use assignment::{assign_inputs_to_parties, validate_assignments, InputAssignment};
 
@@ -77,7 +77,7 @@ pub fn build_inputs_from_multi_party_config(
 pub fn build_outputs(
     recipient_amount: u64,
     change_amount: u64,
-    recipient_address: &SilentPaymentOutputInfo,
+    recipient_address: &SilentPaymentAddress,
     change_wallet: &SimpleWallet,
 ) -> Result<Vec<PsbtOutput>, String> {
     let change_pubkey = change_wallet.input_key_pair(0).1;
@@ -88,6 +88,7 @@ pub fn build_outputs(
         PsbtOutput::silent_payment(
             Amount::from_sat(recipient_amount),
             recipient_address.clone(),
+            None, // label
         ),
     ])
 }
@@ -153,7 +154,9 @@ mod tests {
 
         let recipient = SimpleWallet::new("recipient_test_seed");
         let (scan_key, spend_key) = recipient.scan_spend_keys();
-        let address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
+        let address =
+            SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, 0)
+                .unwrap();
 
         let change_wallet = SimpleWallet::new("change_test_seed");
 
@@ -172,7 +175,9 @@ mod tests {
 
         let recipient = SimpleWallet::new("recipient_test_seed");
         let (scan_key, spend_key) = recipient.scan_spend_keys();
-        let address = SilentPaymentOutputInfo::new(scan_key, spend_key, None);
+        let address =
+            SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, 0)
+                .unwrap();
 
         let change_wallet = SimpleWallet::new("change_test_seed");
 

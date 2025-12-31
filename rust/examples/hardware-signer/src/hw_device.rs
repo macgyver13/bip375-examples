@@ -8,13 +8,16 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_core::{extensions::PSBT_OUT_DNSSEC_PROOF, PsbtInput, SilentPaymentPsbt};
+use bip375_core::extensions::PSBT_OUT_DNSSEC_PROOF;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
-use bip375_io::PsbtMetadata;
-use bip375_roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use bitcoin::{OutPoint, Sequence};
-use silentpayments::psbt::Bip375PsbtExt;
 use secp256k1::{PublicKey, Secp256k1};
+use spdk_core::psbt::crypto::{
+    internal_key_to_p2tr_script, pubkey_to_p2wpkh_script, tweaked_key_to_p2tr_script,
+};
+use spdk_core::psbt::io::PsbtMetadata;
+use spdk_core::psbt::roles::signer::{add_ecdh_shares_partial, sign_inputs};
+use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, SilentPaymentPsbt};
 use std::io::{self, Write};
 
 pub struct HardwareDevice;
@@ -251,11 +254,11 @@ impl HardwareDevice {
 
             println!(
                 "   Legitimate recipient: {}",
-                hex::encode(recipient_address.scan_key.serialize())
+                hex::encode(recipient_address.get_scan_key().serialize())
             );
             println!(
                 "   Malicious attacker:   {}",
-                hex::encode(attacker_address.scan_key.serialize())
+                hex::encode(attacker_address.get_scan_key().serialize())
             );
             println!("   ⚠️  Funds would go to attacker if this succeeds!\n");
 
@@ -263,7 +266,7 @@ impl HardwareDevice {
             // Output 0 is change (hardware wallet), Output 1 is recipient
             if scan_keys.len() >= 2 {
                 println!("   🚨 Replacing recipient scan key with attacker's...");
-                scan_keys[1] = attacker_address.scan_key;
+                scan_keys[1] = attacker_address.get_scan_key();
             }
         } else {
             println!(
@@ -495,11 +498,10 @@ impl HardwareDevice {
 
                     // Check if this pubkey matches the UTXO's script
                     let candidate_script = if witness_utxo.script_pubkey.is_p2wpkh() {
-                        bip375_crypto::pubkey_to_p2wpkh_script(&candidate_pubkey)
+                        pubkey_to_p2wpkh_script(&candidate_pubkey)
                     } else if witness_utxo.script_pubkey.is_p2tr() {
-                        // For regular BIP-86 taproot, apply BIP-341 tweak
-                        bip375_crypto::internal_key_to_p2tr_script(&candidate_pubkey)
-                            .expect("Failed to create P2TR script")
+                        // For P2TR, BIP-86 internal key (regular taproot)
+                        internal_key_to_p2tr_script(&candidate_pubkey)
                     } else {
                         continue; // Unsupported script type
                     };

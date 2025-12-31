@@ -6,8 +6,8 @@ use super::app_state::*;
 use crate::workflow_actions;
 use bip375_core::SilentPaymentPsbt;
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
-use silentpayments::psbt::Bip375PsbtExt;
 use secp256k1::Secp256k1;
+use silentpayments::psbt::Bip375PsbtExt;
 
 /// Orchestrates multi-party workflow steps
 pub struct WorkflowOrchestrator;

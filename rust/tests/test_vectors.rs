@@ -10,10 +10,10 @@
 //! - Input key information
 //! - Scan keys for silent payment outputs
 
-use bip375_core::SilentPaymentPsbt;
-use bip375_roles::validation::{validate_psbt, ValidationLevel};
 use secp256k1::Secp256k1;
 use serde::{Deserialize, Serialize};
+use spdk_core::psbt::roles::validation::{validate_psbt, ValidationLevel};
+use spdk_core::psbt::SilentPaymentPsbt;
 use std::fs;
 
 /// Test vector file location
