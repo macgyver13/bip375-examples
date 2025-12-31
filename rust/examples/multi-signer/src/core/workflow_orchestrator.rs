@@ -4,10 +4,9 @@
 
 use super::app_state::*;
 use crate::workflow_actions;
-use bip375_core::SilentPaymentPsbt;
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
 use secp256k1::Secp256k1;
-use silentpayments::psbt::Bip375PsbtExt;
+use spdk_core::psbt::SilentPaymentPsbt;
 
 /// Orchestrates multi-party workflow steps
 pub struct WorkflowOrchestrator;
@@ -137,7 +136,7 @@ impl WorkflowOrchestrator {
         // Create PSBT without signing
         let psbt = workflow_actions::create_psbt_only(&config)?;
 
-        workflow_actions::save_psbt_with_party_metadata(&psbt, &config, "PSBT Created")?;
+        workflow_actions::save_psbt_with_metadata(&psbt, "PSBT Created")?;
 
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
 
@@ -173,11 +172,7 @@ impl WorkflowOrchestrator {
         let signed_indices =
             workflow_actions::sign_inputs_for_party(&mut psbt, &party, &config, &secp)?;
 
-        workflow_actions::save_psbt_with_party_metadata(
-            &psbt,
-            &config,
-            format!("{} signed", party_name),
-        )?;
+        workflow_actions::save_psbt_with_metadata(&psbt, format!("{} signed", party_name))?;
 
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
 
@@ -200,8 +195,6 @@ impl WorkflowOrchestrator {
 
     /// Flexible workflow: Finalize and extract transaction
     pub fn execute_finalize_flexible(state: &mut AppState) -> Result<(), String> {
-        let config = state.multi_config.clone();
-
         let secp = Secp256k1::new();
         let before_psbt = state.current_psbt.clone();
 
@@ -209,7 +202,7 @@ impl WorkflowOrchestrator {
 
         let _tx = workflow_actions::finalize_and_extract(&mut psbt, &secp)?;
 
-        workflow_actions::save_psbt_with_party_metadata(&psbt, &config, "Transaction Extracted")?;
+        workflow_actions::save_psbt_with_metadata(&psbt, "Transaction Extracted")?;
 
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
 
