@@ -1,9 +1,10 @@
 // Core data types for UniFFI bindings
 
 use crate::errors::Bip375Error;
-use bip375_core as core;
-use silentpayments::psbt;
-use silentpayments::psbt::{Bip375PsbtExt, EcdhShareData};
+use spdk_core::psbt::core as core;
+use spdk_core::psbt;
+use spdk_core::psbt::{Bip375PsbtExt, DleqProof, EcdhShareData};
+use silentpayments::Network;
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -11,34 +12,31 @@ use std::sync::{Arc, Mutex};
 // ============================================================================
 
 #[derive(Clone)]
-pub struct SilentPaymentOutputInfo {
+pub struct SilentPaymentAddress {
     pub scan_key: Vec<u8>,
     pub spend_key: Vec<u8>,
-    pub label: Option<u32>,
 }
 
-impl SilentPaymentOutputInfo {
-    pub fn from_core(addr: &psbt::SilentPaymentOutputInfo) -> Self {
+impl SilentPaymentAddress {
+    pub fn from_core(addr: &silentpayments::SilentPaymentAddress) -> Self {
         Self {
-            scan_key: addr.scan_key.serialize().to_vec(),
-            spend_key: addr.spend_key.serialize().to_vec(),
-            label: addr.label,
+            scan_key: addr.get_scan_key().serialize().to_vec(),
+            spend_key: addr.get_spend_key().serialize().to_vec(),
         }
     }
 
-    pub fn to_core(&self) -> Result<psbt::SilentPaymentOutputInfo, Bip375Error> {
+    pub fn to_core(&self) -> Result<silentpayments::SilentPaymentAddress, Bip375Error> {
         use secp256k1::PublicKey;
 
-        let scan_key =
+        let scan_pubkey =
             PublicKey::from_slice(&self.scan_key).map_err(|_| Bip375Error::InvalidKey)?;
-        let spend_key =
+        let m_pubkey =
             PublicKey::from_slice(&self.spend_key).map_err(|_| Bip375Error::InvalidKey)?;
 
-        Ok(psbt::SilentPaymentOutputInfo {
-            scan_key,
-            spend_key,
-            label: self.label,
-        })
+        // Note: Using Regtest network and version 0 as defaults
+        // In production, these should be configurable
+        silentpayments::SilentPaymentAddress::new(scan_pubkey, m_pubkey, Network::Mainnet, 0)
+            .map_err(|_| Bip375Error::InvalidAddress)
     }
 }
 
@@ -58,7 +56,7 @@ impl EcdhShare {
         Self {
             scan_key: share.scan_key.serialize().to_vec(),
             share_point: share.share.serialize().to_vec(),
-            dleq_proof: share.dleq_proof.map(|p| p.to_vec()),
+            dleq_proof: share.dleq_proof.map(|p| p.as_bytes().to_vec()),
         }
     }
 
@@ -76,7 +74,7 @@ impl EcdhShare {
             }
             let mut proof_array = [0u8; 64];
             proof_array.copy_from_slice(proof_vec);
-            Some(proof_array)
+            Some(DleqProof(proof_array))
         } else {
             None
         };
@@ -139,37 +137,41 @@ impl Utxo {
 }
 
 // ============================================================================
-// Output (simplified for UniFFI)
+// Output (matches spdk-core PsbtOutput)
 // ============================================================================
 
 #[derive(Clone)]
-pub enum OutputRecipient {
-    SilentPayment { address: SilentPaymentOutputInfo },
-    Address { script_pubkey: Vec<u8> },
+pub enum PsbtOutput {
+    Regular { amount: u64, script_pubkey: Vec<u8> },
+    SilentPayment {
+        amount: u64,
+        address: SilentPaymentAddress,
+        label: Option<u32>,
+    },
 }
 
-#[derive(Clone)]
-pub struct Output {
-    pub amount: u64,
-    pub recipient: OutputRecipient,
-}
-
-impl Output {
-    /// Convert to PsbtOutput
+impl PsbtOutput {
+    /// Convert to core::PsbtOutput
     pub fn to_psbt_output(&self) -> Result<core::PsbtOutput, Bip375Error> {
         use bitcoin::{Amount, TxOut};
 
-        let amount = Amount::from_sat(self.amount);
-
-        match &self.recipient {
-            OutputRecipient::SilentPayment { address } => Ok(core::PsbtOutput::SilentPayment {
+        match self {
+            PsbtOutput::Regular {
                 amount,
-                address: address.to_core()?,
-            }),
-            OutputRecipient::Address { script_pubkey } => Ok(core::PsbtOutput::Regular(TxOut {
-                value: amount,
+                script_pubkey,
+            } => Ok(core::PsbtOutput::Regular(TxOut {
+                value: Amount::from_sat(*amount),
                 script_pubkey: bitcoin::ScriptBuf::from_bytes(script_pubkey.clone()),
             })),
+            PsbtOutput::SilentPayment {
+                amount,
+                address,
+                label,
+            } => Ok(core::PsbtOutput::SilentPayment {
+                amount: Amount::from_sat(*amount),
+                address: address.to_core()?,
+                label: *label,
+            }),
         }
     }
 }
@@ -188,7 +190,7 @@ pub struct PsbtMetadata {
 }
 
 impl PsbtMetadata {
-    pub fn from_core(meta: &bip375_io::metadata::PsbtMetadata) -> Self {
+    pub fn from_core(meta: &psbt::io::metadata::PsbtMetadata) -> Self {
         Self {
             creator: meta.creator.clone(),
             stage: meta.stage.clone(),
@@ -198,8 +200,8 @@ impl PsbtMetadata {
         }
     }
 
-    pub fn to_core(&self) -> bip375_io::metadata::PsbtMetadata {
-        bip375_io::metadata::PsbtMetadata {
+    pub fn to_core(&self) -> psbt::io::metadata::PsbtMetadata {
+        psbt::io::metadata::PsbtMetadata {
             creator: self.creator.clone(),
             stage: self.stage.clone(),
             description: self.description.clone(),
@@ -211,7 +213,6 @@ impl PsbtMetadata {
             ecdh_complete: None,
             signatures_complete: None,
             scripts_computed: None,
-            input_assignments: None,
             custom: Default::default(),
         }
     }
@@ -245,57 +246,35 @@ impl AggregatedShare {
 // ============================================================================
 
 pub struct SilentPaymentPsbt {
-    inner: Arc<Mutex<bip375_core::SilentPaymentPsbt>>,
+    inner: Arc<Mutex<psbt::SilentPaymentPsbt>>,
 }
 
 impl SilentPaymentPsbt {
     pub fn new() -> Self {
-        use bitcoin::transaction::Version;
-        use psbt_v2::v2::Global;
-
-        let psbt = bip375_core::SilentPaymentPsbt {
-            global: Global {
-                version: psbt_v2::V2,
-                tx_version: Version(2),
-                fallback_lock_time: None,
-                input_count: 0,
-                output_count: 0,
-                tx_modifiable_flags: 0,
-                sp_dleq_proofs: std::collections::BTreeMap::new(),
-                sp_ecdh_shares: std::collections::BTreeMap::new(),
-                unknowns: std::collections::BTreeMap::new(),
-                xpubs: std::collections::BTreeMap::new(),
-                proprietaries: std::collections::BTreeMap::new(),
-            },
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-        };
-
-        Self {
-            inner: Arc::new(Mutex::new(psbt)),
-        }
+        // Use the creator role to create an empty PSBT
+        let psbt = psbt::roles::creator::create_psbt(0, 0);
+        Self::from_core(psbt)
     }
 
     pub fn create(num_inputs: u32, num_outputs: u32) -> Result<Self, Bip375Error> {
-        let psbt = bip375_roles::creator::create_psbt(num_inputs as usize, num_outputs as usize)?;
-
+        let psbt = psbt::roles::creator::create_psbt(num_inputs as usize, num_outputs as usize);
         Ok(Self::from_core(psbt))
     }
 
     pub fn load(path: String) -> Result<Self, Bip375Error> {
-        let (psbt, _metadata) = bip375_io::file_io::load_psbt(std::path::Path::new(&path))?;
+        let (psbt, _metadata) = psbt::io::load_psbt(std::path::Path::new(&path))?;
         Ok(Self::from_core(psbt))
     }
 
     // Internal constructor for wrapping a core PSBT
-    pub(crate) fn from_core(psbt: bip375_core::SilentPaymentPsbt) -> Self {
+    pub(crate) fn from_core(psbt: psbt::SilentPaymentPsbt) -> Self {
         Self {
             inner: Arc::new(Mutex::new(psbt)),
         }
     }
 
     pub fn deserialize(data: Vec<u8>) -> Result<Self, Bip375Error> {
-        let psbt = bip375_core::SilentPaymentPsbt::deserialize(&data)
+        let psbt = psbt::SilentPaymentPsbt::deserialize(&data)
             .map_err(|_| Bip375Error::SerializationError)?;
 
         Ok(Self {
@@ -312,7 +291,7 @@ impl SilentPaymentPsbt {
     pub fn save(&self, path: String, metadata: Option<PsbtMetadata>) -> Result<(), Bip375Error> {
         self.with_inner(|p| {
             let meta = metadata.map(|m| m.to_core());
-            bip375_io::file_io::save_psbt(p, meta, std::path::Path::new(&path))
+            psbt::io::save_psbt(p, meta, std::path::Path::new(&path))
         })?;
         Ok(())
     }
@@ -343,7 +322,7 @@ impl SilentPaymentPsbt {
     pub fn get_output_sp_address(
         &self,
         output_index: u32,
-    ) -> Result<Option<SilentPaymentOutputInfo>, Bip375Error> {
+    ) -> Result<Option<SilentPaymentAddress>, Bip375Error> {
         let psbt = self.inner.lock().unwrap();
         let idx = output_index as usize;
 
@@ -351,9 +330,13 @@ impl SilentPaymentPsbt {
             return Err(Bip375Error::InvalidData);
         }
 
-        Ok(psbt
-            .get_output_sp_address(idx)
-            .map(|addr| SilentPaymentOutputInfo::from_core(&addr)))
+        // Get the SP info (scan_key, spend_key) and construct address
+        Ok(psbt.get_output_sp_info_v0(idx).map(|(scan_key, spend_key)| {
+            SilentPaymentAddress {
+                scan_key: scan_key.serialize().to_vec(),
+                spend_key: spend_key.serialize().to_vec(),
+            }
+        }))
     }
 
     pub fn get_output_script(&self, output_index: u32) -> Result<Vec<u8>, Bip375Error> {
@@ -382,16 +365,16 @@ impl SilentPaymentPsbt {
         let psbt_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_psbt_input()).collect();
         let psbt_inputs = psbt_inputs?;
 
-        self.with_inner(|p| bip375_roles::constructor::add_inputs(p, &psbt_inputs))?;
+        self.with_inner(|p| psbt::roles::constructor::add_inputs(p, &psbt_inputs))?;
 
         Ok(())
     }
 
-    pub fn add_outputs(&self, outputs: Vec<Output>) -> Result<(), Bip375Error> {
+    pub fn add_outputs(&self, outputs: Vec<PsbtOutput>) -> Result<(), Bip375Error> {
         let psbt_outputs: Result<Vec<_>, _> = outputs.iter().map(|o| o.to_psbt_output()).collect();
         let psbt_outputs = psbt_outputs?;
 
-        self.with_inner(|p| bip375_roles::constructor::add_outputs(p, &psbt_outputs))?;
+        self.with_inner(|p| psbt::roles::constructor::add_outputs(p, &psbt_outputs))?;
 
         Ok(())
     }
@@ -412,7 +395,7 @@ impl SilentPaymentPsbt {
         let core_scan_keys = core_scan_keys.map_err(|_| Bip375Error::InvalidKey)?;
 
         self.with_inner(|p| {
-            bip375_roles::signer::add_ecdh_shares_full(
+            psbt::roles::signer::add_ecdh_shares_full(
                 &secp,
                 p,
                 &psbt_inputs,
@@ -428,7 +411,7 @@ impl SilentPaymentPsbt {
         let secp = secp256k1::Secp256k1::new();
         let psbt_inputs: Result<Vec<_>, _> = inputs.iter().map(|u| u.to_psbt_input()).collect();
         let psbt_inputs = psbt_inputs?;
-        self.with_inner(|p| bip375_roles::signer::sign_inputs(&secp, p, &psbt_inputs))?;
+        self.with_inner(|p| psbt::roles::signer::sign_inputs(&secp, p, &psbt_inputs))?;
 
         Ok(())
     }
@@ -453,7 +436,7 @@ impl SilentPaymentPsbt {
         let indices: Vec<usize> = input_indices.iter().map(|&i| i as usize).collect();
 
         self.with_inner(|p| {
-            bip375_roles::signer::add_ecdh_shares_partial(
+            psbt::roles::signer::add_ecdh_shares_partial(
                 &secp,
                 p,
                 &psbt_inputs,
@@ -468,21 +451,21 @@ impl SilentPaymentPsbt {
 
     pub fn finalize_inputs(&self) -> Result<(), Bip375Error> {
         let secp = secp256k1::Secp256k1::new();
-        self.with_inner(|p| bip375_roles::input_finalizer::finalize_inputs(&secp, p, None))?;
+        self.with_inner(|p| psbt::roles::input_finalizer::finalize_inputs(&secp, p, None))?;
         Ok(())
     }
 
     pub fn extract_transaction(&self) -> Result<Vec<u8>, Bip375Error> {
         use bitcoin::consensus::serialize;
 
-        let tx = self.with_inner(|p| bip375_roles::extractor::extract_transaction(p))?;
+        let tx = self.with_inner(|p| psbt::roles::extractor::extract_transaction(p))?;
         Ok(serialize(&tx))
     }
 
     // Internal access for other modules
     pub(crate) fn with_inner<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&mut bip375_core::SilentPaymentPsbt) -> R,
+        F: FnOnce(&mut psbt::SilentPaymentPsbt) -> R,
     {
         let mut psbt = self.inner.lock().unwrap();
         f(&mut psbt)

@@ -1,7 +1,7 @@
 // Cryptographic functions for UniFFI bindings
 
 use crate::errors::Bip375Error;
-use bip375_crypto as crypto;
+use spdk_core::psbt::crypto as crypto;
 use secp256k1::{PublicKey, SecretKey};
 
 // ============================================================================
@@ -111,28 +111,28 @@ pub fn dleq_generate_proof(
     aux_bytes.copy_from_slice(&aux_rand);
 
     let proof = crypto::dleq::dleq_generate_proof(&secp, &sk, &pk, &aux_bytes, None)?;
-    Ok(proof.to_vec())
+    Ok(proof.as_bytes().to_vec())
 }
 
 pub fn dleq_verify_proof(
     pubkey_a: Vec<u8>,
     pubkey_b: Vec<u8>,
     pubkey_c: Vec<u8>,
-    proof: Vec<u8>,
+    proof_bytes: Vec<u8>,
 ) -> Result<bool, Bip375Error> {
     let secp = secp256k1::Secp256k1::new();
     let pk_a = PublicKey::from_slice(&pubkey_a).map_err(|_| Bip375Error::InvalidKey)?;
     let pk_b = PublicKey::from_slice(&pubkey_b).map_err(|_| Bip375Error::InvalidKey)?;
     let pk_c = PublicKey::from_slice(&pubkey_c).map_err(|_| Bip375Error::InvalidKey)?;
 
-    if proof.len() != 64 {
+    if proof_bytes.len() != 64 {
         return Err(Bip375Error::InvalidData);
     }
+    let mut proof_array = [0u8; 64];
+    proof_array.copy_from_slice(&proof_bytes);
+    let proof = spdk_core::psbt::DleqProof::from(proof_array);
 
-    let mut proof_bytes = [0u8; 64];
-    proof_bytes.copy_from_slice(&proof);
-
-    let result = crypto::dleq::dleq_verify_proof(&secp, &pk_a, &pk_b, &pk_c, &proof_bytes, None)?;
+    let result = crypto::dleq::dleq_verify_proof(&secp, &pk_a, &pk_b, &pk_c, &proof, None)?;
     Ok(result)
 }
 

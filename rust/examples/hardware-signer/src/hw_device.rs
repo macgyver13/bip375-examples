@@ -8,13 +8,11 @@
 //! - Supports attack mode to demonstrate security model
 
 use crate::shared_utils::*;
-use bip375_helpers::{HrnPsbtExt, PSBT_OUT_DNSSEC_PROOF};
+use bip375_helpers::PSBT_OUT_DNSSEC_PROOF;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bitcoin::{OutPoint, Sequence};
 use secp256k1::{PublicKey, Secp256k1};
-use spdk_core::psbt::crypto::{
-    internal_key_to_p2tr_script, pubkey_to_p2wpkh_script, tweaked_key_to_p2tr_script,
-};
+use spdk_core::psbt::crypto::{internal_key_to_p2tr_script, pubkey_to_p2wpkh_script};
 use spdk_core::psbt::io::PsbtMetadata;
 use spdk_core::psbt::roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, SilentPaymentPsbt};
