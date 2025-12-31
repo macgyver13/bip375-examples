@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bip375-core.workspace = true
 base64.workspace = true
 bip39 = "2.0"
 bitcoin.workspace = true

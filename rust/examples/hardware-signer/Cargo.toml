@@ -19,7 +19,6 @@ path = "src/gui/main.rs"
 required-features = ["gui"]
 
 [dependencies]
-bip375-core.workspace = true
 bip375-helpers.workspace = true
 bitcoin.workspace = true
 secp256k1.workspace = true
