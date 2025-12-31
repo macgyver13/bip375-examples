@@ -4412,6 +4412,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
+name = "rust-dleq"
+version = "0.1.0"
+source = "git+https://github.com/macgyver13/rust-dleq.git?branch=master#2e97cd770c1bb1ce1a74d1017868cd62a927387e"
+dependencies = [
+ "bitcoin_hashes",
+ "secp256k1",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4666,6 +4675,7 @@ dependencies = [
 [[package]]
 name = "silentpayments"
 version = "0.4.1"
+source = "git+https://github.com/macgyver13/rust-silentpayments.git?branch=bip375-additions#c0f79e07b8028bc1fa9c904def18dc36ae583c56"
 dependencies = [
  "bech32 0.9.1",
  "bimap",
@@ -4947,6 +4957,7 @@ dependencies = [
 [[package]]
 name = "spdk-core"
 version = "0.1.0"
+source = "git+https://github.com/macgyver13/spdk.git?branch=rust-dleq-testing#1bde82b83d7f2932f87471c07550c4bcfe34df16"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4959,6 +4970,7 @@ dependencies = [
  "hmac",
  "psbt-v2",
  "rayon",
+ "rust-dleq",
  "secp256k1",
  "serde",
  "serde_json",

@@ -11,18 +11,18 @@ This example shows:
 """
 
 import time
-import bip375
+import spdk_psbt
 
-# Import the role functions directly from bip375
-from bip375 import (
+# Import the role functions directly from spdk_psbt
+from spdk_psbt import (
     bip352_compute_ecdh_share,
     dleq_generate_proof,
     dleq_verify_proof,
     Utxo,
-    Output,
-    SilentPaymentOutputInfo,
-    OutputRecipient,
-    SilentPaymentPsbt
+    PsbtOutput,
+    SilentPaymentAddress,
+    SilentPaymentPsbt,
+    PsbtMetadata
 )
 
 def main():
@@ -53,16 +53,14 @@ def main():
 
     # Define outputs with silent payment
     outputs = [
-        Output(
+        PsbtOutput.SILENT_PAYMENT(
             amount=90000,  # 90,000 sats (10k fee)
-            recipient=OutputRecipient.SILENT_PAYMENT(
-                SilentPaymentOutputInfo(
+            address=SilentPaymentAddress(
                     scan_key=scan_key,
                     spend_key=spend_key,
-                    label=None,
-                )
+                ),
+            label=None
             ),
-        )
     ]
 
     # Create PSBT
@@ -151,7 +149,7 @@ def main():
     print("-" * 50)
 
     # Save with metadata
-    metadata = bip375.PsbtMetadata(
+    metadata = PsbtMetadata(
         creator="simple-example",
         stage="finalized",
         description="Example silent payment transaction",

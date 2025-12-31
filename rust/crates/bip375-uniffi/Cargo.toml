@@ -1,24 +1,18 @@
 [package]
-name = "bip375-uniffi"
+name = "spdk-uniffi"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
-name = "bip375"
+name = "spdk_psbt"
 
 [dependencies]
-# Local crates
-bip375-core = { path = "../bip375-core" }
-bip375-crypto = { path = "../bip375-crypto" }
-bip375-io = { path = "../bip375-io" }
-bip375-roles = { path = "../bip375-roles" }
-
 # Bitcoin
 bitcoin.workspace = true
-psbt-v2.workspace = true
 secp256k1.workspace = true
 silentpayments.workspace = true
+spdk-core.workspace = true
 
 # UniFFI
 uniffi = { version = "0.28", features = ["build"] }
