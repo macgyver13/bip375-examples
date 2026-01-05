@@ -1,8 +1,8 @@
 // Cryptographic functions for UniFFI bindings
 
 use crate::errors::Bip375Error;
-use spdk_core::psbt::crypto as crypto;
 use secp256k1::{PublicKey, SecretKey};
+use spdk_core::psbt::crypto;
 
 // ============================================================================
 // BIP-352 Functions

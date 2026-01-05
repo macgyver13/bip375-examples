@@ -13,10 +13,7 @@ pub use errors::*;
 
 // Re-export crypto functions for UniFFI
 pub use crypto::{
-    bip352_compute_ecdh_share,
-    dleq_generate_proof,
-    dleq_verify_proof,
-    signing_sign_p2wpkh_input,
+    bip352_compute_ecdh_share, dleq_generate_proof, dleq_verify_proof, signing_sign_p2wpkh_input,
 };
 
 // UniFFI setup

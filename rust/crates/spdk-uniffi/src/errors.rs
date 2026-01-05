@@ -81,7 +81,9 @@ impl From<spdk_core::psbt::crypto::CryptoError> for Bip375Error {
     fn from(err: spdk_core::psbt::crypto::CryptoError) -> Self {
         use spdk_core::psbt::crypto::CryptoError;
         match err {
-            CryptoError::InvalidPrivateKey | CryptoError::InvalidPublicKey => Bip375Error::InvalidKey,
+            CryptoError::InvalidPrivateKey | CryptoError::InvalidPublicKey => {
+                Bip375Error::InvalidKey
+            }
             CryptoError::InvalidSignature => Bip375Error::InvalidProof,
             CryptoError::DleqGenerationFailed(_) => Bip375Error::SigningError,
             CryptoError::DleqVerificationFailed => Bip375Error::InvalidProof,

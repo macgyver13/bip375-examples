@@ -1,10 +1,10 @@
 // Core data types for UniFFI bindings
 
 use crate::errors::Bip375Error;
-use spdk_core::psbt::core as core;
-use spdk_core::psbt;
-use spdk_core::psbt::{Bip375PsbtExt, DleqProof, EcdhShareData};
 use silentpayments::Network;
+use spdk_core::psbt;
+use spdk_core::psbt::core;
+use spdk_core::psbt::{Bip375PsbtExt, DleqProof, EcdhShareData};
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -142,7 +142,10 @@ impl Utxo {
 
 #[derive(Clone)]
 pub enum PsbtOutput {
-    Regular { amount: u64, script_pubkey: Vec<u8> },
+    Regular {
+        amount: u64,
+        script_pubkey: Vec<u8>,
+    },
     SilentPayment {
         amount: u64,
         address: SilentPaymentAddress,
@@ -331,12 +334,12 @@ impl SilentPaymentPsbt {
         }
 
         // Get the SP info (scan_key, spend_key) and construct address
-        Ok(psbt.get_output_sp_info_v0(idx).map(|(scan_key, spend_key)| {
-            SilentPaymentAddress {
+        Ok(psbt
+            .get_output_sp_info_v0(idx)
+            .map(|(scan_key, spend_key)| SilentPaymentAddress {
                 scan_key: scan_key.serialize().to_vec(),
                 spend_key: spend_key.serialize().to_vec(),
-            }
-        }))
+            }))
     }
 
     pub fn get_output_script(&self, output_index: u32) -> Result<Vec<u8>, Bip375Error> {
@@ -395,13 +398,7 @@ impl SilentPaymentPsbt {
         let core_scan_keys = core_scan_keys.map_err(|_| Bip375Error::InvalidKey)?;
 
         self.with_inner(|p| {
-            psbt::roles::signer::add_ecdh_shares_full(
-                &secp,
-                p,
-                &psbt_inputs,
-                &core_scan_keys,
-                true,
-            )
+            psbt::roles::signer::add_ecdh_shares_full(&secp, p, &psbt_inputs, &core_scan_keys, true)
         })?;
 
         Ok(())
