@@ -23,9 +23,10 @@ You'll see Alice create a PSBT and sign input 0, Bob verify and sign input 1, an
 
 ```bash
 cd rust
-cargo run -p multi-signer --bin alice-creates
-cargo run -p multi-signer --bin bob-signs
-cargo run -p multi-signer --bin charlie-finalizes
+# Run GUI
+cargo run -p multi-signer 
+# Run CLI
+cargo run -p multi-signer -- --cli
 ```
 
 ### What Just Happened?
@@ -40,6 +41,7 @@ The workflow demonstrates BIP375's key features:
 
 ## Next Steps
 
+- Use `just` to explore rust examples and tools
 - Try the [hardware signer example](python/examples/hardware-signer/README.md) to see DLEQ proof validation in action
 - Read [REFERENCE.md](REFERENCE.md) for concepts and terminology
 - Explore the library code in`python/psbt_sp/` or`rust/crates/`

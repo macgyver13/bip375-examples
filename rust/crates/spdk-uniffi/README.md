@@ -20,14 +20,14 @@ Demonstration for high-performance Python bindings for BIP-375 (Sending Silent P
 pip install maturin
 
 # Build and install in development mode
-cd rust/crates/bip375-uniffi
+cd rust/crates/spdk-uniffi
 maturin develop
 ```
 
 ### From PyPI (when published)
 
 ```bash
-cd rust/crates/bip375-uniffi
+cd rust/crates/spdk-uniffi
 pip install -e .
 ```
 
@@ -87,7 +87,7 @@ See the `examples/` directory for complete working examples:
 
 ## Development
 
-Exposed binding api is available in `bip375.udl`
+Exposed binding api is available in `spdk_psbt.udl`
 
 ```bash
 # Quick Test
