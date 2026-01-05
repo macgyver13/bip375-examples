@@ -29,29 +29,48 @@ fmt:
   cargo +{{NIGHTLY_VERSION}} fmt --all
 
 # Examples
+[group('viewer')]
 view:
   cargo r -p psbt-viewer
 
+[group('hardware')]
 hardware:
   cargo r -p hardware-signer --bin hardware-signer --features=gui
 
+[group('multi')]
 multi:
-  cargo r -p multi-signer --bin multi-signer --features=gui
+  cargo r -p multi-signer
 
+[group('multi')]
+multi-cli:
+  cargo r -p multi-signer -- --cli
+
+[group('hardware')]
 hardware-demo:
   cargo r -p hardware-signer -- --demo-flow
 
+[group('hardware')]
 hardware-attack:
   cargo r -p hardware-signer -- --demo-flow --auto-read --auto-approve --attack
+
+[group('uniffi')]
+uniffi: uniffi-setup uniffi-test uniffi-example
+
+[group('uniffi')]
+uniffi-setup:
+  pip install -e crates/spdk-uniffi
+
+[group('uniffi')]
+uniffi-test:
+  pytest crates/spdk-uniffi/tests
+
+[group('uniffi')]
+uniffi-example:
+  python crates/spdk-uniffi/examples/simple_example.py
 
 # Generate documentation.
 docsrs *flags:
   RUSTDOCFLAGS="--cfg docsrs -D warnings -D rustdoc::broken-intra-doc-links" cargo +{{NIGHTLY_VERSION}} doc --all-features {{flags}}
-
-# Update the recent and minimal lock files using rbmt.
-[group('tools')]
-@update-lock-files: _install-rbmt
-  rustup run {{NIGHTLY_VERSION}} cargo rbmt lock
 
 # Run CI tasks with rbmt.
 [group('ci')]

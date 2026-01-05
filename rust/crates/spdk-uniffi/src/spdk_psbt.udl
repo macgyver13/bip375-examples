@@ -1,4 +1,4 @@
-namespace bip375 {
+namespace spdk_psbt {
   // ============================================================================
   // BIP-352 Cryptographic Functions
   // ============================================================================
@@ -29,10 +29,9 @@ enum Bip375Error {
   "PsbtError",
 };
 
-dictionary SilentPaymentOutputInfo {
+dictionary SilentPaymentAddress {
   bytes scan_key;
   bytes spend_key;
-  u32? label;
 };
 
 dictionary Utxo {
@@ -45,14 +44,9 @@ dictionary Utxo {
 };
 
 [Enum]
-interface OutputRecipient {
-  SilentPayment(SilentPaymentOutputInfo address);
-  Address(bytes script_pubkey);
-};
-
-dictionary Output {
-  u64 amount;
-  OutputRecipient recipient;
+interface PsbtOutput {
+  Regular(u64 amount, bytes script_pubkey);
+  SilentPayment(u64 amount, SilentPaymentAddress address, u32? label);
 };
 
 dictionary EcdhShare {
@@ -94,7 +88,7 @@ interface SilentPaymentPsbt {
   sequence<EcdhShare> get_input_ecdh_shares(u32 input_index);
 
   [Throws=Bip375Error]
-  SilentPaymentOutputInfo? get_output_sp_address(u32 output_index);
+  SilentPaymentAddress? get_output_sp_address(u32 output_index);
 
   [Throws=Bip375Error]
   bytes get_output_script(u32 output_index);
@@ -103,7 +97,7 @@ interface SilentPaymentPsbt {
   void add_inputs(sequence<Utxo> inputs);
 
   [Throws=Bip375Error]
-  void add_outputs(sequence<Output> outputs);
+  void add_outputs(sequence<PsbtOutput> outputs);
 
   [Throws=Bip375Error]
   void add_ecdh_shares_full(sequence<Utxo> inputs, sequence<bytes> scan_keys);

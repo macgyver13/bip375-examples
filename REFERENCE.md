@@ -72,12 +72,6 @@ For silent payments, the Signer role is extended with ECDH computation and DLEQ 
 
 ## BIP375 PSBT Fields
 
-New fields defined by BIP375:
-
-- **PSBT_IN_PROPRIETARY_ECDH_SHARE**: ECDH share for an input
-- **PSBT_IN_PROPRIETARY_DLEQ_PROOF**: DLEQ proof for ECDH share
-- **PSBT_OUT_SCRIPT**: Output script (set after ECDH complete)
-
 See [BIP375](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki) for complete field specifications.
 
 ## Security Considerations
