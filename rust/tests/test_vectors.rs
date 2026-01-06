@@ -215,5 +215,5 @@ fn test_vector_count() {
         13,
         "Expected 13 invalid test vectors"
     );
-    assert_eq!(vectors.valid.len(), 4, "Expected 4 valid test vectors");
+    assert_eq!(vectors.valid.len(), 5, "Expected 4 valid test vectors");
 }

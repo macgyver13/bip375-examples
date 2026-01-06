@@ -1263,7 +1263,7 @@ class TestVectorGenerator:
         )
     
     def generate_silent_payment_with_change_test(self) -> GenTestVector:
-        """Silent payment with change detection"""
+        """P2WPKH to silent payment with change detection"""
         from secp256k1_374 import G
 
         # Use local wallet keys
@@ -1329,7 +1329,7 @@ class TestVectorGenerator:
         psbt.add_output_field(1, PSBTFieldType.PSBT_OUT_BIP32_DERIVATION, input_pub.bytes, bip32_derivation_value)
         
         return GenTestVector(
-            description="Silent payment with change detection",
+            description="P2WPKH to silent payment with change detection",
             psbt=base64.b64encode(psbt.serialize()).decode(),
             input_keys=[GenInputKey(
                 input_index=0,
@@ -1371,7 +1371,159 @@ class TestVectorGenerator:
             ],
             comment="Uses PSBT_OUT_SP_V0_LABEL and BIP32 derivation for change identification"
         )
-    
+
+    def generate_sp_change_label_zero_test(self) -> GenTestVector:
+        """Silent payment to recipient with SP change (label=0)"""
+        from secp256k1_374 import G
+
+        # Sender wallet keys
+        input_priv, input_pub = self.wallet.input_key_pair(0)
+        scan_pub_sender = self.wallet.scan_pub
+        scan_priv_sender = self.wallet.scan_priv
+        spend_pub_sender = self.wallet.spend_pub
+
+        # Recipient wallet keys (separate wallet)
+        recipient_wallet = Wallet("recipient_wallet_seed")
+        scan_pub_recipient = recipient_wallet.scan_pub
+        spend_pub_recipient = recipient_wallet.spend_pub
+
+        # Compute ECDH share with valid proof
+        # For recipient output, we need ECDH with recipient's scan key
+        ecdh_result_recipient = input_priv * scan_pub_recipient
+        valid_proof = dleq_generate_proof(input_priv, scan_pub_recipient, Wallet.random_bytes())
+
+        psbt = self.create_complete_psbt_base(1, 2)  # 1 input, 2 outputs
+
+        # Add complete input fields
+        prevout_txid = hashlib.sha256("prevout_sp_change".encode()).digest()
+        witness_script = bytes([0x00, 0x14]) + hashlib.sha256(input_pub.bytes).digest()[:20]
+        witness_utxo = create_witness_utxo(100000, witness_script)
+
+        self.add_base_input_fields(psbt, 0, prevout_txid, 0, witness_utxo,
+                                   input_pubkey=input_pub.bytes)
+        psbt.add_input_field(0, PSBTFieldType.PSBT_IN_SIGHASH_TYPE, b'', struct.pack('<I', 0x01))  # SIGHASH_ALL
+
+        # Add per-input ECDH share and DLEQ proof for recipient's scan key
+        psbt.add_input_field(0, PSBTFieldType.PSBT_IN_SP_ECDH_SHARE, scan_pub_recipient.bytes, ecdh_result_recipient.to_bytes_compressed())
+        psbt.add_input_field(0, PSBTFieldType.PSBT_IN_SP_DLEQ, scan_pub_recipient.bytes, valid_proof)
+
+        # Also add ECDH share for sender's own scan key (for change output)
+        ecdh_result_sender = input_priv * scan_pub_sender
+        sender_proof = dleq_generate_proof(input_priv, scan_pub_sender, Wallet.random_bytes())
+        psbt.add_input_field(0, PSBTFieldType.PSBT_IN_SP_ECDH_SHARE, scan_pub_sender.bytes, ecdh_result_sender.to_bytes_compressed())
+        psbt.add_input_field(0, PSBTFieldType.PSBT_IN_SP_DLEQ, scan_pub_sender.bytes, sender_proof)
+
+        # === Output 0: Payment to recipient (unlabeled) ===
+        outpoints = [(prevout_txid, 0)]
+        recipient_output_script = compute_bip352_output_script(
+            outpoints=outpoints,
+            summed_pubkey_bytes=input_pub.bytes,
+            ecdh_share_bytes=ecdh_result_recipient.to_bytes_compressed(),
+            spend_pubkey_bytes=spend_pub_recipient.to_bytes_compressed(),
+            k=0
+        )
+
+        # sp_info contains recipient's unlabeled address
+        sp_info_recipient = scan_pub_recipient.bytes + spend_pub_recipient.to_bytes_compressed()
+        psbt.add_output_field(0, PSBTFieldType.PSBT_OUT_AMOUNT, b'', struct.pack('<Q', 40000))
+        psbt.add_output_field(0, PSBTFieldType.PSBT_OUT_SCRIPT, b'', recipient_output_script)
+        psbt.add_output_field(0, PSBTFieldType.PSBT_OUT_SP_V0_INFO, b'', sp_info_recipient)
+        # NO PSBT_OUT_SP_V0_LABEL for recipient's unlabeled address
+
+        # === Output 1: Change to sender (label=0) ===
+        # Apply label=0 to sender's spend key: B_m = B_spend + hash_BIP0352/Label(b_scan || 0) * G
+        label = 0
+        tag_data = b"BIP0352/Label"
+        tag_hash = hashlib.sha256(tag_data).digest()
+        label_preimage = tag_hash + tag_hash + scan_priv_sender.to_bytes(32, 'big') + struct.pack('<I', label)
+        label_tweak = int.from_bytes(hashlib.sha256(label_preimage).digest(), 'big')
+        labeled_spend_key_change = spend_pub_sender + (label_tweak * G)
+
+        # Compute BIP-352 output script for change with labeled spend key
+        change_output_script = compute_bip352_output_script(
+            outpoints=outpoints,
+            summed_pubkey_bytes=input_pub.bytes,
+            ecdh_share_bytes=ecdh_result_sender.to_bytes_compressed(),
+            spend_pubkey_bytes=labeled_spend_key_change.to_bytes_compressed(),
+            k=0
+        )
+
+        # sp_info contains sender's scan key + labeled spend key
+        sp_info_change = scan_pub_sender.bytes + labeled_spend_key_change.to_bytes_compressed()
+        label_value = struct.pack('<I', 0)  # Label 0 for change
+
+        psbt.add_output_field(1, PSBTFieldType.PSBT_OUT_AMOUNT, b'', struct.pack('<Q', 55000))
+        psbt.add_output_field(1, PSBTFieldType.PSBT_OUT_SCRIPT, b'', change_output_script)
+        psbt.add_output_field(1, PSBTFieldType.PSBT_OUT_SP_V0_INFO, b'', sp_info_change)
+        psbt.add_output_field(1, PSBTFieldType.PSBT_OUT_SP_V0_LABEL, b'', label_value)
+
+        return GenTestVector(
+            description="Silent payment to recipient with SP change (label=0)",
+            psbt=base64.b64encode(psbt.serialize()).decode(),
+            input_keys=[GenInputKey(
+                input_index=0,
+                private_key=input_priv.hex,
+                public_key=input_pub.hex,
+                prevout_txid=prevout_txid.hex(),
+                prevout_index=0,
+                prevout_scriptpubkey=witness_script.hex(),
+                amount=100000,
+                witness_utxo=witness_utxo.hex()
+            )],
+            scan_keys=[
+                # Sender's keys (for detecting change output)
+                GenScanKey(
+                    scan_pubkey=scan_pub_sender.hex,
+                    spend_pubkey=labeled_spend_key_change.to_bytes_compressed().hex(),  # Labeled spend key
+                    label=0  # Change label
+                ),
+                # Recipient's keys (for detecting payment output)
+                GenScanKey(
+                    scan_pubkey=scan_pub_recipient.hex,
+                    spend_pubkey=spend_pub_recipient.to_bytes_compressed().hex(),
+                    label=None  # Unlabeled
+                )
+            ],
+            expected_ecdh_shares=[
+                GenECDHShare(
+                    scan_key=scan_pub_recipient.hex,
+                    ecdh_result=ecdh_result_recipient.to_bytes_compressed().hex(),
+                    dleq_proof=valid_proof.hex(),
+                    is_global=False,
+                    input_index=0
+                ),
+                GenECDHShare(
+                    scan_key=scan_pub_sender.hex,
+                    ecdh_result=ecdh_result_sender.to_bytes_compressed().hex(),
+                    dleq_proof=sender_proof.hex(),
+                    is_global=False,
+                    input_index=0
+                )
+            ],
+            expected_outputs=[
+                GenOutput(
+                    output_index=0,
+                    amount=40000,
+                    script=recipient_output_script.hex(),
+                    is_silent_payment=True,
+                    sp_info=sp_info_recipient.hex(),
+                    sp_label=None  # No label for recipient
+                ),
+                GenOutput(
+                    output_index=1,
+                    amount=55000,
+                    script=change_output_script.hex(),
+                    is_silent_payment=True,
+                    sp_info=sp_info_change.hex(),
+                    sp_label=0  # Label 0 for change
+                )
+            ],
+            comment="Demonstrates BIP-352 label=0 convention for Silent Payment change. "
+                    "Recipient output (output 0) has no label field. "
+                    "Change output (output 1) uses label=0 with PSBT_OUT_SP_V0_LABEL set. "
+                    "Both outputs are Silent Payments with different scan keys."
+        )
+
     def generate_multiple_silent_payment_outputs_test(self) -> GenTestVector:
         """Multiple silent payment outputs to same scan key"""
         # Use local wallet keys
@@ -1489,11 +1641,12 @@ class TestVectorGenerator:
             asdict(self.generate_both_global_and_input_ecdh_test())
         ]
         
-        # Valid cases  
+        # Valid cases
         valid_vectors = [
             asdict(self.generate_single_signer_global_test()),
             asdict(self.generate_multi_party_per_input_test()),
             asdict(self.generate_silent_payment_with_change_test()),
+            asdict(self.generate_sp_change_label_zero_test()),
             asdict(self.generate_multiple_silent_payment_outputs_test())
         ]
         
