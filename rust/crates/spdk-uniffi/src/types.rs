@@ -335,7 +335,7 @@ impl SilentPaymentPsbt {
 
         // Get the SP info (scan_key, spend_key) and construct address
         Ok(psbt
-            .get_output_sp_info_v0(idx)
+            .get_output_sp_info(idx)
             .map(|(scan_key, spend_key)| SilentPaymentAddress {
                 scan_key: scan_key.serialize().to_vec(),
                 spend_key: spend_key.serialize().to_vec(),
@@ -448,7 +448,7 @@ impl SilentPaymentPsbt {
 
     pub fn finalize_inputs(&self) -> Result<(), Bip375Error> {
         let secp = secp256k1::Secp256k1::new();
-        self.with_inner(|p| psbt::roles::input_finalizer::finalize_inputs(&secp, p, None))?;
+        self.with_inner(|p| psbt::roles::input_finalizer::finalize_inputs(&secp, p))?;
         Ok(())
     }
 
