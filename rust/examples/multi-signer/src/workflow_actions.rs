@@ -107,7 +107,7 @@ pub fn finalize_and_extract(
     validation::validate_psbt(secp, psbt, ValidationLevel::Full)
         .map_err(|e| format!("Final validation failed: {}", e))?;
 
-    finalize_inputs(secp, psbt, None).map_err(|e| format!("Finalization failed: {}", e))?;
+    finalize_inputs(secp, psbt).map_err(|e| format!("Finalization failed: {}", e))?;
 
     let tx = extract_transaction(psbt).map_err(|e| format!("Extraction failed: {}", e))?;
 
