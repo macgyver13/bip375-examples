@@ -340,16 +340,7 @@ impl WalletCoordinator {
 
         // Finalize inputs to compute output scripts
         println!("\n INPUT FINALIZER: Computing silent payment output scripts...");
-
-        // For change outputs with labels, we need the scan private key to apply label tweaks
-        // In this demo, the hardware wallet's scan private key is needed for the change output
-        let hw_wallet = get_hardware_wallet(mnemonic)?;
-        let (scan_privkey, scan_pubkey) = hw_wallet.scan_key_pair();
-
-        let mut scan_privkeys = std::collections::HashMap::new();
-        scan_privkeys.insert(scan_pubkey, scan_privkey);
-
-        finalize_inputs(&secp, &mut psbt, Some(&scan_privkeys))?;
+        finalize_inputs(&secp, &mut psbt)?;
         println!("     Silent payment output scripts computed\n");
 
         // Save the finalized PSBT (with output scripts computed)
