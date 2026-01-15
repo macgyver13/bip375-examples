@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """
-BIP 174/370/375 PSBT Field Type Constants
+BIP 174/370/375 PSBT Key Type Constants
 
-This module defines all PSBT field type constants used across BIP 174 (PSBTv1),
+This module defines all PSBT key type constants used across BIP 174 (PSBTv1),
 BIP 370 (PSBTv2), and BIP 375 (Silent Payments with PSBT).
+
+Per BIP 174, each PSBT key-value pair has the structure:
+    <keylen> <keytype> <keydata> <valuelen> <valuedata>
+
+The constants in this module represent the <keytype> component, which identifies
+what kind of data the key-value pair contains.
 """
 
 
-class PSBTFieldType:
-    """PSBT Field Type Constants for BIP 174/370/375"""
+class PSBTKeyType:
+    """PSBT Key Type Constants for BIP 174/370/375"""
 
     # =======================================================================
     # GLOBAL FIELDS (PSBT-wide fields)

@@ -5,29 +5,14 @@ PSBT Utility Functions
 Helper functions for extracting and processing PSBT data.
 """
 
-from typing import List, Optional
-from .constants import PSBTFieldType
+from typing import List, Optional, Dict
+from .constants import PSBTKeyType
 from secp256k1_374 import GE, G, FE
 from .serialization import PSBTField
 from .crypto import UTXO
 
 # TODO: Add explicit is_p2wpkh(), is_p2pkh(), is_p2sh_p2wpkh() helpers
 # TODO: Add extract other input types
-
-def is_taproot_output(script_pubkey: bytes) -> bool:
-    """
-    Check if script_pubkey is a Taproot (Segwit v1) output
-    
-    Taproot format: 0x5120 || 32-byte x-only pubkey
-    
-    Args:
-        script_pubkey: The scriptPubKey bytes to check
-        
-    Returns:
-        True if this is a Taproot output, False otherwise
-    """
-    return len(script_pubkey) == 34 and script_pubkey[0] == 0x51 and script_pubkey[1] == 0x20
-
 
 def extract_taproot_pubkey(input_fields: List[PSBTField]) -> Optional[GE]:
     """
@@ -42,7 +27,7 @@ def extract_taproot_pubkey(input_fields: List[PSBTField]) -> Optional[GE]:
         Lifted public key point, or None if field not found
     """
     for field in input_fields:
-        if field.field_type == PSBTFieldType.PSBT_IN_TAP_INTERNAL_KEY:
+        if field.key_type == PSBTKeyType.PSBT_IN_TAP_INTERNAL_KEY:
             if len(field.value_data) == 32:
                 # Lift x-only key to full point (assumes even y-coordinate per BIP340)
                 x_coord = int.from_bytes(field.value_data, 'big')
@@ -77,7 +62,7 @@ def extract_input_pubkey(input_fields: List[PSBTField], inputs: List[UTXO] = Non
     # Method 1: Extract from BIP32 derivation field (HIGHEST PRIORITY)
     # This is the standard BIP174 way and supports hardware wallets
     for field in input_fields:
-        if field.field_type == PSBTFieldType.PSBT_IN_BIP32_DERIVATION:
+        if field.key_type == PSBTKeyType.PSBT_IN_BIP32_DERIVATION:
             try:
                 # BIP32 derivation format: key is 33-byte compressed pubkey
                 # value is <4-byte fingerprint><32-bit path elements> or empty for privacy
@@ -95,7 +80,7 @@ def extract_input_pubkey(input_fields: List[PSBTField], inputs: List[UTXO] = Non
     # Method 3: Extract from partial signature field
     # Public key is in the key field of PSBT_IN_PARTIAL_SIG
     for field in input_fields:
-        if field.field_type == PSBTFieldType.PSBT_IN_PARTIAL_SIG:
+        if field.key_type == PSBTKeyType.PSBT_IN_PARTIAL_SIG:
             try:
                 if len(field.key_data) == 33:
                     return GE.from_bytes(field.key_data)
@@ -144,14 +129,48 @@ def extract_combined_input_pubkeys(input_maps: List[List[PSBTField]], inputs: Li
     return A_combined
 
 
+def _input_fields_to_dict(input_fields: List[PSBTField]) -> Dict[PSBTKeyType, bytes]:
+    """
+    Convert list of PSBTField objects to a dictionary keyed by key type.
+
+    Args:
+        input_fields: List of PSBTField objects for an input
+
+    Returns:
+        Dictionary mapping key type to value data
+    """
+    result = {}
+    for field in input_fields:
+        # For fields with key_data, use value_data
+        # For fields without key_data, concatenate key_data + value_data
+        if field.key_data:
+            result[field.key_type] = field.value_data
+        else:
+            result[field.key_type] = field.value_data
+    return result
+
+
 def check_ecdh_coverage(global_fields: List[PSBTField], input_maps: List[List[PSBTField]], output_maps: List[List[PSBTField]]) -> tuple[bool, List[int]]:
     """
     Check which inputs have ECDH shares and if coverage is complete
 
     Per BIP 375: Global ECDH shares are keyed by scan public key.
+    Per BIP 352: Only eligible inputs (single-key inputs) need ECDH shares.
+
     Complete coverage requires either:
     - Global ECDH shares for ALL unique scan keys in outputs, OR
-    - Per-input ECDH shares for ALL inputs
+    - Per-input ECDH shares for ALL ELIGIBLE inputs
+
+    Eligible inputs are those with a single extractable public key:
+    - P2WPKH (Segwit v0)
+    - P2TR (Taproot, Segwit v1)
+    - P2PKH (legacy)
+    - P2SH-P2WPKH (wrapped segwit)
+
+    Ineligible inputs (skipped in coverage check):
+    - P2SH multisig
+    - Bare multisig
+    - Any input with multiple public keys
 
     Args:
         global_fields: List of global PSBT fields
@@ -161,22 +180,24 @@ def check_ecdh_coverage(global_fields: List[PSBTField], input_maps: List[List[PS
     Returns:
         Tuple of (is_complete, list_of_input_indices_with_ecdh)
     """
+    from .inputs import validate_input_eligibility
+
     inputs_with_ecdh = []
 
     # Extract unique scan keys from outputs
     scan_keys = extract_scan_keys_from_outputs(output_maps)
-    
+
     # Check for global ECDH shares per scan key
     global_ecdh_scan_keys = set()
     for field in global_fields:
-        if field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE:
+        if field.key_type == PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE:
             # Key field contains the scan public key (33 bytes)
             if len(field.key_data) == 33:
                 global_ecdh_scan_keys.add(field.key_data)
-    
+
     # Check if all scan keys have global ECDH shares
     has_complete_global_ecdh = all(
-        scan_key in global_ecdh_scan_keys 
+        scan_key in global_ecdh_scan_keys
         for scan_key in scan_keys
     )
 
@@ -186,16 +207,29 @@ def check_ecdh_coverage(global_fields: List[PSBTField], input_maps: List[List[PS
         is_complete = True
     else:
         # Check per-input ECDH shares
-        for i, input_fields in enumerate(input_maps):
-            has_input_ecdh = any(
-                field.field_type == PSBTFieldType.PSBT_IN_SP_ECDH_SHARE
-                for field in input_fields
-            )
-            if has_input_ecdh:
-                inputs_with_ecdh.append(i)
+        # Count only eligible inputs for coverage check
+        eligible_input_count = 0
 
-        # Complete if all inputs have ECDH shares
-        is_complete = len(inputs_with_ecdh) == len(input_maps)
+        for i, input_fields in enumerate(input_maps):
+            # Convert input fields to dict format for validation
+            input_fields_dict = _input_fields_to_dict(input_fields)
+
+            # Check if this input is eligible for silent payment derivation
+            is_eligible, _ = validate_input_eligibility(input_fields_dict, i)
+
+            if is_eligible:
+                eligible_input_count += 1
+
+                # Check if this eligible input has ECDH share
+                has_input_ecdh = any(
+                    field.key_type == PSBTKeyType.PSBT_IN_SP_ECDH_SHARE
+                    for field in input_fields
+                )
+                if has_input_ecdh:
+                    inputs_with_ecdh.append(i)
+
+        # Complete if all ELIGIBLE inputs have ECDH shares
+        is_complete = len(inputs_with_ecdh) == eligible_input_count
 
     return is_complete, inputs_with_ecdh
 
@@ -214,7 +248,7 @@ def extract_scan_keys_from_outputs(output_maps: List[List[PSBTField]]) -> List[b
 
     for output_fields in output_maps:
         for field in output_fields:
-            if field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+            if field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                 if len(field.value_data) == 66:  # 33 + 33 bytes
                     scan_key_bytes = field.value_data[:33]
                     if scan_key_bytes not in scan_keys:
@@ -259,16 +293,16 @@ def extract_inputs_from_psbt(psbt) -> List[UTXO]:
         sequence = 0xfffffffe  # Default sequence
         
         for field in input_fields:
-            if field.field_type == PSBTFieldType.PSBT_IN_PREVIOUS_TXID:
+            if field.key_type == PSBTKeyType.PSBT_IN_PREVIOUS_TXID:
                 if len(field.value_data) == 32:
                     # Reverse for display (Bitcoin uses little-endian internally)
                     txid = field.value_data[::-1].hex()
             
-            elif field.field_type == PSBTFieldType.PSBT_IN_OUTPUT_INDEX:
+            elif field.key_type == PSBTKeyType.PSBT_IN_OUTPUT_INDEX:
                 if len(field.value_data) == 4:
                     vout = struct.unpack('<I', field.value_data)[0]
             
-            elif field.field_type == PSBTFieldType.PSBT_IN_WITNESS_UTXO:
+            elif field.key_type == PSBTKeyType.PSBT_IN_WITNESS_UTXO:
                 # Format: 8-byte amount + compact_size script_len + script
                 if len(field.value_data) >= 9:
                     amount = struct.unpack('<Q', field.value_data[:8])[0]
@@ -276,7 +310,7 @@ def extract_inputs_from_psbt(psbt) -> List[UTXO]:
                     if len(field.value_data) >= 9 + script_len:
                         script_pubkey = field.value_data[9:9+script_len].hex()
             
-            elif field.field_type == PSBTFieldType.PSBT_IN_SEQUENCE:
+            elif field.key_type == PSBTKeyType.PSBT_IN_SEQUENCE:
                 if len(field.value_data) == 4:
                     sequence = struct.unpack('<I', field.value_data)[0]
         
@@ -342,11 +376,11 @@ def extract_output_details_from_psbt(psbt) -> List[dict]:
         script_pubkey = None
         
         for field in output_fields:
-            if field.field_type == PSBTFieldType.PSBT_OUT_AMOUNT:
+            if field.key_type == PSBTKeyType.PSBT_OUT_AMOUNT:
                 if len(field.value_data) == 8:
                     amount = struct.unpack('<Q', field.value_data)[0]
             
-            elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+            elif field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                 # Format: 33-byte scan key + 33-byte spend key
                 if len(field.value_data) == 66:
                     scan_key_bytes = field.value_data[:33]
@@ -357,11 +391,11 @@ def extract_output_details_from_psbt(psbt) -> List[dict]:
                     
                     sp_info = (scan_key, spend_key)
             
-            elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_LABEL:
+            elif field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_LABEL:
                 if len(field.value_data) == 4:
                     label = struct.unpack('<I', field.value_data)[0]
             
-            elif field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT:
+            elif field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT:
                 script_pubkey = field.value_data.hex()
         
         # Validate required fields
@@ -421,7 +455,7 @@ def extract_bip32_derivations_from_psbt(psbt) -> List[Optional[dict]]:
         
         # Look for PSBT_IN_BIP32_DERIVATION field
         for field in input_fields:
-            if field.field_type == PSBTFieldType.PSBT_IN_BIP32_DERIVATION:
+            if field.key_type == PSBTKeyType.PSBT_IN_BIP32_DERIVATION:
                 # Key data is the public key (33 bytes compressed)
                 public_key = field.key_data
                 
@@ -489,7 +523,7 @@ def extract_dnssec_proofs_from_outputs(output_maps: List[List[PSBTField]]) -> di
     
     for output_index, output_fields in enumerate(output_maps):
         for field in output_fields:
-            if field.field_type == PSBTFieldType.PSBT_OUT_DNSSEC_PROOF:
+            if field.key_type == PSBTKeyType.PSBT_OUT_DNSSEC_PROOF:
                 # Store the proof bytes for this output
                 dnssec_proofs[output_index] = field.value_data
                 # Only take the first DNSSEC proof per output

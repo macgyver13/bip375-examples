@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
 import struct
 
-from .constants import PSBTFieldType
+from .constants import PSBTKeyType
 from secp256k1_374 import GE
 from .serialization import PSBTField
 from .crypto import PublicKey, UTXO
@@ -113,25 +113,25 @@ class SilentPaymentPSBT:
         return self
     
     # Test Generator helper functions
-    def add_global_field(self, field_type: int, key_data: bytes, value_data: bytes):
+    def add_global_field(self, key_type: int, key_data: bytes, value_data: bytes):
         """Add a global field"""
-        self.global_fields.append(PSBTField(field_type, key_data, value_data))
+        self.global_fields.append(PSBTField(key_type, key_data, value_data))
     
-    def add_input_field(self, input_index: int, field_type: int, key_data: bytes, value_data: bytes):
+    def add_input_field(self, input_index: int, key_type: int, key_data: bytes, value_data: bytes):
         """Add a field to specific input"""
         # Extend input_maps if needed
         while len(self.input_maps) <= input_index:
             self.input_maps.append([])
         
-        self.input_maps[input_index].append(PSBTField(field_type, key_data, value_data))
+        self.input_maps[input_index].append(PSBTField(key_type, key_data, value_data))
     
-    def add_output_field(self, output_index: int, field_type: int, key_data: bytes, value_data: bytes):
+    def add_output_field(self, output_index: int, key_type: int, key_data: bytes, value_data: bytes):
         """Add a field to specific output"""
         # Extend output_maps if needed
         while len(self.output_maps) <= output_index:
             self.output_maps.append([])
         
-        self.output_maps[output_index].append(PSBTField(field_type, key_data, value_data))
+        self.output_maps[output_index].append(PSBTField(key_type, key_data, value_data))
 
     # endregion
 
@@ -252,22 +252,22 @@ class SilentPaymentPSBT:
         # Global fields
         lines.append("Global Fields:")
         for field in self.global_fields:
-            field_name = self._get_field_name(field.field_type, "global", strip_prefix=True)
+            field_name = self._get_field_name(field.key_type, "global", strip_prefix=True)
             lines.append(f"  {field_name}: {field.value_data.hex()}")
 
         # Input fields
         for i, input_fields in enumerate(self.input_maps):
             lines.append(f"\nInput {i}:")
             for field in input_fields:
-                field_name = self._get_field_name(field.field_type, "in", strip_prefix=True)
+                field_name = self._get_field_name(field.key_type, "in", strip_prefix=True)
                 lines.append(f"  {field_name}: {field.value_data.hex()}")
 
         # Output fields
         for i, output_fields in enumerate(self.output_maps):
             lines.append(f"\nOutput {i}:")
             for field in output_fields:
-                field_name = self._get_field_name(field.field_type, "out", strip_prefix=True)
-                if field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+                field_name = self._get_field_name(field.key_type, "out", strip_prefix=True)
+                if field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                     # Pretty print silent payment info
                     if len(field.value_data) == 66:  # 33 + 33 bytes
                         scan_key = field.value_data[:33].hex()
@@ -301,23 +301,23 @@ class SilentPaymentPSBT:
 
         # Global fields
         for field in self.global_fields:
-            field_name = self._get_field_name(field.field_type, "global")
+            field_name = self._get_field_name(field.key_type, "global")
             field_data = {
                 'field': field_name,
-                'type': field.field_type,
+                'type': field.key_type,
                 'value_hex': field.value_data.hex()
             }
 
             # Add human-readable values for common fields
-            if field.field_type == PSBTFieldType.PSBT_GLOBAL_TX_VERSION:
+            if field.key_type == PSBTKeyType.PSBT_GLOBAL_TX_VERSION:
                 field_data['value'] = struct.unpack('<I', field.value_data)[0]
-            elif field.field_type == PSBTFieldType.PSBT_GLOBAL_VERSION:
+            elif field.key_type == PSBTKeyType.PSBT_GLOBAL_VERSION:
                 field_data['value'] = struct.unpack('<I', field.value_data)[0]
-            elif field.field_type == PSBTFieldType.PSBT_GLOBAL_INPUT_COUNT:
+            elif field.key_type == PSBTKeyType.PSBT_GLOBAL_INPUT_COUNT:
                 field_data['value'] = field.value_data[0] if len(field.value_data) > 0 else 0
-            elif field.field_type == PSBTFieldType.PSBT_GLOBAL_OUTPUT_COUNT:
+            elif field.key_type == PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT:
                 field_data['value'] = field.value_data[0] if len(field.value_data) > 0 else 0
-            elif field.field_type == PSBTFieldType.PSBT_GLOBAL_TX_MODIFIABLE:
+            elif field.key_type == PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE:
                 flags = field.value_data[0] if len(field.value_data) > 0 else 0
                 field_data['value'] = {
                     'raw': flags,
@@ -332,21 +332,21 @@ class SilentPaymentPSBT:
             input_data = {'index': i, 'fields': []}
 
             for field in input_fields:
-                field_name = self._get_field_name(field.field_type, "in")
+                field_name = self._get_field_name(field.key_type, "in")
                 field_info = {
                     'field': field_name,
-                    'type': field.field_type,
+                    'type': field.key_type,
                     'value_hex': field.value_data.hex()
                 }
 
                 # Add human-readable values for common fields
-                if field.field_type == PSBTFieldType.PSBT_IN_PREVIOUS_TXID:
+                if field.key_type == PSBTKeyType.PSBT_IN_PREVIOUS_TXID:
                     field_info['value'] = field.value_data.hex()
-                elif field.field_type == PSBTFieldType.PSBT_IN_OUTPUT_INDEX:
+                elif field.key_type == PSBTKeyType.PSBT_IN_OUTPUT_INDEX:
                     field_info['value'] = struct.unpack('<I', field.value_data)[0]
-                elif field.field_type == PSBTFieldType.PSBT_IN_SEQUENCE:
+                elif field.key_type == PSBTKeyType.PSBT_IN_SEQUENCE:
                     field_info['value'] = struct.unpack('<I', field.value_data)[0]
-                elif field.field_type == PSBTFieldType.PSBT_IN_WITNESS_UTXO:
+                elif field.key_type == PSBTKeyType.PSBT_IN_WITNESS_UTXO:
                     amount = struct.unpack('<Q', field.value_data[:8])[0]
                     script_len = field.value_data[8]
                     script_pubkey = field.value_data[9:9+script_len].hex()
@@ -354,15 +354,15 @@ class SilentPaymentPSBT:
                         'amount': amount,
                         'script_pubkey': script_pubkey
                     }
-                elif field.field_type == PSBTFieldType.PSBT_IN_SIGHASH_TYPE:
+                elif field.key_type == PSBTKeyType.PSBT_IN_SIGHASH_TYPE:
                     field_info['value'] = struct.unpack('<I', field.value_data)[0]
-                elif field.field_type == PSBTFieldType.PSBT_IN_SP_ECDH_SHARE:
+                elif field.key_type == PSBTKeyType.PSBT_IN_SP_ECDH_SHARE:
                     field_info['scan_key'] = field.key_data.hex()
                     field_info['value'] = field.value_data.hex()
-                elif field.field_type == PSBTFieldType.PSBT_IN_SP_DLEQ:
+                elif field.key_type == PSBTKeyType.PSBT_IN_SP_DLEQ:
                     field_info['scan_key'] = field.key_data.hex()
                     field_info['value'] = field.value_data.hex()
-                elif field.field_type == PSBTFieldType.PSBT_IN_PARTIAL_SIG:
+                elif field.key_type == PSBTKeyType.PSBT_IN_PARTIAL_SIG:
                     field_info['pubkey'] = field.key_data.hex()
                     field_info['value'] = field.value_data.hex()
 
@@ -375,25 +375,25 @@ class SilentPaymentPSBT:
             output_data = {'index': i, 'fields': []}
 
             for field in output_fields:
-                field_name = self._get_field_name(field.field_type, "out")
+                field_name = self._get_field_name(field.key_type, "out")
                 field_info = {
                     'field': field_name,
-                    'type': field.field_type,
+                    'type': field.key_type,
                     'value_hex': field.value_data.hex()
                 }
 
                 # Add human-readable values for common fields
-                if field.field_type == PSBTFieldType.PSBT_OUT_AMOUNT:
+                if field.key_type == PSBTKeyType.PSBT_OUT_AMOUNT:
                     field_info['value'] = struct.unpack('<Q', field.value_data)[0]
-                elif field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT:
+                elif field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT:
                     field_info['value'] = field.value_data.hex()
-                elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+                elif field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                     if len(field.value_data) == 66:  # 33 + 33 bytes
                         field_info['value'] = {
                             'scan_key': field.value_data[:33].hex(),
                             'spend_key': field.value_data[33:].hex()
                         }
-                elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_LABEL:
+                elif field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_LABEL:
                     field_info['value'] = struct.unpack('<I', field.value_data)[0]
 
                 output_data['fields'].append(field_info)
@@ -402,34 +402,34 @@ class SilentPaymentPSBT:
 
         return result
 
-    def _get_field_name(self, field_type: int, section: str, strip_prefix: bool = False) -> str:
+    def _get_field_name(self, key_type: int, section: str, strip_prefix: bool = False) -> str:
         """
-        Get human-readable name for field type with section context
+        Get human-readable name for a PSBT key type with section context
 
         Args:
-            field_type: PSBT field type integer
+            key_type: PSBT key type integer
             section: Section name ('global', 'in', or 'out')
             strip_prefix: If True, strip 'PSBT_GLOBAL_', 'PSBT_IN_', 'PSBT_OUT_' prefix
                          If False (default), return full name like 'PSBT_GLOBAL_TX_VERSION'
 
         Returns:
-            Field name string (full or stripped based on strip_prefix)
+            Key type name string (full or stripped based on strip_prefix)
         """
         # Search only within the appropriate section to handle duplicate values
         section_prefix = f"PSBT_{section.upper()}_"
 
-        for attr_name in dir(PSBTFieldType):
+        for attr_name in dir(PSBTKeyType):
             if attr_name.startswith(section_prefix):
-                attr_value = getattr(PSBTFieldType, attr_name)
-                if isinstance(attr_value, int) and attr_value == field_type:
+                attr_value = getattr(PSBTKeyType, attr_name)
+                if isinstance(attr_value, int) and attr_value == key_type:
                     # Return name with or without the section prefix
                     if strip_prefix:
                         return attr_name[len(section_prefix):]
                     else:
                         return attr_name
 
-        # Unknown field type, return hex representation
-        return f"UNKNOWN_{field_type:02x}"
+        # Unknown key type, return hex representation
+        return f"UNKNOWN_{key_type:02x}"
 
     # endregion
 
@@ -502,10 +502,10 @@ class SilentPaymentPSBT:
         global_dleq_fields = {}
 
         for field in self.global_fields:
-            if field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE:
+            if field.key_type == PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE:
                 scan_key = field.key_data
                 global_ecdh_fields[scan_key] = field.value_data
-            elif field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_DLEQ:
+            elif field.key_type == PSBTKeyType.PSBT_GLOBAL_SP_DLEQ:
                 scan_key = field.key_data
                 global_dleq_fields[scan_key] = field.value_data
 
@@ -543,10 +543,10 @@ class SilentPaymentPSBT:
             input_dleq_fields = {}
 
             for field in input_fields:
-                if field.field_type == PSBTFieldType.PSBT_IN_SP_ECDH_SHARE:
+                if field.key_type == PSBTKeyType.PSBT_IN_SP_ECDH_SHARE:
                     scan_key = field.key_data
                     input_ecdh_fields[scan_key] = field.value_data
-                elif field.field_type == PSBTFieldType.PSBT_IN_SP_DLEQ:
+                elif field.key_type == PSBTKeyType.PSBT_IN_SP_DLEQ:
                     scan_key = field.key_data
                     input_dleq_fields[scan_key] = field.value_data
 
@@ -581,7 +581,7 @@ class SilentPaymentPSBT:
                 print(f" Input {input_index} DLEQ proof verified for scan key {scan_key.hex()}")
 
         if not global_ecdh_fields and not any(
-            any(field.field_type == PSBTFieldType.PSBT_IN_SP_ECDH_SHARE for field in input_fields)
+            any(field.key_type == PSBTKeyType.PSBT_IN_SP_ECDH_SHARE for field in input_fields)
             for input_fields in self.input_maps
         ):
             print("⚠️  No ECDH shares found in PSBT - no DLEQ proofs to verify")
@@ -712,7 +712,7 @@ class SilentPaymentPSBT:
 
         # Step 1: Check if we have any silent payment outputs
         has_silent_outputs = any(
-            any(field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO for field in output_fields)
+            any(field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO for field in output_fields)
             for output_fields in self.output_maps
         )
 
@@ -725,7 +725,7 @@ class SilentPaymentPSBT:
             scan_keys = []
             for output_fields in self.output_maps:
                 for field in output_fields:
-                    if field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+                    if field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                         if len(field.value_data) == 66:  # 33 + 33 bytes
                             scan_key_bytes = field.value_data[:33]
                             scan_key = PublicKey(GE.from_bytes(scan_key_bytes))
@@ -773,7 +773,7 @@ class SilentPaymentPSBT:
 
         print("4.5. Verifying all outputs have scripts before signing...")
         for i, output_fields in enumerate(self.output_maps):
-            has_script = any(field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT for field in output_fields)
+            has_script = any(field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT for field in output_fields)
             if not has_script:
                 print(f"❌ Output {i} missing script - cannot sign yet")
                 return False
@@ -816,7 +816,7 @@ class SilentPaymentPSBT:
 
         # Step 1: Check if we have any silent payment outputs
         has_silent_outputs = any(
-            any(field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO for field in output_fields)
+            any(field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO for field in output_fields)
             for output_fields in self.output_maps
         )
 
@@ -829,7 +829,7 @@ class SilentPaymentPSBT:
             scan_keys = []
             for output_fields in self.output_maps:
                 for field in output_fields:
-                    if field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+                    if field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                         if len(field.value_data) == 66:  # 33 + 33 bytes
                             scan_key_bytes = field.value_data[:33]
                             scan_key = PublicKey(GE.from_bytes(scan_key_bytes))
@@ -873,7 +873,7 @@ class SilentPaymentPSBT:
         # For multi-signer workflow: sign if ALL outputs have scripts (regardless of ECDH coverage)
         print("   Checking if we can sign controlled inputs...")
         all_outputs_have_scripts = all(
-            any(field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT for field in output_fields)
+            any(field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT for field in output_fields)
             for output_fields in self.output_maps
         )
 
@@ -908,7 +908,7 @@ class SilentPaymentPSBT:
         """
         # Check for TX_MODIFIABLE field
         for field in self.global_fields:
-            if field.field_type == PSBTFieldType.PSBT_GLOBAL_TX_MODIFIABLE:
+            if field.key_type == PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE:
                 if len(field.value_data) >= 1:
                     modifiable_flags = field.value_data[0]
                     # 0x03 = both inputs and outputs modifiable
@@ -933,7 +933,7 @@ class SilentPaymentPSBT:
 
         # Check for global DLEQ proofs first
         for field in self.global_fields:
-            if field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_DLEQ:
+            if field.key_type == PSBTKeyType.PSBT_GLOBAL_SP_DLEQ:
                 print("     Found global DLEQ proof - verifying...")
                 # For now, assume global proofs are valid if structurally correct
                 # In full implementation, would need to verify against combined pubkeys
@@ -949,8 +949,8 @@ class SilentPaymentPSBT:
         for input_index in uncontrolled_indices:
             if input_index < len(self.input_maps):
                 input_fields = self.input_maps[input_index]
-                has_ecdh = any(field.field_type == PSBTFieldType.PSBT_IN_SP_ECDH_SHARE for field in input_fields)
-                has_dleq = any(field.field_type == PSBTFieldType.PSBT_IN_SP_DLEQ for field in input_fields)
+                has_ecdh = any(field.key_type == PSBTKeyType.PSBT_IN_SP_ECDH_SHARE for field in input_fields)
+                has_dleq = any(field.key_type == PSBTKeyType.PSBT_IN_SP_DLEQ for field in input_fields)
 
                 if has_ecdh and has_dleq:
                     # Verify the DLEQ proof cryptographically
@@ -984,17 +984,17 @@ class SilentPaymentPSBT:
             return False
 
         input_fields = self.input_maps[input_index]
-        input_field_dict = {field.field_type: field for field in input_fields}
+        input_field_dict = {field.key_type: field for field in input_fields}
 
         # Check if DLEQ proof and ECDH share exist
-        if (PSBTFieldType.PSBT_IN_SP_DLEQ not in input_field_dict or
-            PSBTFieldType.PSBT_IN_SP_ECDH_SHARE not in input_field_dict):
+        if (PSBTKeyType.PSBT_IN_SP_DLEQ not in input_field_dict or
+            PSBTKeyType.PSBT_IN_SP_ECDH_SHARE not in input_field_dict):
             return False
 
         try:
             # Extract DLEQ proof and ECDH share
-            dleq_field = input_field_dict[PSBTFieldType.PSBT_IN_SP_DLEQ]
-            ecdh_field = input_field_dict[PSBTFieldType.PSBT_IN_SP_ECDH_SHARE]
+            dleq_field = input_field_dict[PSBTKeyType.PSBT_IN_SP_DLEQ]
+            ecdh_field = input_field_dict[PSBTKeyType.PSBT_IN_SP_ECDH_SHARE]
 
             # Parse scan key from DLEQ field key_data
             scan_key_bytes = dleq_field.key_data
@@ -1271,19 +1271,19 @@ def validate_psbt_silent_payments(psbt: SilentPaymentPSBT) -> Tuple[bool, List[s
     has_output_count = False
 
     for field in psbt.global_fields:
-        if field.field_type == PSBTFieldType.PSBT_GLOBAL_VERSION:
+        if field.key_type == PSBTKeyType.PSBT_GLOBAL_VERSION:
             has_psbt_version = True
             psbt_version = struct.unpack('<I', field.value_data)[0]
             if psbt_version != 2:
                 errors.append(f"Invalid PSBT version {psbt_version}, must be 2 for PSBTv2")
-        elif field.field_type == PSBTFieldType.PSBT_GLOBAL_TX_VERSION:
+        elif field.key_type == PSBTKeyType.PSBT_GLOBAL_TX_VERSION:
             has_tx_version = True
             version = struct.unpack('<I', field.value_data)[0]
             if version != 2:
                 errors.append(f"Invalid transaction version {version}, must be 2 for silent payments")
-        elif field.field_type == PSBTFieldType.PSBT_GLOBAL_INPUT_COUNT:
+        elif field.key_type == PSBTKeyType.PSBT_GLOBAL_INPUT_COUNT:
             has_input_count = True
-        elif field.field_type == PSBTFieldType.PSBT_GLOBAL_OUTPUT_COUNT:
+        elif field.key_type == PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT:
             has_output_count = True
 
     if not has_psbt_version:
@@ -1297,20 +1297,20 @@ def validate_psbt_silent_payments(psbt: SilentPaymentPSBT) -> Tuple[bool, List[s
     
     # Validate inputs
     for i, input_fields in enumerate(psbt.input_maps):
-        input_field_dict = {field.field_type: field for field in input_fields}
+        input_field_dict = {field.key_type: field for field in input_fields}
         
         # Check SIGHASH_ALL requirement
-        if PSBTFieldType.PSBT_IN_SIGHASH_TYPE in input_field_dict:
-            sighash_field = input_field_dict[PSBTFieldType.PSBT_IN_SIGHASH_TYPE]
+        if PSBTKeyType.PSBT_IN_SIGHASH_TYPE in input_field_dict:
+            sighash_field = input_field_dict[PSBTKeyType.PSBT_IN_SIGHASH_TYPE]
             if len(sighash_field.value_data) >= 4:
                 sighash_type = struct.unpack('<I', sighash_field.value_data[:4])[0]
                 if sighash_type != 1:  # SIGHASH_ALL
                     errors.append(f"Input {i} uses non-SIGHASH_ALL ({sighash_type}) with silent payments")
         
         # Validate DLEQ proofs if present
-        if PSBTFieldType.PSBT_IN_SP_DLEQ in input_field_dict:
-            dleq_field = input_field_dict[PSBTFieldType.PSBT_IN_SP_DLEQ]
-            ecdh_field = input_field_dict.get(PSBTFieldType.PSBT_IN_SP_ECDH_SHARE)
+        if PSBTKeyType.PSBT_IN_SP_DLEQ in input_field_dict:
+            dleq_field = input_field_dict[PSBTKeyType.PSBT_IN_SP_DLEQ]
+            ecdh_field = input_field_dict.get(PSBTKeyType.PSBT_IN_SP_ECDH_SHARE)
             if ecdh_field is None:
                 errors.append(f"Input {i} has DLEQ proof but missing ECDH share")
             else:
@@ -1342,26 +1342,26 @@ def validate_psbt_silent_payments(psbt: SilentPaymentPSBT) -> Tuple[bool, List[s
                     errors.append(f"Input {i} DLEQ proof verification failed: {e}")
     
     # Validate global DLEQ proofs
-    global_field_dict = {field.field_type: field for field in psbt.global_fields}
-    if PSBTFieldType.PSBT_GLOBAL_SP_DLEQ in global_field_dict:
-        if PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE not in global_field_dict:
+    global_field_dict = {field.key_type: field for field in psbt.global_fields}
+    if PSBTKeyType.PSBT_GLOBAL_SP_DLEQ in global_field_dict:
+        if PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE not in global_field_dict:
             errors.append("Global DLEQ proof present but missing global ECDH share")
     
     # Validate outputs per BIP375
     for i, output_fields in enumerate(psbt.output_maps):
-        output_field_dict = {field.field_type: field for field in output_fields}
+        output_field_dict = {field.key_type: field for field in output_fields}
 
         # BIP375: PSBT_OUT_SCRIPT is optional for silent payment outputs
         # Each output must have either PSBT_OUT_SCRIPT or PSBT_OUT_SP_V0_INFO (or both)
-        has_script = PSBTFieldType.PSBT_OUT_SCRIPT in output_field_dict
-        has_sp_info = PSBTFieldType.PSBT_OUT_SP_V0_INFO in output_field_dict
+        has_script = PSBTKeyType.PSBT_OUT_SCRIPT in output_field_dict
+        has_sp_info = PSBTKeyType.PSBT_OUT_SP_V0_INFO in output_field_dict
 
         if not has_script and not has_sp_info:
             errors.append(f"Output {i} must have either PSBT_OUT_SCRIPT or PSBT_OUT_SP_V0_INFO")
 
         # Validate PSBT_OUT_SP_V0_INFO if present
         if has_sp_info:
-            sp_info = output_field_dict[PSBTFieldType.PSBT_OUT_SP_V0_INFO]
+            sp_info = output_field_dict[PSBTKeyType.PSBT_OUT_SP_V0_INFO]
             if len(sp_info.value_data) != 66:  # 33 + 33 bytes (scan_key + spend_key)
                 errors.append(f"Output {i} SP_V0_INFO has invalid length {len(sp_info.value_data)}, expected 66 bytes")
 
@@ -1373,7 +1373,7 @@ def validate_psbt_silent_payments(psbt: SilentPaymentPSBT) -> Tuple[bool, List[s
             # Note: PSBT_OUT_SCRIPT alone (without PSBT_OUT_SP_V0_INFO) means regular output
 
         # Check amount is present
-        if PSBTFieldType.PSBT_OUT_AMOUNT not in output_field_dict:
+        if PSBTKeyType.PSBT_OUT_AMOUNT not in output_field_dict:
             errors.append(f"Output {i} missing required amount field")
 
     return len(errors) == 0, errors
@@ -1405,7 +1405,7 @@ def compute_psbt_unique_id(psbt: SilentPaymentPSBT) -> bytes:
     # Extract version from PSBT_GLOBAL_TX_VERSION
     version = 2  # Default
     for field in psbt.global_fields:
-        if field.field_type == PSBTFieldType.PSBT_GLOBAL_TX_VERSION:
+        if field.key_type == PSBTKeyType.PSBT_GLOBAL_TX_VERSION:
             version = struct.unpack('<I', field.value_data)[0]
             break
 
@@ -1416,17 +1416,17 @@ def compute_psbt_unique_id(psbt: SilentPaymentPSBT) -> bytes:
 
     # Inputs
     for i, input_fields in enumerate(psbt.input_maps):
-        input_dict = {field.field_type: field for field in input_fields}
+        input_dict = {field.key_type: field for field in input_fields}
 
         # Previous output (36 bytes)
-        if PSBTFieldType.PSBT_IN_PREVIOUS_TXID in input_dict:
-            txid = input_dict[PSBTFieldType.PSBT_IN_PREVIOUS_TXID].value_data
+        if PSBTKeyType.PSBT_IN_PREVIOUS_TXID in input_dict:
+            txid = input_dict[PSBTKeyType.PSBT_IN_PREVIOUS_TXID].value_data
             tx_data += txid
         else:
             raise ValueError(f"Input {i} missing previous txid")
 
-        if PSBTFieldType.PSBT_IN_OUTPUT_INDEX in input_dict:
-            vout = input_dict[PSBTFieldType.PSBT_IN_OUTPUT_INDEX].value_data
+        if PSBTKeyType.PSBT_IN_OUTPUT_INDEX in input_dict:
+            vout = input_dict[PSBTKeyType.PSBT_IN_OUTPUT_INDEX].value_data
             tx_data += vout
         else:
             raise ValueError(f"Input {i} missing output index")
@@ -1435,8 +1435,8 @@ def compute_psbt_unique_id(psbt: SilentPaymentPSBT) -> bytes:
         tx_data += b'\x00'
 
         # Sequence
-        if PSBTFieldType.PSBT_IN_SEQUENCE in input_dict:
-            sequence = input_dict[PSBTFieldType.PSBT_IN_SEQUENCE].value_data
+        if PSBTKeyType.PSBT_IN_SEQUENCE in input_dict:
+            sequence = input_dict[PSBTKeyType.PSBT_IN_SEQUENCE].value_data
             tx_data += sequence
         else:
             tx_data += b'\xfe\xff\xff\xff'  # Default sequence
@@ -1446,25 +1446,25 @@ def compute_psbt_unique_id(psbt: SilentPaymentPSBT) -> bytes:
 
     # Outputs - BIP375 special handling
     for i, output_fields in enumerate(psbt.output_maps):
-        output_dict = {field.field_type: field for field in output_fields}
+        output_dict = {field.key_type: field for field in output_fields}
 
         # Amount (8 bytes)
-        if PSBTFieldType.PSBT_OUT_AMOUNT in output_dict:
-            amount = output_dict[PSBTFieldType.PSBT_OUT_AMOUNT].value_data
+        if PSBTKeyType.PSBT_OUT_AMOUNT in output_dict:
+            amount = output_dict[PSBTKeyType.PSBT_OUT_AMOUNT].value_data
             tx_data += amount
         else:
             raise ValueError(f"Output {i} missing amount")
 
         # Script - BIP375: Use PSBT_OUT_SP_V0_INFO if present, else PSBT_OUT_SCRIPT
-        if PSBTFieldType.PSBT_OUT_SP_V0_INFO in output_dict:
+        if PSBTKeyType.PSBT_OUT_SP_V0_INFO in output_dict:
             # Use SP_V0_INFO for unique identification (prevents malleability)
-            sp_info = output_dict[PSBTFieldType.PSBT_OUT_SP_V0_INFO].value_data
+            sp_info = output_dict[PSBTKeyType.PSBT_OUT_SP_V0_INFO].value_data
             # Use the raw 66 bytes (scan_key + spend_key) as the script
             script = sp_info
             tx_data += bytes([len(script)]) + script
-        elif PSBTFieldType.PSBT_OUT_SCRIPT in output_dict:
+        elif PSBTKeyType.PSBT_OUT_SCRIPT in output_dict:
             # Regular output - use PSBT_OUT_SCRIPT
-            script = output_dict[PSBTFieldType.PSBT_OUT_SCRIPT].value_data
+            script = output_dict[PSBTKeyType.PSBT_OUT_SCRIPT].value_data
             tx_data += bytes([len(script)]) + script
         else:
             raise ValueError(f"Output {i} must have either PSBT_OUT_SCRIPT or PSBT_OUT_SP_V0_INFO")
@@ -1472,7 +1472,7 @@ def compute_psbt_unique_id(psbt: SilentPaymentPSBT) -> bytes:
     # Locktime (4 bytes)
     locktime = b'\x00\x00\x00\x00'  # Default
     for field in psbt.global_fields:
-        if field.field_type == PSBTFieldType.PSBT_GLOBAL_FALLBACK_LOCKTIME:
+        if field.key_type == PSBTKeyType.PSBT_GLOBAL_FALLBACK_LOCKTIME:
             locktime = field.value_data
             break
     tx_data += locktime

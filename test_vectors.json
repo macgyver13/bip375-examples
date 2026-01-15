@@ -4,12 +4,11 @@
   "format_notes": [
     "All keys are hex-encoded",
     "PSBTs have all necessary fields",
-    "Test vectors are organized into 'invalid' and 'valid' arrays",
-    "Comment provides additional context for all test cases"
+    "Test vectors are organized into 'invalid' and 'valid' arrays"
   ],
   "invalid": [
     {
-      "description": "Missing DLEQ proof for ECDH share",
+      "description": "Detect missing PSBT_IN_SP_DLEQ proof field for PSBT_IN_SP_ECDH_SHARE",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiCrtYht20vGCALx8ZiisSkDZZzJ7nPgIx1FVehBiNyWQAEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAAiHQLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+CECVRZOeSbVDVKgn/mQZHpelcHbG/xophb7wtohOSf5i/8BAwQBAAAAAAEDCBhzAQAAAAAAAQQiUSAXu7qlEuAw+8o+5RT3sjgH4RGDGkdFRHCRNMn5v0a2xAEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
       "input_keys": [
         {
@@ -49,11 +48,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "PSBT_IN_SP_ECDH_SHARE without corresponding PSBT_IN_SP_DLEQ"
+      ]
     },
     {
-      "description": "Invalid DLEQ proof",
+      "description": "Detect invalid DLEQ proof in PSBT_IN_SP_DLEQ field",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiBJpgB4JAmRsNt6srOq9JqFCEYGmw7mPo8/4lJ2+/nPoAEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAAiHQLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+CECVRZOeSbVDVKgn/mQZHpelcHbG/xophb7wtohOSf5i/8iHgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+ECB1dab73m7/xP6o4gDeMISP8SUJ7Lb0cTBayb1WDeYZi1u5ekG4K3g7oO2Cor11Y5A758GvXy2nF0tx1E7u/5hAQMEAQAAAAABAwgYcwEAAAAAAAEEIlEgsuRy0TOUWM9fKDzk0MnUwzY/UdSp9SkkH4SdztRbddABCUIC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgCTVGDU/S9GNdpz2j/Yu8QZptwhiRrCmQD/le95JIRRIsA",
       "input_keys": [
         {
@@ -93,11 +91,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "DLEQ proof verification failed"
+      ]
     },
     {
-      "description": "Non-SIGHASH_ALL signature with silent payments",
+      "description": "Reject PSBT with non-SIGHASH_ALL signatures and PSBT_OUT_SP_V0_INFO field set",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiCfF8iU72tyS4+7lJj0TTc8KFCARRz/QDHgOTLIuPm2twEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQCAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+Yv/Ih4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPhAfNn2bwSJU+NoXtyj8XaZFSWYvOykbyFO0rjN/aSdtqAHj4lLZt/ZimcG5oc68kn132TsyYRE6RNyl32W+tgrQwABAwgYcwEAAAAAAAEEIlEgdE4JlR8XtYJIPHoMCMBib+rDZmk8hPrzngNLYS3o3HEBCUIC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgCTVGDU/S9GNdpz2j/Yu8QZptwhiRrCmQD/le95JIRRIsA",
       "input_keys": [
         {
@@ -137,11 +134,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "Silent payment outputs require SIGHASH_ALL signatures only"
+      ]
     },
     {
-      "description": "Mixed segwit versions with silent payments",
+      "description": "Detect segwit version greater than 1 in transaction inputs with PSBT_OUT_SP_V0_INFO field set",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiCuv6p7LnQnsTi6F7UesBJ3TJOXBoHuPhb2Y3hjUklAJAEPBAAAAAABASughgEAAAAAACJSIIYiz2yIzTx5hSOFG+T1WYNgEYY+sDBYObtzXueh9KPpARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+Yv/Ih4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPhAwdZ/OHiCv4F5FeoVgh1k1bODXB/AXFWM49gkkqF9kIwQSH27m93BCAyMLZwZcbJmCDxpBU4iGT8kQSisZnN+YAABAwgYcwEAAAAAAAEEIlEgIZ6/eW18O5peg4tLa+KXfHTrjWr+b09YgAaz1sNh63wBCUIC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgCTVGDU/S9GNdpz2j/Yu8QZptwhiRrCmQD/le95JIRRIsA",
       "input_keys": [
         {
@@ -181,11 +177,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "mixed_segwit"
+      ]
     },
     {
-      "description": "Silent payment outputs but no ECDH shares",
+      "description": "Detect missing PSBT_IN_SP_ECDH_SHARE with silent payment outputs defined",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiAkKwMCMdEgYFJ2eRmpLxfpzUNydadt47rD+2VnyyekwwEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAAAEDCBhzAQAAAAAAAQQiUSAE49PFUgTAYIPf3lo2ltGczidvHq5eXgsw3uhama8pVgEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
       "input_keys": [
         {
@@ -217,11 +212,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "no_ecdh_shares"
+      ]
     },
     {
-      "description": "Global ECDH share without DLEQ proof",
+      "description": "Detect missing PSBT_GLOBAL_SP_DLEQ proof field matching PSBT_GLOBAL_SP_ECDH_SHARE",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAyIHAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4IQJVFk55JtUNUqCf+ZBkel6Vwdsb/GimFvvC2iE5J/mL/wABDiD2W3/BmfoPsrzNsfoGEte1D2K0+PqV1WXEoB9MWC6SpAEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAAAEDCBhzAQAAAAAAAQQiUSCBAAI55HC7UjfZ+r6wGeJ5j8RXLnnJOQtdHV42G7fgIAEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
       "input_keys": [
         {
@@ -261,11 +255,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "missing_global_dleq"
+      ]
     },
     {
-      "description": "Wrong SP_V0_INFO field size",
+      "description": "Detect PSBT_OUT_SP_V0_INFO field with incorrect size",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiBhb07a0EqylXgp4bK5tBHX2y2Sc2xQAy4NalHiyZy13gEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+Yv/Ih4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPhAwdZ/OHiCv4F5FeoVgh1k1bODXB/AXFWM49gkkqF9kIwQSH27m93BCAyMLZwZcbJmCDxpBU4iGT8kQSisZnN+YAABAwgYcwEAAAAAAAEEIlEgqx9NHhF5eGF2DneK22zBZvlqth3Rr4eZ5lH0FTIh7JMBCUEC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgCTVGDU/S9GNdpz2j/Yu8QZptwhiRrCmQD/le95JIRRAA=",
       "input_keys": [
         {
@@ -305,67 +298,11 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde4921144",
           "sp_label": null
         }
-      ],
-      "comment": "wrong_sp_info_size"
+      ]
     },
     {
-      "description": "Mixed eligible and ineligible input types",
-      "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAIAAAABBQQBAAAAAQYBAwABDiApw6Peut1f6dS0XD295x0CWioK+UM7tO+6i0Pv5za0oQEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAAiHQLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+CECVRZOeSbVDVKgn/mQZHpelcHbG/xophb7wtohOSf5i/8iHgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+EDB1n84eIK/gXkV6hWCHWTVs4NcH8BcVYzj2CSSoX2QjBBIfbub3cEIDIwtnBlxsmYIPGkFTiIZPyRBKKxmc35gAAEOILbM9qpt6XebBi77G8FTHGWl57KukFWmYqsFQG8N9EfUAQ8EAAAAAAEQBP7///8BAFMCAAAAAeQ/TH2g2e+DCDNBekstaV4FoHWp1MBWN7X86t8ZX5WyAAAAAAD/////AfBJAgAAAAAAF6kUY3evt1S5inYSGc8WdvySwjeEULaHAAAAAAEER1IhAo8dCC1gAfpLqJmkA9r5sdsBvpJcIlM69jDuZJOwvp95IQM1iX7FrnBP5V2OpdRnsK69s3mb4Qw2BHHZt4nIEa/eO1KuAAEDCJBfAQAAAAAAAQQiUSDsAiz0NrWnm7cXwbLngQA8S0LMDyzAhBLXhwYsyqNHgwEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
-      "input_keys": [
-        {
-          "input_index": 0,
-          "private_key": "e75f1990643539150761b0dc9eceb2ec0cf8636883eea2112d991dec3567a7b9",
-          "public_key": "03d357f7c0718f2478e3fd8f8ccc2729ddd8c0ccaeb1f02b181a6f44d43b9f8d8d",
-          "prevout_txid": "29c3a3debadd5fe9d4b45c3dbde71d025a2a0af9433bb4efba8b43efe736b4a1",
-          "prevout_index": 0,
-          "prevout_scriptpubkey": "0014f8daf76ad803b0efa95d6cff8aee0891d3af1c8c",
-          "amount": 100000,
-          "witness_utxo": "a086010000000000160014f8daf76ad803b0efa95d6cff8aee0891d3af1c8c",
-          "sequence": 4294967295
-        },
-        {
-          "input_index": 1,
-          "private_key": "b0d095ddc9d046be37f1f083e2993b2c7ace820a0696c730d930a4eba61fc056",
-          "public_key": "028f1d082d6001fa4ba899a403daf9b1db01be925c22533af630ee6493b0be9f79",
-          "prevout_txid": "b6ccf6aa6de9779b062efb1bc1531c65a5e7b2ae9055a662ab05406f0df447d4",
-          "prevout_index": 0,
-          "prevout_scriptpubkey": "a9146377afb754b98a761219cf1676fc92c2378450b687",
-          "amount": 150000,
-          "witness_utxo": "0200000001e43f4c7da0d9ef830833417a4b2d695e05a075a9d4c05637b5fceadf195f95b20000000000ffffffff01f04902000000000017a9146377afb754b98a761219cf1676fc92c2378450b68700000000",
-          "sequence": 4294967295
-        }
-      ],
-      "scan_keys": [
-        {
-          "scan_pubkey": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
-          "spend_pubkey": "024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
-          "label": null
-        }
-      ],
-      "expected_ecdh_shares": [
-        {
-          "scan_key": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
-          "ecdh_result": "0255164e7926d50d52a09ff990647a5e95c1db1bfc68a616fbc2da213927f98bff",
-          "dleq_proof": "c1d67f387882bf817915ea15821d64d5b3835c1fc05c558ce3d82492a17d908c10487dbb9bddc1080c8c2d9c1971b266083c69054e22193f244128ac66737e60",
-          "is_global": false,
-          "input_index": 0
-        }
-      ],
-      "expected_outputs": [
-        {
-          "output_index": 0,
-          "amount": 90000,
-          "script": "5120ec022cf436b5a79bb717c1b2e781003c4b42cc0f2cc08412d787062ccaa34783",
-          "is_silent_payment": true,
-          "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
-          "sp_label": null
-        }
-      ],
-      "comment": "P2WPKH and P2SH multisig mixed - only P2WPKH is eligible"
-    },
-    {
-      "description": "Wrong ECDH share size",
-      "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiC1ovhHRrNOgzq0ftE7S5hwtBwhRvo0a3NKnEftiiROwwEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPggAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+YsAAQMIGHMBAAAAAAABBCJRIIAwkkgvJinSnZhZELCCxoyiB8DtQD2Nh7Ac6dO/cfgBAQlCAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4Ak1Rg1P0vRjXac9o/2LvEGabcIYkawpkA/5XveSSEUSLAA==",
+      "description": "Detect PSBT_IN_SP_ECDH_SHARE field with incorrect size",
+      "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiC1ovhHRrNOgzq0ftE7S5hwtBwhRvo0a3NKnEftiiROwwEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPggAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+YsiHgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+EDB1n84eIK/gXkV6hWCHWTVs4NcH8BcVYzj2CSSoX2QjBBIfbub3cEIDIwtnBlxsmYIPGkFTiIZPyRBKKxmc35gAAEDCBhzAQAAAAAAAQQiUSCAMJJILyYp0p2YWRCwgsaMogfA7UA9jYewHOnTv3H4AQEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
       "input_keys": [
         {
           "input_index": 0,
@@ -396,11 +333,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "ECDH share must be 33 bytes"
+      ]
     },
     {
-      "description": "Wrong DLEQ proof size",
+      "description": "Detect PSBT_IN_SP_DLEQ proof field with incorrect size",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiA78BpakVw0yvjzRht09tYBDcMoUSAE43p653aHic5dEwEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+Yv/Ih4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPg/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEDCBhzAQAAAAAAAQQiUSDtdP0G8Hjd7PFuoDosE3hSYzYMLSEIV++xEaqAMWmt+wEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
       "input_keys": [
         {
@@ -432,11 +368,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "DLEQ proof must be 64 bytes"
+      ]
     },
     {
-      "description": "Label without SP_V0_INFO",
+      "description": "Detect PSBT_OUT_SP_V0_LABEL field present without required PSBT_OUT_SP_V0_INFO field",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiCYIQIrPQiMfZ8vxvALHE0JCEOOoHYl2kTD+2DBdIFEqgEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAAAAQMIGHMBAAAAAAABBCJRICPE97d2KoVw4KmW77zDea7n/IowriFuMhY4RHSeKDQ7AQoEAQAAAAA=",
       "input_keys": [
         {
@@ -462,11 +397,10 @@
           "sp_info": null,
           "sp_label": null
         }
-      ],
-      "comment": "PSBT_OUT_SP_V0_LABEL requires PSBT_OUT_SP_V0_INFO"
+      ]
     },
     {
-      "description": "Address mismatch",
+      "description": "Detect computed output script mismatch in PSBT_OUT_SCRIPT field from transaction inputs and PSBT_IN_SP_ECDH_SHARE field",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAwABDiBumss8ldbK7k1KciUCaeuPPQVy7U+E9Lf8M6mavj46BQEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+Yv/Ih4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPhAwdZ/OHiCv4F5FeoVgh1k1bODXB/AXFWM49gkkqF9kIwQSH27m93BCAyMLZwZcbJmCDxpBU4iGT8kQSisZnN+YAABAwgYcwEAAAAAAAEEIlEgzeOdiwW0lvjxjyCyfQr5oyMzCeBHIhnggT/ztdN4fikBCUIC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgCTVGDU/S9GNdpz2j/Yu8QZptwhiRrCmQD/le95JIRRIsA",
       "input_keys": [
         {
@@ -506,11 +440,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "Output script doesn't match BIP-352 computed address"
+      ]
     },
     {
-      "description": "Both global and per-input ECDH shares",
+      "description": "Reject PSBT with PSBT_GLOBAL_SP_ECDH_SHARE and PSBT_IN_SP_ECDH_SHARE fields present for the same scan key",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAyIHAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4IQJVFk55JtUNUqCf+ZBkel6Vwdsb/GimFvvC2iE5J/mL/yIIAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4QMHWfzh4gr+BeRXqFYIdZNWzg1wfwFxVjOPYJJKhfZCMEEh9u5vdwQgMjC2cGXGyZgg8aQVOIhk/JEEorGZzfmAAAQ4gXPiMRKRM1SJjYb7RB1GUb5+HCVIpEeB3gV9ffweFr2kBDwQAAAAAAQEfoIYBAAAAAAAWABT42vdq2AOw76ldbP+K7giR068cjAEQBP7///8iBgPTV/fAcY8keOP9j4zMJynd2MDMrrHwKxgab0TUO5+NjQQAAAAAAQMEAQAAACIdAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4IQJVFk55JtUNUqCf+ZBkel6Vwdsb/GimFvvC2iE5J/mL/yIeAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4QMHWfzh4gr+BeRXqFYIdZNWzg1wfwFxVjOPYJJKhfZCMEEh9u5vdwQgMjC2cGXGyZgg8aQVOIhk/JEEorGZzfmAAAQMIGHMBAAAAAAABBCJRIEun4ulLywKN+7koGWi1ftwp9nBXsfyyF920UMMaUccMAQlCAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4Ak1Rg1P0vRjXac9o/2LvEGabcIYkawpkA/5XveSSEUSLAA==",
       "input_keys": [
         {
@@ -550,13 +483,12 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "Cannot have both global and per-input ECDH shares for same scan key"
+      ]
     }
   ],
   "valid": [
     {
-      "description": "Single signer with global ECDH share",
+      "description": "Valid PSBT where a single entity controls all inputs and uses the global ECDH share approach (PSBT_GLOBAL_SP_ECDH_SHARE) for efficiency",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAyIHAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4IQJVFk55JtUNUqCf+ZBkel6Vwdsb/GimFvvC2iE5J/mL/yIIAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4QMHWfzh4gr+BeRXqFYIdZNWzg1wfwFxVjOPYJJKhfZCMEEh9u5vdwQgMjC2cGXGyZgg8aQVOIhk/JEEorGZzfmAAAQ4gbprLPJXWyu5NSnIlAmnrjz0Fcu1PhPS3/DOpmr4+OgUBDwQAAAAAAQEfoIYBAAAAAAAWABT42vdq2AOw76ldbP+K7giR068cjAEQBP7///8iBgPTV/fAcY8keOP9j4zMJynd2MDMrrHwKxgab0TUO5+NjQQAAAAAAQMEAQAAAAABAwgYcwEAAAAAAAEEIlEgrhn77icwoalS19JZjMcD/d87lyslFIse0aea6HOdXgcBCUIC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgCTVGDU/S9GNdpz2j/Yu8QZptwhiRrCmQD/le95JIRRIsA",
       "input_keys": [
         {
@@ -596,11 +528,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "One entity controls all inputs, uses global approach for efficiency"
+      ]
     },
     {
-      "description": "Multi-party with per-input ECDH shares",
+      "description": "Valid PSBT with multiple parties (two signers) where each signer contributes per-input ECDH shares (PSBT_IN_SP_ECDH_SHARE) for their respective inputs",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAIAAAABBQQBAAAAAQYBAwABDiBc+IxEpEzVImNhvtEHUZRvn4cJUikR4HeBX19/B4WvaQEPBAAAAAABAR9QwwAAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+Yv/Ih4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPhAwdZ/OHiCv4F5FeoVgh1k1bODXB/AXFWM49gkkqF9kIwQSH27m93BCAyMLZwZcbJmCDxpBU4iGT8kQSisZnN+YAABDiAT0u662aEJkUdBDIam/gsg7p23WdpBz9Tul5LNUBI3FQEPBAAAAAABAR9QwwAAAAAAABYAFEIccVrt+YOvDjtnb/fElNEFT826ARAE/v///yIGAo8dCC1gAfpLqJmkA9r5sdsBvpJcIlM69jDuZJOwvp95BAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghA1voNBApxyR/ork41dS4Wzpp+9kxe62Fr2V5knHctCgBIh4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPhAwP4szFLfu5Jb0/9lS3qW2OwOAxpn0EG0+Zyw6BFJ4oeoK9PVG8D/czrOfTKrY9YSGGVFd4CPssf7BtK+Bv86tgABAwgYcwEAAAAAAAEEIlEgC9xqHau4dRdnjCtffc3/KXbcXRE1xN2T9mcj6++5jiUBCUIC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgCTVGDU/S9GNdpz2j/Yu8QZptwhiRrCmQD/le95JIRRIsA",
       "input_keys": [
         {
@@ -658,11 +589,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ],
-      "comment": "Two signers each contribute ECDH shares for their respective inputs"
+      ]
     },
     {
-      "description": "P2WPKH to silent payment with change detection",
+      "description": "Valid PSBT sending from P2WPKH to silent payment address with change output, using PSBT_OUT_SP_V0_LABEL for labeled silent payment and PSBT_OUT_BIP32_DERIVATION for change identification",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQCAAAAAQYBAwABDiAlbK6m2hWAb7hW7a50mI1EDHqxtcCGHsgR0ZCSdHudHAEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+Yv/Ih4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPhAwdZ/OHiCv4F5FeoVgh1k1bODXB/AXFWM49gkkqF9kIwQSH27m93BCAyMLZwZcbJmCDxpBU4iGT8kQSisZnN+YAABAwhQwwAAAAAAAAEEIlEgVbkWS8N9yG9biTYWgqowiLWz+lPa20PpXxvRE5uxwDUBCUIC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgD9SRDSFIBZWa8RdH6alxaGGLN2TPxXIQ7QnI4IvUlMjcBCgQBAAAAAAEDCMivAAAAAAAAAQQWABTjwxDMKvOsbmLK5L0j4+5SueHJWSICA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NDAAAAAAAAAAAAAAAAQA=",
       "input_keys": [
         {
@@ -710,11 +640,10 @@
           "sp_info": null,
           "sp_label": null
         }
-      ],
-      "comment": "Uses PSBT_OUT_SP_V0_LABEL and BIP32 derivation for change identification"
+      ]
     },
     {
-      "description": "Silent payment to recipient with SP change (label=0)",
+      "description": "Valid PSBT demonstrating BIP-352 label=0 convention for silent payments change where output 0 (recipient) has no PSBT_OUT_SP_V0_LABEL field and output 1 (change) has PSBT_OUT_SP_V0_LABEL=0",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQCAAAAAQYBAwABDiA+pBZO0PMkTo553UGS7UdFpGOtOryyjdXpggKGignYwgEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0OfeGchVFsg+GTiVlfzEqqKAjJ1du0glc7WJ2w1NQ/shA0gH+Gwlms4ep9JpUwu5fXthzHLUW7wA9lYwGZ13C29pIh4C0OfeGchVFsg+GTiVlfzEqqKAjJ1du0glc7WJ2w1NQ/tAlgCZCmLP09s3tvbjnI0L2vy1Ki3DtuzSjzG4VK5eKT9BlW79Yg/B4BXnnbr05J2dnu4/CGMbe3hNv8F28mS4wiIdAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4IQJVFk55JtUNUqCf+ZBkel6Vwdsb/GimFvvC2iE5J/mL/yIeAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4QMHWfzh4gr+BeRXqFYIdZNWzg1wfwFxVjOPYJJKhfZCMEEh9u5vdwQgMjC2cGXGyZgg8aQVOIhk/JEEorGZzfmAAAQMIQJwAAAAAAAABBCJRIGeR5WTAN8T4IAgi1ORFG+koagPKf1WKnsktXs8Z/HpBAQlCAtDn3hnIVRbIPhk4lZX8xKqigIydXbtIJXO1idsNTUP7A2Wqwj6pXfjI9HO7Wrun1Y4o07RqNBkb1AlcbdXmrXNBAAEDCNjWAAAAAAAAAQQiUSCnrlZnvJt3KzCgIt0kbliQzC07gBLEBu4jSFg5rqtqgQEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+ANUNPp9mrroXxiv7ibhb7t4iMiMVuP5P17uTcDvlI+lxAEKBAAAAAAA",
       "input_keys": [
         {
@@ -774,11 +703,10 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8035434fa7d9abae85f18afee26e16fbb7888c88c56e3f93f5eee4dc0ef948fa5c4",
           "sp_label": 0
         }
-      ],
-      "comment": "Demonstrates BIP-352 label=0 convention for Silent Payment change. Recipient output (output 0) has no label field. Change output (output 1) uses label=0 with PSBT_OUT_SP_V0_LABEL set. Both outputs are Silent Payments with different scan keys."
+      ]
     },
     {
-      "description": "Multiple silent payment outputs to same scan key",
+      "description": "Valid PSBT with multiple silent payment outputs to the same scan key, using different k values to generate distinct output scripts",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQCAAAAAQYBAyIHAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4IQJVFk55JtUNUqCf+ZBkel6Vwdsb/GimFvvC2iE5J/mL/yIIAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4QMHWfzh4gr+BeRXqFYIdZNWzg1wfwFxVjOPYJJKhfZCMEEh9u5vdwQgMjC2cGXGyZgg8aQVOIhk/JEEorGZzfmAAAQ4gLHvTL/FQccCuAyc4ZKFDbIpWITVp4RMtz46nPsjDMiIBDwQAAAAAAQEfoIYBAAAAAAAWABT42vdq2AOw76ldbP+K7giR068cjAEQBP7///8iBgPTV/fAcY8keOP9j4zMJynd2MDMrrHwKxgab0TUO5+NjQQAAAAAAQMEAQAAAAABAwhAnAAAAAAAAAEEIlEg+ytxOv1SuiRxgbmYQapPLIhVut99rOLrLjBV2hPuK4wBCUIC0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPgCTVGDU/S9GNdpz2j/Yu8QZptwhiRrCmQD/le95JIRRIsAAQMI2NYAAAAAAAABBCJRIFmgqeG9mJh0IBNVOGDtC0S3JvvFIOnFcbxGSV8kefYYAQlCAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4Ak1Rg1P0vRjXac9o/2LvEGabcIYkawpkA/5XveSSEUSLAA==",
       "input_keys": [
         {
@@ -826,8 +754,61 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
+      ]
+    },
+    {
+      "description": "Valid PSBT with mixed input types where only eligible P2WPKH inputs contribute ECDH shares (ineligible P2SH multisig excluded)",
+      "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAIAAAABBQQBAAAAAQYBAwABDiApw6Peut1f6dS0XD295x0CWioK+UM7tO+6i0Pv5za0oQEPBAAAAAABAR+ghgEAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAAiHQLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+CECVRZOeSbVDVKgn/mQZHpelcHbG/xophb7wtohOSf5i/8iHgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+EDB1n84eIK/gXkV6hWCHWTVs4NcH8BcVYzj2CSSoX2QjBBIfbub3cEIDIwtnBlxsmYIPGkFTiIZPyRBKKxmc35gAAEOILbM9qpt6XebBi77G8FTHGWl57KukFWmYqsFQG8N9EfUAQ8EAAAAAAEQBP7///8BAFMCAAAAAeQ/TH2g2e+DCDNBekstaV4FoHWp1MBWN7X86t8ZX5WyAAAAAAD/////AfBJAgAAAAAAF6kUY3evt1S5inYSGc8WdvySwjeEULaHAAAAAAEER1IhAo8dCC1gAfpLqJmkA9r5sdsBvpJcIlM69jDuZJOwvp95IQM1iX7FrnBP5V2OpdRnsK69s3mb4Qw2BHHZt4nIEa/eO1KuAAEDCJBfAQAAAAAAAQQiUSDsAiz0NrWnm7cXwbLngQA8S0LMDyzAhBLXhwYsyqNHgwEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
+      "input_keys": [
+        {
+          "input_index": 0,
+          "private_key": "e75f1990643539150761b0dc9eceb2ec0cf8636883eea2112d991dec3567a7b9",
+          "public_key": "03d357f7c0718f2478e3fd8f8ccc2729ddd8c0ccaeb1f02b181a6f44d43b9f8d8d",
+          "prevout_txid": "29c3a3debadd5fe9d4b45c3dbde71d025a2a0af9433bb4efba8b43efe736b4a1",
+          "prevout_index": 0,
+          "prevout_scriptpubkey": "0014f8daf76ad803b0efa95d6cff8aee0891d3af1c8c",
+          "amount": 100000,
+          "witness_utxo": "a086010000000000160014f8daf76ad803b0efa95d6cff8aee0891d3af1c8c",
+          "sequence": 4294967295
+        },
+        {
+          "input_index": 1,
+          "private_key": "b0d095ddc9d046be37f1f083e2993b2c7ace820a0696c730d930a4eba61fc056",
+          "public_key": "028f1d082d6001fa4ba899a403daf9b1db01be925c22533af630ee6493b0be9f79",
+          "prevout_txid": "b6ccf6aa6de9779b062efb1bc1531c65a5e7b2ae9055a662ab05406f0df447d4",
+          "prevout_index": 0,
+          "prevout_scriptpubkey": "a9146377afb754b98a761219cf1676fc92c2378450b687",
+          "amount": 150000,
+          "witness_utxo": "0200000001e43f4c7da0d9ef830833417a4b2d695e05a075a9d4c05637b5fceadf195f95b20000000000ffffffff01f04902000000000017a9146377afb754b98a761219cf1676fc92c2378450b68700000000",
+          "sequence": 4294967295
+        }
       ],
-      "comment": "Two outputs to same silent payment address, different k values"
+      "scan_keys": [
+        {
+          "scan_pubkey": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
+          "spend_pubkey": "024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
+          "label": null
+        }
+      ],
+      "expected_ecdh_shares": [
+        {
+          "scan_key": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
+          "ecdh_result": "0255164e7926d50d52a09ff990647a5e95c1db1bfc68a616fbc2da213927f98bff",
+          "dleq_proof": "c1d67f387882bf817915ea15821d64d5b3835c1fc05c558ce3d82492a17d908c10487dbb9bddc1080c8c2d9c1971b266083c69054e22193f244128ac66737e60",
+          "is_global": false,
+          "input_index": 0
+        }
+      ],
+      "expected_outputs": [
+        {
+          "output_index": 0,
+          "amount": 90000,
+          "script": "5120ec022cf436b5a79bb717c1b2e781003c4b42cc0f2cc08412d787062ccaa34783",
+          "is_silent_payment": true,
+          "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
+          "sp_label": null
+        }
+      ]
     }
   ]
 }

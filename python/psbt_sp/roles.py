@@ -14,7 +14,7 @@ Implements the distinct roles defined in Bitcoin PSBT specifications:
 import struct
 import hashlib
 from typing import List, Dict, Optional, Tuple
-from .constants import PSBTFieldType
+from .constants import PSBTKeyType
 from secp256k1_374 import GE, G
 from .serialization import PSBTField
 from .crypto import Wallet, PublicKey, UTXO, sign_p2wpkh_input
@@ -49,11 +49,11 @@ class PSBTCreator:
         global_fields = []
 
         # PSBT v2 requires these global fields
-        global_fields.append(PSBTField(PSBTFieldType.PSBT_GLOBAL_VERSION, b'', struct.pack('<I', 2)))  # PSBT format version
-        global_fields.append(PSBTField(PSBTFieldType.PSBT_GLOBAL_TX_VERSION, b'', struct.pack('<I', 2)))
-        global_fields.append(PSBTField(PSBTFieldType.PSBT_GLOBAL_INPUT_COUNT, b'', struct.pack('<B', num_inputs)))
-        global_fields.append(PSBTField(PSBTFieldType.PSBT_GLOBAL_OUTPUT_COUNT, b'', struct.pack('<B', num_outputs)))
-        global_fields.append(PSBTField(PSBTFieldType.PSBT_GLOBAL_TX_MODIFIABLE, b'', struct.pack('<B', 0x03)))  # Inputs and outputs modifiable
+        global_fields.append(PSBTField(PSBTKeyType.PSBT_GLOBAL_VERSION, b'', struct.pack('<I', 2)))  # PSBT format version
+        global_fields.append(PSBTField(PSBTKeyType.PSBT_GLOBAL_TX_VERSION, b'', struct.pack('<I', 2)))
+        global_fields.append(PSBTField(PSBTKeyType.PSBT_GLOBAL_INPUT_COUNT, b'', struct.pack('<B', num_inputs)))
+        global_fields.append(PSBTField(PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT, b'', struct.pack('<B', num_outputs)))
+        global_fields.append(PSBTField(PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE, b'', struct.pack('<B', 0x03)))  # Inputs and outputs modifiable
         # Omit optional PSBT_GLOBAL_FALLBACK_LOCKTIME
 
         # Initialize empty input and output maps
@@ -122,7 +122,7 @@ class PSBTConstructor:
         has_silent_payment_output = False
         for output_idx, output_fields in enumerate(output_maps):
             for field in output_fields:
-                if field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+                if field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                     has_silent_payment_output = True
                     break
             if has_silent_payment_output:
@@ -135,7 +135,7 @@ class PSBTConstructor:
         # Check each input for Segwit version > 1
         for input_idx, input_fields in enumerate(input_maps):
             for field in input_fields:
-                if field.field_type == PSBTFieldType.PSBT_IN_WITNESS_UTXO:
+                if field.key_type == PSBTKeyType.PSBT_IN_WITNESS_UTXO:
                     # Parse witness UTXO to extract script_pubkey
                     if len(field.value_data) < 9:
                         continue
@@ -187,26 +187,26 @@ class PSBTConstructor:
                 sequence = inp.get('sequence', 0xfffffffe)
 
             # Add PSBT_IN_PREVIOUS_TXID
-            input_fields.append(PSBTField(PSBTFieldType.PSBT_IN_PREVIOUS_TXID, b'', txid))
+            input_fields.append(PSBTField(PSBTKeyType.PSBT_IN_PREVIOUS_TXID, b'', txid))
 
             # Add PSBT_IN_OUTPUT_INDEX
-            input_fields.append(PSBTField(PSBTFieldType.PSBT_IN_OUTPUT_INDEX, b'', struct.pack('<I', vout)))
+            input_fields.append(PSBTField(PSBTKeyType.PSBT_IN_OUTPUT_INDEX, b'', struct.pack('<I', vout)))
 
             # Add PSBT_IN_WITNESS_UTXO (P2WSH, P2TR, P2WPKH)
             witness_utxo = struct.pack('<Q', amount)  # 8-byte amount
             witness_utxo += struct.pack('<B', len(script_pubkey)) + script_pubkey
-            input_fields.append(PSBTField(PSBTFieldType.PSBT_IN_WITNESS_UTXO, b'', witness_utxo))
+            input_fields.append(PSBTField(PSBTKeyType.PSBT_IN_WITNESS_UTXO, b'', witness_utxo))
 
             # TODO: Add PSBT_IN_BIP32_DERIVATION
-            # input_fields.append(PSBTField(PSBTFieldType.PSBT_IN_BIP32_DERIVATION, <bytes pubkey>, <4 byte fingerprint> <32-bit little endian uint path element>))
+            # input_fields.append(PSBTField(PSBTKeyType.PSBT_IN_BIP32_DERIVATION, <bytes pubkey>, <4 byte fingerprint> <32-bit little endian uint path element>))
 
             # TODO: Handle PSBT_IN_NON_WITNESS_UTXO (P2PKH, P2SH)
 
             # Add PSBT_IN_SEQUENCE
-            input_fields.append(PSBTField(PSBTFieldType.PSBT_IN_SEQUENCE, b'', struct.pack('<I', sequence)))
+            input_fields.append(PSBTField(PSBTKeyType.PSBT_IN_SEQUENCE, b'', struct.pack('<I', sequence)))
 
             # Add PSBT_IN_SIGHASH_TYPE (SIGHASH_ALL for silent payments)
-            input_fields.append(PSBTField(PSBTFieldType.PSBT_IN_SIGHASH_TYPE, b'', struct.pack('<I', 1)))
+            input_fields.append(PSBTField(PSBTKeyType.PSBT_IN_SIGHASH_TYPE, b'', struct.pack('<I', 1)))
 
             # Omit optional PSBT_IN_REQUIRED_TIME_LOCKTIME || PSBT_IN_REQUIRED_HEIGHT_LOCKTIME
 
@@ -226,7 +226,7 @@ class PSBTConstructor:
             output_fields = output_maps[i]
 
             # Add PSBT_OUT_AMOUNT (always present)
-            output_fields.append(PSBTField(PSBTFieldType.PSBT_OUT_AMOUNT, b'', struct.pack('<Q', output["amount"])))
+            output_fields.append(PSBTField(PSBTKeyType.PSBT_OUT_AMOUNT, b'', struct.pack('<Q', output["amount"])))
 
             # Check if this is a silent payment output
             if "address" in output:
@@ -237,16 +237,16 @@ class PSBTConstructor:
                 # TODO: This statement from SPEC needs to be resolved: 
                 ## The PSBT_OUT_SP_V0_INFO should be serialized as a zero byte for the version, followed by the 33 bytes of the scan key and then 33 bytes for the spend key.
                 sp_info = sp_address.scan_key.bytes + sp_address.spend_key.bytes
-                output_fields.append(PSBTField(PSBTFieldType.PSBT_OUT_SP_V0_INFO, b'', sp_info))
+                output_fields.append(PSBTField(PSBTKeyType.PSBT_OUT_SP_V0_INFO, b'', sp_info))
 
                 # Add PSBT_OUT_SP_V0_LABEL if present
                 # TODO: should change label always be added?
                 if sp_address.label is not None:
-                    output_fields.append(PSBTField(PSBTFieldType.PSBT_OUT_SP_V0_LABEL, b'', struct.pack('<I', sp_address.label)))
+                    output_fields.append(PSBTField(PSBTKeyType.PSBT_OUT_SP_V0_LABEL, b'', struct.pack('<I', sp_address.label)))
             else:
                 # Regular output - has script_pubkey
                 script_pubkey = bytes.fromhex(output["script_pubkey"]) if isinstance(output["script_pubkey"], str) else output["script_pubkey"]
-                output_fields.append(PSBTField(PSBTFieldType.PSBT_OUT_SCRIPT, b'', script_pubkey))
+                output_fields.append(PSBTField(PSBTKeyType.PSBT_OUT_SCRIPT, b'', script_pubkey))
 
 
 class PSBTSigner:
@@ -278,7 +278,7 @@ class PSBTSigner:
             scan_keys: List of scan keys (PublicKey objects)
             use_global: If True, use global ECDH approach; if False, use per-input approach
         """
-        from .psbt_utils import is_taproot_output
+        from .inputs import is_p2tr
         
         # Only process inputs that have private keys
         spendable_inputs = [(i, utxo) for i, utxo in enumerate(inputs) if utxo.private_key is not None]
@@ -291,7 +291,7 @@ class PSBTSigner:
         for index, utxo in spendable_inputs:
             privkey = int(utxo.private_key)
             # Check if this is a Taproot input
-            if is_taproot_output(utxo.script_pubkey_bytes):
+            if is_p2tr(utxo.script_pubkey_bytes):
                 # Compute original public key and adjust if needed
                 pubkey = privkey * G
                 # Check if y-coordinate is odd
@@ -323,14 +323,14 @@ class PSBTSigner:
 
                 # Add global ECDH share field
                 global_fields.append(PSBTField(
-                    PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE,
+                    PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE,
                     scan_key.bytes,
                     ecdh_result_bytes
                 ))
 
                 # Add global DLEQ proof field
                 global_fields.append(PSBTField(
-                    PSBTFieldType.PSBT_GLOBAL_SP_DLEQ,
+                    PSBTKeyType.PSBT_GLOBAL_SP_DLEQ,
                     scan_key.bytes,
                     dleq_proof
                 ))
@@ -355,14 +355,14 @@ class PSBTSigner:
 
                     # Add per-input ECDH share field
                     input_maps[input_index].append(PSBTField(
-                        PSBTFieldType.PSBT_IN_SP_ECDH_SHARE,
+                        PSBTKeyType.PSBT_IN_SP_ECDH_SHARE,
                         scan_key.bytes,
                         ecdh_result_bytes
                     ))
 
                     # Add per-input DLEQ proof field
                     input_maps[input_index].append(PSBTField(
-                        PSBTFieldType.PSBT_IN_SP_DLEQ,
+                        PSBTKeyType.PSBT_IN_SP_DLEQ,
                         scan_key.bytes,
                         dleq_proof
                     ))
@@ -403,9 +403,9 @@ class PSBTSigner:
         for output_fields in output_maps:
             output_dict = {}
             for field in output_fields:
-                if field.field_type == PSBTFieldType.PSBT_OUT_AMOUNT:
+                if field.key_type == PSBTKeyType.PSBT_OUT_AMOUNT:
                     output_dict['amount'] = struct.unpack('<Q', field.value_data)[0]
-                elif field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT:
+                elif field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT:
                     output_dict['script_pubkey'] = field.value_data.hex()
             transaction_data['outputs'].append(output_dict)
 
@@ -435,7 +435,7 @@ class PSBTSigner:
                 public_key_compressed = public_key_point.to_bytes_compressed()
 
                 input_maps[input_index].append(PSBTField(
-                    PSBTFieldType.PSBT_IN_PARTIAL_SIG,
+                    PSBTKeyType.PSBT_IN_PARTIAL_SIG,
                     public_key_compressed,
                     signature
                 ))
@@ -497,14 +497,14 @@ class PSBTSigner:
 
                 # Add per-input ECDH share field
                 input_maps[input_index].append(PSBTField(
-                    PSBTFieldType.PSBT_IN_SP_ECDH_SHARE,
+                    PSBTKeyType.PSBT_IN_SP_ECDH_SHARE,
                     scan_key.bytes,
                     ecdh_result_bytes
                 ))
 
                 # Add per-input DLEQ proof field
                 input_maps[input_index].append(PSBTField(
-                    PSBTFieldType.PSBT_IN_SP_DLEQ,
+                    PSBTKeyType.PSBT_IN_SP_DLEQ,
                     scan_key.bytes,
                     dleq_proof
                 ))
@@ -544,9 +544,9 @@ class PSBTSigner:
         for output_fields in output_maps:
             output_dict = {}
             for field in output_fields:
-                if field.field_type == PSBTFieldType.PSBT_OUT_AMOUNT:
+                if field.key_type == PSBTKeyType.PSBT_OUT_AMOUNT:
                     output_dict['amount'] = struct.unpack('<Q', field.value_data)[0]
-                elif field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT:
+                elif field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT:
                     output_dict['script_pubkey'] = field.value_data.hex()
             transaction_data['outputs'].append(output_dict)
 
@@ -585,7 +585,7 @@ class PSBTSigner:
                 public_key_compressed = public_key_point.to_bytes_compressed()
 
                 input_maps[input_index].append(PSBTField(
-                    PSBTFieldType.PSBT_IN_PARTIAL_SIG,
+                    PSBTKeyType.PSBT_IN_PARTIAL_SIG,
                     public_key_compressed,
                     signature
                 ))
@@ -639,7 +639,7 @@ class PSBTInputFinalizer:
 
         # Check for global ECDH shares
         for field in global_fields:
-            if field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE:
+            if field.key_type == PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE:
                 scan_key = field.key_data
                 ecdh_share = field.value_data
                 if scan_key not in ecdh_shares:
@@ -652,7 +652,7 @@ class PSBTInputFinalizer:
         # Check for per-input ECDH shares and combine them
         for input_fields in input_maps:
             for field in input_fields:
-                if field.field_type == PSBTFieldType.PSBT_IN_SP_ECDH_SHARE:
+                if field.key_type == PSBTKeyType.PSBT_IN_SP_ECDH_SHARE:
                     scan_key = field.key_data
                     ecdh_share = field.value_data
                     if scan_key not in ecdh_shares:
@@ -674,9 +674,9 @@ class PSBTInputFinalizer:
             sp_label_field = None
 
             for field in output_fields:
-                if field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+                if field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                     sp_info_field = field
-                elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_LABEL:
+                elif field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_LABEL:
                     sp_label_field = field
 
             if sp_info_field is None:
@@ -722,7 +722,7 @@ class PSBTInputFinalizer:
 
             # Add PSBT_OUT_SCRIPT field
             output_fields.append(PSBTField(
-                PSBTFieldType.PSBT_OUT_SCRIPT,
+                PSBTKeyType.PSBT_OUT_SCRIPT,
                 b'',
                 script_pubkey
             ))
@@ -742,14 +742,14 @@ class PSBTInputFinalizer:
     def _set_non_modifiable(global_fields: List[PSBTField]) -> None:
         """Set TX_MODIFIABLE flags to 0x00 (neither inputs nor outputs modifiable)"""
         for field in global_fields:
-            if field.field_type == PSBTFieldType.PSBT_GLOBAL_TX_MODIFIABLE:
+            if field.key_type == PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE:
                 field.value_data = struct.pack('<B', 0x00)
                 print("Set TX_MODIFIABLE flags to 0x00")
                 return
 
         # Add if doesn't exist
         global_fields.append(PSBTField(
-            PSBTFieldType.PSBT_GLOBAL_TX_MODIFIABLE,
+            PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE,
             b'',
             struct.pack('<B', 0x00)
         ))
@@ -815,7 +815,7 @@ class PSBTUpdater:
 
             # Check if field already exists
             has_bip32_derivation = any(
-                field.field_type == PSBTFieldType.PSBT_IN_BIP32_DERIVATION
+                field.key_type == PSBTKeyType.PSBT_IN_BIP32_DERIVATION
                 for field in input_fields
             )
             if has_bip32_derivation:
@@ -857,7 +857,7 @@ class PSBTUpdater:
 
             # Add PSBT_IN_BIP32_DERIVATION field
             input_fields.append(PSBTField(
-                PSBTFieldType.PSBT_IN_BIP32_DERIVATION,
+                PSBTKeyType.PSBT_IN_BIP32_DERIVATION,
                 pubkey_bytes,      # Key: 33-byte compressed public key
                 value_data         # Value: fingerprint + path (or empty for privacy)
             ))
@@ -925,7 +925,7 @@ class PSBTUpdater:
 
             # Add PSBT_OUT_BIP32_DERIVATION field
             output_fields.append(PSBTField(
-                PSBTFieldType.PSBT_OUT_BIP32_DERIVATION,
+                PSBTKeyType.PSBT_OUT_BIP32_DERIVATION,
                 pubkey_bytes,
                 value_data
             ))
@@ -967,13 +967,13 @@ class PSBTExtractor:
         """
         # Verify all outputs have scripts
         for i, output_fields in enumerate(output_maps):
-            has_script = any(field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT for field in output_fields)
+            has_script = any(field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT for field in output_fields)
             if not has_script:
                 raise ValueError(f"Output {i} missing script - run compute_output_scripts() first")
 
         # Verify all inputs have signatures
         for i, input_fields in enumerate(input_maps):
-            has_signature = any(field.field_type == PSBTFieldType.PSBT_IN_PARTIAL_SIG for field in input_fields)
+            has_signature = any(field.key_type == PSBTKeyType.PSBT_IN_PARTIAL_SIG for field in input_fields)
             if not has_signature:
                 raise ValueError(f"Input {i} missing signature - run sign_inputs() first")
 
@@ -985,7 +985,7 @@ class PSBTExtractor:
         # Extract version from PSBT_GLOBAL_TX_VERSION (default to 2 per BIP 370)
         version = 2
         for field in global_fields:
-            if field.field_type == PSBTFieldType.PSBT_GLOBAL_TX_VERSION:
+            if field.key_type == PSBTKeyType.PSBT_GLOBAL_TX_VERSION:
                 version = struct.unpack('<I', field.value_data)[0]
                 break
 
@@ -999,17 +999,17 @@ class PSBTExtractor:
 
         # Inputs
         for i, input_fields in enumerate(input_maps):
-            input_dict = {field.field_type: field for field in input_fields}
+            input_dict = {field.key_type: field for field in input_fields}
 
             # Previous output (36 bytes)
-            if PSBTFieldType.PSBT_IN_PREVIOUS_TXID in input_dict:
-                txid = input_dict[PSBTFieldType.PSBT_IN_PREVIOUS_TXID].value_data
+            if PSBTKeyType.PSBT_IN_PREVIOUS_TXID in input_dict:
+                txid = input_dict[PSBTKeyType.PSBT_IN_PREVIOUS_TXID].value_data
                 tx_data += txid
             else:
                 raise ValueError(f"Input {i} missing previous txid")
 
-            if PSBTFieldType.PSBT_IN_OUTPUT_INDEX in input_dict:
-                vout = input_dict[PSBTFieldType.PSBT_IN_OUTPUT_INDEX].value_data
+            if PSBTKeyType.PSBT_IN_OUTPUT_INDEX in input_dict:
+                vout = input_dict[PSBTKeyType.PSBT_IN_OUTPUT_INDEX].value_data
                 tx_data += vout
             else:
                 raise ValueError(f"Input {i} missing output index")
@@ -1018,8 +1018,8 @@ class PSBTExtractor:
             tx_data += b'\x00'  # Empty scriptSig
 
             # Sequence (4 bytes)
-            if PSBTFieldType.PSBT_IN_SEQUENCE in input_dict:
-                sequence = input_dict[PSBTFieldType.PSBT_IN_SEQUENCE].value_data
+            if PSBTKeyType.PSBT_IN_SEQUENCE in input_dict:
+                sequence = input_dict[PSBTKeyType.PSBT_IN_SEQUENCE].value_data
                 tx_data += sequence
             else:
                 tx_data += b'\xfe\xff\xff\xff'  # Default sequence
@@ -1029,25 +1029,25 @@ class PSBTExtractor:
 
         # Outputs
         for i, output_fields in enumerate(output_maps):
-            output_dict = {field.field_type: field for field in output_fields}
+            output_dict = {field.key_type: field for field in output_fields}
 
             # Amount (8 bytes, little-endian)
-            if PSBTFieldType.PSBT_OUT_AMOUNT in output_dict:
-                amount = output_dict[PSBTFieldType.PSBT_OUT_AMOUNT].value_data
+            if PSBTKeyType.PSBT_OUT_AMOUNT in output_dict:
+                amount = output_dict[PSBTKeyType.PSBT_OUT_AMOUNT].value_data
                 tx_data += amount
             else:
                 raise ValueError(f"Output {i} missing amount")
 
             # Script
-            if PSBTFieldType.PSBT_OUT_SCRIPT in output_dict:
-                script = output_dict[PSBTFieldType.PSBT_OUT_SCRIPT].value_data
+            if PSBTKeyType.PSBT_OUT_SCRIPT in output_dict:
+                script = output_dict[PSBTKeyType.PSBT_OUT_SCRIPT].value_data
                 tx_data += bytes([len(script)]) + script
             else:
                 raise ValueError(f"Output {i} missing script")
 
         # Witness data
         for i, input_fields in enumerate(input_maps):
-            input_dict = {field.field_type: field for field in input_fields}
+            input_dict = {field.key_type: field for field in input_fields}
 
             # For P2WPKH: witness = [signature, pubkey]
             witness_items = []
@@ -1057,7 +1057,7 @@ class PSBTExtractor:
             pubkey = None
 
             for field in input_fields:
-                if field.field_type == PSBTFieldType.PSBT_IN_PARTIAL_SIG:
+                if field.key_type == PSBTKeyType.PSBT_IN_PARTIAL_SIG:
                     signature = field.value_data
                     pubkey = field.key_data  # Public key is the key for partial sig
                     break
@@ -1081,8 +1081,8 @@ class PSBTExtractor:
         # Check inputs for required locktimes (PSBT_IN_REQUIRED_TIME_LOCKTIME or PSBT_IN_REQUIRED_HEIGHT_LOCKTIME)
         for input_fields in input_maps:
             for field in input_fields:
-                if field.field_type in (PSBTFieldType.PSBT_IN_REQUIRED_TIME_LOCKTIME,
-                                        PSBTFieldType.PSBT_IN_REQUIRED_HEIGHT_LOCKTIME):
+                if field.key_type in (PSBTKeyType.PSBT_IN_REQUIRED_TIME_LOCKTIME,
+                                        PSBTKeyType.PSBT_IN_REQUIRED_HEIGHT_LOCKTIME):
                     required_locktimes.append(struct.unpack('<I', field.value_data)[0])
 
         if required_locktimes:
@@ -1091,7 +1091,7 @@ class PSBTExtractor:
         else:
             # Use fallback locktime from global fields (defaults to 0 if not present)
             for field in global_fields:
-                if field.field_type == PSBTFieldType.PSBT_GLOBAL_FALLBACK_LOCKTIME:
+                if field.key_type == PSBTKeyType.PSBT_GLOBAL_FALLBACK_LOCKTIME:
                     locktime = struct.unpack('<I', field.value_data)[0]
                     break
 

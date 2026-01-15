@@ -33,7 +33,7 @@ from shared_hw_utils import (
 # Add parent directories to path for PSBT imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from psbt_sp.psbt import SilentPaymentPSBT
-from psbt_sp.constants import PSBTFieldType
+from psbt_sp.constants import PSBTKeyType
 from psbt_sp.crypto import Wallet, PublicKey
 from psbt_sp.psbt_utils import extract_inputs_from_psbt, extract_output_details_from_psbt, extract_dnssec_proofs_from_outputs
 from secp256k1_374 import GE
@@ -246,13 +246,13 @@ def sign_psbt(psbt: SilentPaymentPSBT, metadata: dict, wallet: Wallet,
             print("     🚨 ATTACK: Bypassing output script computation")
             # Manually set some dummy output scripts so the method doesn't fail
             from psbt_sp.serialization import PSBTField
-            from psbt_sp.constants import PSBTFieldType
+            from psbt_sp.constants import PSBTKeyType
 
             for output_map in psbt.output_maps:
                 # Add a dummy script to make it look like outputs were computed
                 dummy_script = b'\x00\x14' + b'\x00' * 20  # Dummy P2WPKH script
                 output_map.append(PSBTField(
-                    PSBTFieldType.PSBT_OUT_SCRIPT,
+                    PSBTKeyType.PSBT_OUT_SCRIPT,
                     b'',  # Empty key data
                     dummy_script
                 ))
@@ -364,9 +364,9 @@ def strip_bip375_fields(psbt):
         # Find and remove fields by checking each field's type
         fields_to_remove = []
         for field in output_map:
-            if field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_INFO:
+            if field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_INFO:
                 fields_to_remove.append(field)
-            elif field.field_type == PSBTFieldType.PSBT_OUT_SP_V0_LABEL:
+            elif field.key_type == PSBTKeyType.PSBT_OUT_SP_V0_LABEL:
                 fields_to_remove.append(field)
         for field in fields_to_remove:
             output_map.remove(field)
@@ -375,9 +375,9 @@ def strip_bip375_fields(psbt):
         # Find and remove fields by checking each field's type
         fields_to_remove = []
         for field in input_map:
-            if field.field_type == PSBTFieldType.PSBT_IN_SP_ECDH_SHARE:
+            if field.key_type == PSBTKeyType.PSBT_IN_SP_ECDH_SHARE:
                 fields_to_remove.append(field)
-            elif field.field_type == PSBTFieldType.PSBT_IN_SP_DLEQ:
+            elif field.key_type == PSBTKeyType.PSBT_IN_SP_DLEQ:
                 fields_to_remove.append(field)
         for field in fields_to_remove:
             input_map.remove(field)
@@ -385,9 +385,9 @@ def strip_bip375_fields(psbt):
     # Remove global fields
     fields_to_remove = []
     for field in psbt.global_fields:
-        if field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_ECDH_SHARE:
+        if field.key_type == PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE:
             fields_to_remove.append(field)
-        elif field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_DLEQ:
+        elif field.key_type == PSBTKeyType.PSBT_GLOBAL_SP_DLEQ:
             fields_to_remove.append(field)
     for field in fields_to_remove:
         psbt.global_fields.remove(field)

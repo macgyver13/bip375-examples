@@ -7,7 +7,7 @@ Provides PSBT v2 implementation with silent payment extensions.
 """
 
 # Constants
-from .constants import PSBTFieldType
+from .constants import PSBTKeyType
 
 # Core PSBT functionality
 from .psbt import SilentPaymentPSBT, SilentPaymentAddress, ECDHShare, validate_psbt_silent_payments
@@ -35,6 +35,18 @@ from .psbt_utils import (
     extract_scan_keys_from_outputs
 )
 
+# Input validation utilities
+from .inputs import (
+    is_p2tr,
+    is_p2wpkh,
+    is_p2sh,
+    is_p2pkh,
+    is_eligible_input_type,
+    validate_input_eligibility,
+    get_input_script_pubkey,
+    check_invalid_segwit_version
+)
+
 # File I/O
 from .psbt_io import save_psbt_to_file, load_psbt_from_file
 
@@ -59,7 +71,7 @@ __description__ = "PSBT v2 with BIP 375 Silent Payment extensions"
 # Public API - what gets imported with "from psbt_sp import *"
 __all__ = [
     # Constants
-    "PSBTFieldType",
+    "PSBTKeyType",
 
     # Core classes
     "SilentPaymentPSBT",
@@ -91,6 +103,16 @@ __all__ = [
     "extract_combined_input_pubkeys",
     "check_ecdh_coverage",
     "extract_scan_keys_from_outputs",
+
+    # Input validation functions
+    "is_p2tr",
+    "is_p2wpkh",
+    "is_p2sh",
+    "is_p2pkh",
+    "is_eligible_input_type",
+    "validate_input_eligibility",
+    "get_input_script_pubkey",
+    "check_invalid_segwit_version",
 
     # Transaction functions
     "extract_transaction",

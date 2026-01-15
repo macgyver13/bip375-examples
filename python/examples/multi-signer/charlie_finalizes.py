@@ -36,7 +36,7 @@ from shared_utils import (
 
 # Add parent directories to path for PSBT imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from psbt_sp.psbt import SilentPaymentPSBT, PSBTFieldType
+from psbt_sp.psbt import SilentPaymentPSBT, PSBTKeyType
 from psbt_sp.roles import PSBTExtractor
 def charlie_finalizes():
     """
@@ -91,7 +91,7 @@ def charlie_finalizes():
 
     # Check if output scripts were computed
     output_scripts_computed = any(
-        any(field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT for field in output_fields)
+        any(field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT for field in output_fields)
         for output_fields in psbt.output_maps
     )
 

@@ -51,9 +51,9 @@ def write_valuedata(value_data: bytes) -> bytes:
     return compact_size_uint(len(value_data)) + value_data
 
 
-def write_psbt_field(field_type: int, key_data: bytes, value_data: bytes) -> bytes:
-    """Write a PSBT field in the format: key_len + field_type + key_data + value_len + value_data"""
-    key_full = bytes([field_type]) + key_data
+def write_psbt_field(key_type: int, key_data: bytes, value_data: bytes) -> bytes:
+    """Write a PSBT field in the format: key_len + key_type + key_data + value_len + value_data"""
+    key_full = bytes([key_type]) + key_data
     return write_keydata(key_full) + write_valuedata(value_data)
 
 
@@ -75,14 +75,14 @@ def create_witness_utxo(amount: int, script_pubkey: bytes) -> bytes:
 class PSBTField:
     """Represents a single PSBT field"""
     
-    def __init__(self, field_type: int, key_data: bytes, value_data: bytes):
-        self.field_type = field_type
+    def __init__(self, key_type: int, key_data: bytes, value_data: bytes):
+        self.key_type = key_type
         self.key_data = key_data
         self.value_data = value_data
     
     def serialize(self) -> bytes:
         """Serialize this field to PSBT format"""
-        return write_psbt_field(self.field_type, self.key_data, self.value_data)
+        return write_psbt_field(self.key_type, self.key_data, self.value_data)
 
 
 class PSBTv2:
@@ -95,25 +95,25 @@ class PSBTv2:
         self.input_maps: List[List[PSBTField]] = []
         self.output_maps: List[List[PSBTField]] = []
     
-    def add_global_field(self, field_type: int, key_data: bytes, value_data: bytes):
+    def add_global_field(self, key_type: int, key_data: bytes, value_data: bytes):
         """Add a global field"""
-        self.global_fields.append(PSBTField(field_type, key_data, value_data))
+        self.global_fields.append(PSBTField(key_type, key_data, value_data))
     
-    def add_input_field(self, input_index: int, field_type: int, key_data: bytes, value_data: bytes):
+    def add_input_field(self, input_index: int, key_type: int, key_data: bytes, value_data: bytes):
         """Add a field to specific input"""
         # Extend input_maps if needed
         while len(self.input_maps) <= input_index:
             self.input_maps.append([])
         
-        self.input_maps[input_index].append(PSBTField(field_type, key_data, value_data))
+        self.input_maps[input_index].append(PSBTField(key_type, key_data, value_data))
     
-    def add_output_field(self, output_index: int, field_type: int, key_data: bytes, value_data: bytes):
+    def add_output_field(self, output_index: int, key_type: int, key_data: bytes, value_data: bytes):
         """Add a field to specific output"""
         # Extend output_maps if needed
         while len(self.output_maps) <= output_index:
             self.output_maps.append([])
         
-        self.output_maps[output_index].append(PSBTField(field_type, key_data, value_data))
+        self.output_maps[output_index].append(PSBTField(key_type, key_data, value_data))
     
     def serialize_section(self, fields: List[PSBTField]) -> bytes:
         """Serialize a section (global, input, or output)"""
@@ -155,7 +155,7 @@ def parse_psbt_bytes(psbt_data: bytes) -> Tuple[List['PSBTField'], List[List['PS
     Raises:
         ValueError: If PSBT data is invalid or truncated
     """
-    from .constants import PSBTFieldType
+    from .constants import PSBTKeyType
 
     if len(psbt_data) < 5 or psbt_data[:5] != b'psbt\xff':
         raise ValueError("Invalid PSBT magic")
@@ -200,11 +200,12 @@ def parse_psbt_bytes(psbt_data: bytes) -> Tuple[List['PSBTField'], List[List['PS
             value_data = data[offset:offset + value_len]
             offset += value_len
 
-            # Extract field type and create PSBTField
+            # Extract key type and create PSBTField
             if key_data:
-                field_type = key_data[0]
-                key_content = key_data[1:] if len(key_data) > 1 else b''
-                fields.append(PSBTField(field_type, key_content, value_data))
+                # Destructure into key_type and key_data
+                key_type = key_data[0] # First byte is key_type
+                key_data = key_data[1:] if len(key_data) > 1 else b''
+                fields.append(PSBTField(key_type, key_data, value_data))
 
         return fields, offset
 
@@ -218,9 +219,9 @@ def parse_psbt_bytes(psbt_data: bytes) -> Tuple[List['PSBTField'], List[List['PS
     num_outputs = 1  # Default
 
     for field in global_fields:
-        if field.field_type == PSBTFieldType.PSBT_GLOBAL_INPUT_COUNT:
+        if field.key_type == PSBTKeyType.PSBT_GLOBAL_INPUT_COUNT:
             num_inputs = field.value_data[0] if len(field.value_data) > 0 else 1
-        elif field.field_type == PSBTFieldType.PSBT_GLOBAL_OUTPUT_COUNT:
+        elif field.key_type == PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT:
             num_outputs = field.value_data[0] if len(field.value_data) > 0 else 1
 
     # Parse input sections

@@ -31,7 +31,7 @@ from shared_hw_utils import (
 
 # Add parent directories to path for PSBT imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from psbt_sp.psbt import SilentPaymentPSBT, PSBTFieldType
+from psbt_sp.psbt import SilentPaymentPSBT, PSBTKeyType
 from psbt_sp.crypto import Wallet
 
 def create_psbt(wallet: Wallet, recipient_address):
@@ -95,7 +95,7 @@ def create_psbt(wallet: Wallet, recipient_address):
     # Add PSBT_OUT_DNSSEC_PROOF to output 1 (recipient, not change)
     psbt.add_output_field(
         output_index=1,
-        field_type=PSBTFieldType.PSBT_OUT_DNSSEC_PROOF,
+        key_type=PSBTKeyType.PSBT_OUT_DNSSEC_PROOF,
         key_data=b'',  # Empty key data per BIP 353
         value_data=dnssec_proof
     )
@@ -251,11 +251,11 @@ def finalize_transaction(wallet: Wallet, recipient_address, auto_read=False, aut
     found_scan_keys = set()
     for input_fields in psbt.input_maps:
         for field in input_fields:
-            if field.field_type == PSBTFieldType.PSBT_IN_SP_DLEQ:
+            if field.key_type == PSBTKeyType.PSBT_IN_SP_DLEQ:
                 found_scan_keys.add(field.key_data)
 
     for field in psbt.global_fields:
-        if field.field_type == PSBTFieldType.PSBT_GLOBAL_SP_DLEQ:
+        if field.key_type == PSBTKeyType.PSBT_GLOBAL_SP_DLEQ:
             found_scan_keys.add(field.key_data)
 
     # Check for unexpected scan keys (possible attack)
@@ -285,7 +285,7 @@ def finalize_transaction(wallet: Wallet, recipient_address, auto_read=False, aut
     # 3. Output Script Verification
     print("\n  Verifying output scripts...")
     output_scripts_computed = any(
-        any(field.field_type == PSBTFieldType.PSBT_OUT_SCRIPT for field in output_fields)
+        any(field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT for field in output_fields)
         for output_fields in psbt.output_maps
     )
 
@@ -299,7 +299,7 @@ def finalize_transaction(wallet: Wallet, recipient_address, auto_read=False, aut
     print("\n  Verifying signatures...")
     signatures_count = 0
     for input_fields in psbt.input_maps:
-        has_sig = any(field.field_type == PSBTFieldType.PSBT_IN_PARTIAL_SIG for field in input_fields)
+        has_sig = any(field.key_type == PSBTKeyType.PSBT_IN_PARTIAL_SIG for field in input_fields)
         if has_sig:
             signatures_count += 1
 
