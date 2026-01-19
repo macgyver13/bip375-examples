@@ -97,7 +97,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
 fn into_slint_field(f: bip375_helpers::display::adapter::DisplayField) -> PsbtField {
     PsbtField {
         field_name: f.field_name.into(),
-        field_type: f.field_type_str.into(),
+        key_type: f.key_type_str.into(),
         key_preview: f.key_preview.into(),
         value_preview: f.value_preview.into(),
         is_highlighted: f.is_highlighted,
