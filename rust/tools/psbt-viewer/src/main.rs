@@ -28,7 +28,7 @@ fn convert_fields_to_slint(
     // Convert DisplayField to Slint's PsbtField
     let convert = |field: adapter::DisplayField| PsbtField {
         field_name: field.field_name.into(),
-        field_type: field.field_type_str.into(),
+        key_type: field.key_type_str.into(),
         key_preview: field.key_preview.into(),
         value_preview: field.value_preview.into(),
         map_index: field.map_index,

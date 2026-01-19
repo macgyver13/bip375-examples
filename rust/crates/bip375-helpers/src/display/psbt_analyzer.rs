@@ -16,9 +16,9 @@ pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldI
     let mut fields = HashSet::new();
 
     // Global fields (standard + unknown)
-    for (field_type, key_data, _) in psbt.global.iter_global_fields() {
+    for (key_type, key_data, _) in psbt.global.iter_global_fields() {
         let identifier = FieldIdentifier::Global {
-            field_type,
+            key_type,
             key_data: key_data.clone(),
         };
         fields.insert(identifier);
@@ -26,10 +26,10 @@ pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldI
 
     // Input fields (standard + unknown)
     for (index, input) in psbt.inputs.iter().enumerate() {
-        for (field_type, key_data, _) in input.iter_input_fields() {
+        for (key_type, key_data, _) in input.iter_input_fields() {
             let identifier = FieldIdentifier::Input {
                 index,
-                field_type,
+                key_type,
                 key_data: key_data.clone(),
             };
             fields.insert(identifier);
@@ -38,10 +38,10 @@ pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldI
 
     // Output fields (standard + unknown)
     for (index, output) in psbt.outputs.iter().enumerate() {
-        for (field_type, key_data, _) in output.iter_output_fields() {
+        for (key_type, key_data, _) in output.iter_output_fields() {
             let identifier = FieldIdentifier::Output {
                 index,
-                field_type,
+                key_type,
                 key_data: key_data.clone(),
             };
             fields.insert(identifier);
