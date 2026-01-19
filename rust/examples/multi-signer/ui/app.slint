@@ -10,7 +10,7 @@ export { PartyConfigDialog, PartyInfo }
 // Data structures
 export struct PsbtField {
     field-name: string,
-    field-type: string,
+    key-type: string,
     key-preview: string,
     value-preview: string,
     is-highlighted: bool,
@@ -58,7 +58,7 @@ component PSBTFields inherits HorizontalBox {
     in property <PsbtField> field;
 
     Text {
-        text: field.field-type;
+        text: field.key-type;
         font-size: 12px;
         color: #666666;
         vertical-alignment: center;
