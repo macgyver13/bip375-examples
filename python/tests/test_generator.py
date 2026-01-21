@@ -128,7 +128,7 @@ class TestVectorGenerator:
             PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT, b"", struct.pack("<I", num_outputs)
         )
         psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE, b"", b"\x03"
+            PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE, b"", b"\x00"
         )  # Allow input/output modification
 
         return psbt
