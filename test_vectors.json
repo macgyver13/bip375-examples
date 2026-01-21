@@ -1,6 +1,6 @@
 {
-  "description": "BIP 375 Test Vectors - All Scenarios",
-  "version": "1.0",
+  "description": "BIP-375 Test Vectors",
+  "version": "1.1",
   "format_notes": [
     "All keys are hex-encoded",
     "PSBTs have all necessary fields",
@@ -479,6 +479,60 @@
           "output_index": 0,
           "amount": 95000,
           "script": "51204ba7e2e94bcb028dfbb9281968b57edc29f67057b1fcb217ddb450c31a51c70c",
+          "is_silent_payment": true,
+          "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
+          "sp_label": null
+        }
+      ]
+    },
+    {
+      "description": "Reject PSBT with incomplete ECDH coverage: 2 eligible inputs but only input 0 has ECDH share",
+      "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAIAAAABBQQBAAAAAQYBAwABDiAT0u662aEJkUdBDIam/gsg7p23WdpBz9Tul5LNUBI3FQEPBAAAAAABAR9QwwAAAAAAABYAFPja92rYA7DvqV1s/4ruCJHTrxyMARAE/v///yIGA9NX98BxjyR44/2PjMwnKd3YwMyusfArGBpvRNQ7n42NBAAAAAABAwQBAAAAIh0C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPghAlUWTnkm1Q1SoJ/5kGR6XpXB2xv8aKYW+8LaITkn+Yv/Ih4C0Cn/lt4svPeCvkNZxIYg6pK83WvvAyuVFYuRoWk/tPhAwdZ/OHiCv4F5FeoVgh1k1bODXB/AXFWM49gkkqF9kIwQSH27m93BCAyMLZwZcbJmCDxpBU4iGT8kQSisZnN+YAABDiAlbK6m2hWAb7hW7a50mI1EDHqxtcCGHsgR0ZCSdHudHAEPBAAAAAABAR9QwwAAAAAAABYAFEIccVrt+YOvDjtnb/fElNEFT826ARAE/v///yIGAo8dCC1gAfpLqJmkA9r5sdsBvpJcIlM69jDuZJOwvp95BAAAAAABAwQBAAAAAAEDCBhzAQAAAAAAAQQiUSAieje9mi7ioDshIpPzsiG8ArYuiNCFgfP7zAr+GgECTwEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
+      "input_keys": [
+        {
+          "input_index": 0,
+          "private_key": "e75f1990643539150761b0dc9eceb2ec0cf8636883eea2112d991dec3567a7b9",
+          "public_key": "03d357f7c0718f2478e3fd8f8ccc2729ddd8c0ccaeb1f02b181a6f44d43b9f8d8d",
+          "prevout_txid": "13d2eebad9a1099147410c86a6fe0b20ee9db759da41cfd4ee9792cd50123715",
+          "prevout_index": 0,
+          "prevout_scriptpubkey": "0014f8daf76ad803b0efa95d6cff8aee0891d3af1c8c",
+          "amount": 50000,
+          "witness_utxo": "50c3000000000000160014f8daf76ad803b0efa95d6cff8aee0891d3af1c8c",
+          "sequence": 4294967295
+        },
+        {
+          "input_index": 1,
+          "private_key": "b0d095ddc9d046be37f1f083e2993b2c7ace820a0696c730d930a4eba61fc056",
+          "public_key": "028f1d082d6001fa4ba899a403daf9b1db01be925c22533af630ee6493b0be9f79",
+          "prevout_txid": "256caea6da15806fb856edae74988d440c7ab1b5c0861ec811d19092747b9d1c",
+          "prevout_index": 0,
+          "prevout_scriptpubkey": "0014421c715aedf983af0e3b676ff7c494d1054fcdba",
+          "amount": 50000,
+          "witness_utxo": "50c3000000000000160014421c715aedf983af0e3b676ff7c494d1054fcdba",
+          "sequence": 4294967295
+        }
+      ],
+      "scan_keys": [
+        {
+          "scan_pubkey": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
+          "spend_pubkey": "024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
+          "label": null
+        }
+      ],
+      "expected_ecdh_shares": [
+        {
+          "scan_key": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
+          "ecdh_result": "0255164e7926d50d52a09ff990647a5e95c1db1bfc68a616fbc2da213927f98bff",
+          "dleq_proof": "c1d67f387882bf817915ea15821d64d5b3835c1fc05c558ce3d82492a17d908c10487dbb9bddc1080c8c2d9c1971b266083c69054e22193f244128ac66737e60",
+          "is_global": false,
+          "input_index": 0
+        }
+      ],
+      "expected_outputs": [
+        {
+          "output_index": 0,
+          "amount": 95000,
+          "script": "5120227a37bd9a2ee2a03b212293f3b221bc02b62e88d08581f3fbcc0afe1a01024f",
           "is_silent_payment": true,
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Complete BIP 375 Test Vector Generator
+Complete BIP-375 Test Vector Generator
 
 Implements all test scenarios from test_vectors.json with full PSBT structures
 that properly trigger validation rules. Creates both invalid and valid PSBTs
@@ -97,8 +97,8 @@ class TestVectorGenerator:
         """Initialize with deterministic seed for reproducible results"""
         self.wallet = Wallet(seed)
         self.test_vectors = {
-            "description": "BIP 375 Test Vectors - All Scenarios",
-            "version": "1.0",
+            "description": "BIP-375 Test Vectors",
+            "version": "1.1",
             "format_notes": [
                 "All keys are hex-encoded",
                 "PSBTs have all necessary fields",
@@ -1528,6 +1528,123 @@ class TestVectorGenerator:
             ],
         )
 
+    def generate_invalid_ecdh_coverage_test(self) -> GenTestVector:
+        """Incomplete ECDH coverage - multiple eligible inputs but only some have ECDH shares"""
+        input1_priv, input1_pub = self.wallet.input_key_pair(0)
+        input2_priv, input2_pub = self.wallet.input_key_pair(1)
+        scan_pub = self.wallet.scan_pub
+        spend_pub = self.wallet.spend_pub
+
+        # Only compute ECDH for first input (incomplete coverage!)
+        ecdh_result1 = input1_priv * scan_pub
+        valid_proof1 = dleq_generate_proof(input1_priv, scan_pub, Wallet.random_bytes())
+
+        psbt = self.create_complete_psbt_base(2, 1)
+
+        # Input 0: Add ECDH share and proof
+        prevout_txid1 = hashlib.sha256("prevout_12".encode()).digest()
+        witness_script1 = (
+            bytes([0x00, 0x14]) + hashlib.sha256(input1_pub.bytes).digest()[:20]
+        )
+        witness_utxo1 = create_witness_utxo(50000, witness_script1)
+
+        self.add_base_input_fields(
+            psbt, 0, prevout_txid1, 0, witness_utxo1, input_pubkey=input1_pub.bytes
+        )
+        psbt.add_input_field(
+            0, PSBTKeyType.PSBT_IN_SIGHASH_TYPE, b"", struct.pack("<I", 0x01)
+        )
+        psbt.add_input_field(
+            0,
+            PSBTKeyType.PSBT_IN_SP_ECDH_SHARE,
+            scan_pub.bytes,
+            ecdh_result1.to_bytes_compressed(),
+        )
+        psbt.add_input_field(
+            0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, valid_proof1
+        )
+
+        # Input 1: Add base fields but NO ECDH share (incomplete coverage!)
+        prevout_txid2 = hashlib.sha256("prevout_13".encode()).digest()
+        witness_script2 = (
+            bytes([0x00, 0x14]) + hashlib.sha256(input2_pub.bytes).digest()[:20]
+        )
+        witness_utxo2 = create_witness_utxo(50000, witness_script2)
+
+        self.add_base_input_fields(
+            psbt, 1, prevout_txid2, 0, witness_utxo2, input_pubkey=input2_pub.bytes
+        )
+        psbt.add_input_field(
+            1, PSBTKeyType.PSBT_IN_SIGHASH_TYPE, b"", struct.pack("<I", 0x01)
+        )
+        # Deliberately NOT adding ECDH share for input 1
+
+        # Compute output script using only input 0 (which would be incorrect anyway)
+        outpoints = [(prevout_txid1, 0), (prevout_txid2, 0)]
+        output_script = compute_bip352_output_script(
+            outpoints=outpoints,
+            summed_pubkey_bytes=input1_pub.bytes,  # Only input 0 pubkey
+            ecdh_share_bytes=ecdh_result1.to_bytes_compressed(),  # Only input 0 ECDH
+            spend_pubkey_bytes=spend_pub.bytes,
+            k=0,
+        )
+
+        psbt.add_output_field(
+            0, PSBTKeyType.PSBT_OUT_AMOUNT, b"", struct.pack("<Q", 95000)
+        )
+        psbt.add_output_field(0, PSBTKeyType.PSBT_OUT_SCRIPT, b"", output_script)
+        psbt.add_output_field(
+            0, PSBTKeyType.PSBT_OUT_SP_V0_INFO, b"", scan_pub.bytes + spend_pub.bytes
+        )
+
+        return GenTestVector(
+            description="Reject PSBT with incomplete ECDH coverage: 2 eligible inputs but only input 0 has ECDH share",
+            psbt=base64.b64encode(psbt.serialize()).decode(),
+            input_keys=[
+                GenInputKey(
+                    input_index=0,
+                    private_key=input1_priv.hex,
+                    public_key=input1_pub.hex,
+                    prevout_txid=prevout_txid1.hex(),
+                    prevout_index=0,
+                    prevout_scriptpubkey=witness_script1.hex(),
+                    amount=50000,
+                    witness_utxo=witness_utxo1.hex(),
+                ),
+                GenInputKey(
+                    input_index=1,
+                    private_key=input2_priv.hex,
+                    public_key=input2_pub.hex,
+                    prevout_txid=prevout_txid2.hex(),
+                    prevout_index=0,
+                    prevout_scriptpubkey=witness_script2.hex(),
+                    amount=50000,
+                    witness_utxo=witness_utxo2.hex(),
+                ),
+            ],
+            scan_keys=[
+                GenScanKey(scan_pubkey=scan_pub.hex, spend_pubkey=spend_pub.hex)
+            ],
+            expected_ecdh_shares=[
+                GenECDHShare(
+                    scan_key=scan_pub.hex,
+                    ecdh_result=ecdh_result1.to_bytes_compressed().hex(),
+                    dleq_proof=valid_proof1.hex(),
+                    is_global=False,
+                    input_index=0,
+                )
+            ],
+            expected_outputs=[
+                GenOutput(
+                    output_index=0,
+                    amount=95000,
+                    script=output_script.hex(),
+                    is_silent_payment=True,
+                    sp_info=(scan_pub.bytes + spend_pub.bytes).hex(),
+                )
+            ],
+        )
+
     # Valid Test Case Generators
 
     def generate_single_signer_global_test(self) -> GenTestVector:
@@ -2230,7 +2347,7 @@ class TestVectorGenerator:
             asdict(self.generate_non_sighash_all_test()),
             asdict(self.generate_mixed_segwit_test()),
             asdict(self.generate_no_ecdh_shares_test()),
-            # asdict(self.generate_invalid_mixed_input_types_test()),
+            # TODO: asdict(self.generate_invalid_mixed_input_types_test()),
             asdict(self.generate_missing_global_dleq_test()),
             asdict(self.generate_wrong_sp_info_size_test()),
             asdict(self.generate_wrong_ecdh_share_size_test()),
@@ -2238,6 +2355,7 @@ class TestVectorGenerator:
             asdict(self.generate_label_without_info_test()),
             asdict(self.generate_address_mismatch_test()),
             asdict(self.generate_both_global_and_input_ecdh_test()),
+            asdict(self.generate_invalid_ecdh_coverage_test()),
         ]
 
         # Valid cases
@@ -2248,6 +2366,7 @@ class TestVectorGenerator:
             asdict(self.generate_sp_change_label_zero_test()),
             asdict(self.generate_multiple_silent_payment_outputs_test()),
             asdict(self.generate_valid_mixed_input_types_test()),
+            # TODO: asdict(self.generate_multi_ecdh_shares_per_input_test()),
         ]
 
         self.test_vectors["invalid"] = invalid_vectors
