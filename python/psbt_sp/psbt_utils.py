@@ -201,6 +201,7 @@ def check_ecdh_coverage(global_fields: List[PSBTField], input_maps: List[List[PS
         for scan_key in scan_keys
     )
 
+    # FIXME: ECDH coverage should consider sp outputs too
     if has_complete_global_ecdh and len(scan_keys) > 0:
         # Global ECDH covers all inputs (for all scan keys)
         inputs_with_ecdh = list(range(len(input_maps)))

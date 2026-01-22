@@ -83,6 +83,7 @@ class GenTestVector:
     scan_keys: List[GenScanKey]
     expected_ecdh_shares: List[GenECDHShare]
     expected_outputs: List[GenOutput]
+    expected_psbt_id: Optional[str] = None  # hex-encoded PSBT identifier
 
     def __post_init__(self):
         """Print description when test vector is created"""
@@ -175,7 +176,10 @@ class TestVectorGenerator:
                 ),  # value = 4-byte minimum length empty fingerprint (privacy-preserving, no path disclosure)
             )
 
-    # Invalid Test Case Generators
+    # ============================================================================
+    # region INVALID TEST CASES
+    # ============================================================================
+
     def generate_missing_dleq_test(self) -> GenTestVector:
         """Missing DLEQ proof for ECDH share"""
         # Use local wallet keys
@@ -902,6 +906,7 @@ class TestVectorGenerator:
         return GenTestVector(
             description="Valid PSBT with mixed input types where only eligible P2WPKH inputs contribute ECDH shares (ineligible P2SH multisig excluded)",
             psbt=base64.b64encode(psbt.serialize()).decode(),
+            expected_psbt_id=psbt.compute_unique_id(),
             input_keys=[
                 GenInputKey(
                     input_index=0,
@@ -1520,7 +1525,11 @@ class TestVectorGenerator:
             ],
         )
 
-    # Valid Test Case Generators
+    # endregion
+
+    # ============================================================================
+    # region VALID TEST CASES
+    # ============================================================================
 
     def generate_incomplete_ecdh_work_in_progress_test(self) -> GenTestVector:
         """Incomplete ECDH coverage without output script - valid work in progress"""
@@ -1584,6 +1593,7 @@ class TestVectorGenerator:
         return GenTestVector(
             description="Valid PSBT with incomplete ECDH coverage: 2 eligible inputs but only input 0 has ECDH share, no PSBT_OUT_SCRIPT field",
             psbt=base64.b64encode(psbt.serialize()).decode(),
+            expected_psbt_id=psbt.compute_unique_id(),
             input_keys=[
                 GenInputKey(
                     input_index=0,
@@ -1689,6 +1699,7 @@ class TestVectorGenerator:
         return GenTestVector(
             description="Valid PSBT where a single entity controls all inputs and uses the global ECDH share approach (PSBT_GLOBAL_SP_ECDH_SHARE) for efficiency",
             psbt=base64.b64encode(psbt.serialize()).decode(),
+            expected_psbt_id=psbt.compute_unique_id(),
             input_keys=[
                 GenInputKey(
                     input_index=0,
@@ -1800,6 +1811,7 @@ class TestVectorGenerator:
         return GenTestVector(
             description="Valid PSBT with multiple parties (two signers) where each signer contributes per-input ECDH shares (PSBT_IN_SP_ECDH_SHARE) for their respective inputs",
             psbt=base64.b64encode(psbt.serialize()).decode(),
+            expected_psbt_id=psbt.compute_unique_id(),
             input_keys=[
                 GenInputKey(
                     input_index=0,
@@ -1965,6 +1977,7 @@ class TestVectorGenerator:
         return GenTestVector(
             description="Valid PSBT sending from P2WPKH to silent payment address with change output, using PSBT_OUT_SP_V0_LABEL for labeled silent payment and PSBT_OUT_BIP32_DERIVATION for change identification",
             psbt=base64.b64encode(psbt.serialize()).decode(),
+            expected_psbt_id=psbt.compute_unique_id(),
             input_keys=[
                 GenInputKey(
                     input_index=0,
@@ -2136,6 +2149,7 @@ class TestVectorGenerator:
         return GenTestVector(
             description="Valid PSBT demonstrating BIP-352 label=0 convention for silent payments change where output 0 (recipient) has no PSBT_OUT_SP_V0_LABEL field and output 1 (change) has PSBT_OUT_SP_V0_LABEL=0",
             psbt=base64.b64encode(psbt.serialize()).decode(),
+            expected_psbt_id=psbt.compute_unique_id(),
             input_keys=[
                 GenInputKey(
                     input_index=0,
@@ -2268,6 +2282,7 @@ class TestVectorGenerator:
         return GenTestVector(
             description="Valid PSBT with multiple silent payment outputs to the same scan key, using different k values to generate distinct output scripts",
             psbt=base64.b64encode(psbt.serialize()).decode(),
+            expected_psbt_id=psbt.compute_unique_id(),
             input_keys=[
                 GenInputKey(
                     input_index=0,
@@ -2309,6 +2324,121 @@ class TestVectorGenerator:
             ],
         )
 
+    def generate_scripts_set_but_modifiable_test(self) -> GenTestVector:
+        """
+        Invalid: All output scripts are set but TX_MODIFIABLE flags not cleared
+
+        Per BIP-375: "If the Signer sets any missing PSBT_OUT_SCRIPTs, it must set
+        the Inputs Modifiable and Outputs Modifiable flags to False."
+
+        This test creates a PSBT where:
+        - All silent payment outputs have PSBT_OUT_SCRIPT computed
+        - But PSBT_GLOBAL_TX_MODIFIABLE is still 0x03 (both flags true)
+        - Should be rejected as the transaction must be locked after scripts are computed
+        """
+        # Use local wallet keys
+        input_priv, input_pub = self.wallet.input_key_pair(0)
+        scan_pub = self.wallet.scan_pub
+        spend_pub = self.wallet.spend_pub
+
+        # Compute ECDH share and valid proof
+        ecdh_result = input_priv * scan_pub
+        valid_proof = dleq_generate_proof(input_priv, scan_pub, Wallet.random_bytes())
+
+        # Create PSBT with TX_MODIFIABLE = 0x03 (INVALID - should be 0x00 when scripts are set)
+        psbt = SilentPaymentPSBT()
+        psbt.add_global_field(
+            PSBTKeyType.PSBT_GLOBAL_VERSION, b"", struct.pack("<I", 2)
+        )
+        psbt.add_global_field(
+            PSBTKeyType.PSBT_GLOBAL_TX_VERSION, b"", struct.pack("<I", 2)
+        )
+        psbt.add_global_field(
+            PSBTKeyType.PSBT_GLOBAL_INPUT_COUNT, b"", struct.pack("<I", 1)
+        )
+        psbt.add_global_field(
+            PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT, b"", struct.pack("<I", 1)
+        )
+        # INVALID: TX_MODIFIABLE should be 0x00 when all scripts are set
+        psbt.add_global_field(PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE, b"", b"\x03")
+
+        # Add complete input with ECDH share
+        prevout_txid = hashlib.sha256(b"prevout_modifiable_test").digest()
+        witness_script = (
+            bytes([0x00, 0x14]) + hashlib.sha256(input_pub.bytes).digest()[:20]
+        )
+        witness_utxo = create_witness_utxo(100000, witness_script)
+
+        self.add_base_input_fields(
+            psbt, 0, prevout_txid, 0, witness_utxo, input_pubkey=input_pub.bytes
+        )
+
+        # Add global ECDH share and DLEQ proof
+        psbt.add_global_field(
+            PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE,
+            scan_pub.bytes,
+            ecdh_result.to_bytes_compressed(),
+        )
+        psbt.add_global_field(
+            PSBTKeyType.PSBT_GLOBAL_SP_DLEQ, scan_pub.bytes, valid_proof
+        )
+
+        # Add silent payment output WITH SCRIPT ALREADY COMPUTED
+        sp_info = scan_pub.bytes + spend_pub.bytes
+        outpoints = [(prevout_txid, 0)]
+        output_script = compute_bip352_output_script(
+            outpoints=outpoints,
+            summed_pubkey_bytes=input_pub.bytes,
+            ecdh_share_bytes=ecdh_result.to_bytes_compressed(),
+            spend_pubkey_bytes=spend_pub.bytes,
+            k=0,
+        )
+
+        psbt.add_output_field(
+            0, PSBTKeyType.PSBT_OUT_AMOUNT, b"", struct.pack("<Q", 95000)
+        )
+        # Script is SET (this is the key point - all outputs have scripts)
+        psbt.add_output_field(0, PSBTKeyType.PSBT_OUT_SCRIPT, b"", output_script)
+        psbt.add_output_field(0, PSBTKeyType.PSBT_OUT_SP_V0_INFO, b"", sp_info)
+
+        return GenTestVector(
+            description="Reject PSBT with PSBT_OUT_SCRIPT set but PSBT_GLOBAL_TX_MODIFIABLE is modifiable",
+            psbt=base64.b64encode(psbt.serialize()).decode(),
+            input_keys=[
+                GenInputKey(
+                    input_index=0,
+                    private_key=input_priv.hex,
+                    public_key=input_pub.hex,
+                    prevout_txid=prevout_txid.hex(),
+                    prevout_index=0,
+                    prevout_scriptpubkey=witness_script.hex(),
+                    amount=100000,
+                    witness_utxo=witness_utxo.hex(),
+                )
+            ],
+            scan_keys=[
+                GenScanKey(scan_pubkey=scan_pub.hex, spend_pubkey=spend_pub.hex)
+            ],
+            expected_ecdh_shares=[
+                GenECDHShare(
+                    scan_key=scan_pub.hex,
+                    ecdh_result=ecdh_result.to_bytes_compressed().hex(),
+                    dleq_proof=valid_proof.hex(),
+                )
+            ],
+            expected_outputs=[
+                GenOutput(
+                    output_index=0,
+                    amount=95000,
+                    script=output_script.hex(),
+                    is_silent_payment=True,
+                    sp_info=sp_info.hex(),
+                )
+            ],
+        )
+
+    # endregion
+
     def generate_all_test_vectors(self) -> Dict:
         """Generate all test vectors with complete PSBT structures"""
 
@@ -2327,6 +2457,7 @@ class TestVectorGenerator:
             asdict(self.generate_label_without_info_test()),
             asdict(self.generate_address_mismatch_test()),
             asdict(self.generate_incomplete_ecdh_with_output_script_test()),
+            asdict(self.generate_scripts_set_but_modifiable_test()),
         ]
 
         # Valid cases

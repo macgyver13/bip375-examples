@@ -47,7 +47,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect invalid DLEQ proof in PSBT_IN_SP_DLEQ field",
@@ -89,7 +90,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Reject PSBT with non-SIGHASH_ALL signatures and PSBT_OUT_SP_V0_INFO field set",
@@ -131,7 +133,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect segwit version greater than 1 in transaction inputs with PSBT_OUT_SP_V0_INFO field set",
@@ -173,7 +176,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect missing PSBT_IN_SP_ECDH_SHARE with silent payment outputs defined",
@@ -208,7 +212,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect missing PSBT_GLOBAL_SP_DLEQ proof field matching PSBT_GLOBAL_SP_ECDH_SHARE",
@@ -250,7 +255,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect PSBT_OUT_SP_V0_INFO field with incorrect size",
@@ -292,7 +298,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde4921144",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect PSBT_IN_SP_ECDH_SHARE field with incorrect size",
@@ -327,7 +334,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect PSBT_IN_SP_DLEQ proof field with incorrect size",
@@ -362,7 +370,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect PSBT_OUT_SP_V0_LABEL field present without required PSBT_OUT_SP_V0_INFO field",
@@ -391,7 +400,8 @@
           "sp_info": null,
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Detect computed output script mismatch in PSBT_OUT_SCRIPT field from transaction inputs and PSBT_IN_SP_ECDH_SHARE field",
@@ -433,7 +443,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
     },
     {
       "description": "Reject PSBT with incomplete ECDH coverage when PSBT_OUT_SCRIPT is set: 2 eligible inputs but only input 0 has ECDH share",
@@ -486,7 +497,51 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": null
+    },
+    {
+      "description": "Reject PSBT with PSBT_OUT_SCRIPT set but PSBT_GLOBAL_TX_MODIFIABLE is modifiable",
+      "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAyIHAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4IQJVFk55JtUNUqCf+ZBkel6Vwdsb/GimFvvC2iE5J/mL/yIIAtAp/5beLLz3gr5DWcSGIOqSvN1r7wMrlRWLkaFpP7T4QMHWfzh4gr+BeRXqFYIdZNWzg1wfwFxVjOPYJJKhfZCMEEh9u5vdwQgMjC2cGXGyZgg8aQVOIhk/JEEorGZzfmAAAQ4go6YQQ0Q/Rs04nKNNzImIKUpb2vp/Ekx4SCcyJtmUFkgBDwQAAAAAAQEfoIYBAAAAAAAWABT42vdq2AOw76ldbP+K7giR068cjAEQBP7///8iBgPTV/fAcY8keOP9j4zMJynd2MDMrrHwKxgab0TUO5+NjQQAAAAAAAEDCBhzAQAAAAAAAQQiUSC2m8R76sGcucAyMHwqkz2WhbI4G4He5nXdEaA96KE0gwEJQgLQKf+W3iy894K+Q1nEhiDqkrzda+8DK5UVi5GhaT+0+AJNUYNT9L0Y12nPaP9i7xBmm3CGJGsKZAP+V73kkhFEiwA=",
+      "input_keys": [
+        {
+          "input_index": 0,
+          "private_key": "e75f1990643539150761b0dc9eceb2ec0cf8636883eea2112d991dec3567a7b9",
+          "public_key": "03d357f7c0718f2478e3fd8f8ccc2729ddd8c0ccaeb1f02b181a6f44d43b9f8d8d",
+          "prevout_txid": "a3a61043443f46cd389ca34dcc8988294a5bdafa7f124c7848273226d9941648",
+          "prevout_index": 0,
+          "prevout_scriptpubkey": "0014f8daf76ad803b0efa95d6cff8aee0891d3af1c8c",
+          "amount": 100000,
+          "witness_utxo": "a086010000000000160014f8daf76ad803b0efa95d6cff8aee0891d3af1c8c",
+          "sequence": 4294967295
+        }
+      ],
+      "scan_keys": [
+        {
+          "scan_pubkey": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
+          "spend_pubkey": "024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
+          "label": null
+        }
+      ],
+      "expected_ecdh_shares": [
+        {
+          "scan_key": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8",
+          "ecdh_result": "0255164e7926d50d52a09ff990647a5e95c1db1bfc68a616fbc2da213927f98bff",
+          "dleq_proof": "c1d67f387882bf817915ea15821d64d5b3835c1fc05c558ce3d82492a17d908c10487dbb9bddc1080c8c2d9c1971b266083c69054e22193f244128ac66737e60",
+          "input_index": null
+        }
+      ],
+      "expected_outputs": [
+        {
+          "output_index": 0,
+          "amount": 95000,
+          "is_silent_payment": true,
+          "script": "5120b69bc47beac19cb9c032307c2a933d9685b2381b81dee675dd11a03de8a13483",
+          "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
+          "sp_label": null
+        }
+      ],
+      "expected_psbt_id": null
     }
   ],
   "valid": [
@@ -530,7 +585,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": "7426a392bc7721ecf18a45699eafc3815bde7bb36558c5bd4cf9fbb140f1b745"
     },
     {
       "description": "Valid PSBT with multiple parties (two signers) where each signer contributes per-input ECDH shares (PSBT_IN_SP_ECDH_SHARE) for their respective inputs",
@@ -589,7 +645,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": "d1fb3d430529b4fd80d33688d9ca6251a06470e52006dab24cbd1e948cad76af"
     },
     {
       "description": "Valid PSBT with incomplete ECDH coverage: 2 eligible inputs but only input 0 has ECDH share, no PSBT_OUT_SCRIPT field",
@@ -642,7 +699,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": "d42acce8e326f42470654e550294c46fdaf6484a676373de4b73e188f0d5daa9"
     },
     {
       "description": "Valid PSBT sending from P2WPKH to silent payment address with change output, using PSBT_OUT_SP_V0_LABEL for labeled silent payment and PSBT_OUT_BIP32_DERIVATION for change identification",
@@ -692,7 +750,8 @@
           "sp_info": null,
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": "ab25647f98c2743f8e036a45d84e3cdd5f6a6ca646fd9d008628baa33b58cc9a"
     },
     {
       "description": "Valid PSBT demonstrating BIP-352 label=0 convention for silent payments change where output 0 (recipient) has no PSBT_OUT_SP_V0_LABEL field and output 1 (change) has PSBT_OUT_SP_V0_LABEL=0",
@@ -753,7 +812,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8035434fa7d9abae85f18afee26e16fbb7888c88c56e3f93f5eee4dc0ef948fa5c4",
           "sp_label": 0
         }
-      ]
+      ],
+      "expected_psbt_id": "5e99323fe3915bd35f51c06faea14e0f513e1b697458bb179774992c729c704d"
     },
     {
       "description": "Valid PSBT with multiple silent payment outputs to the same scan key, using different k values to generate distinct output scripts",
@@ -803,7 +863,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": "31dbed50c7a29799aaf16d3adec754819269ca69e8102ecad4231d1d64f2727b"
     },
     {
       "description": "Valid PSBT with mixed input types where only eligible P2WPKH inputs contribute ECDH shares (ineligible P2SH multisig excluded)",
@@ -856,7 +917,8 @@
           "sp_info": "02d029ff96de2cbcf782be4359c48620ea92bcdd6bef032b95158b91a1693fb4f8024d518353f4bd18d769cf68ff62ef10669b7086246b0a6403fe57bde49211448b",
           "sp_label": null
         }
-      ]
+      ],
+      "expected_psbt_id": "ac244530441de4343ba8fe12cdf4f2e660ff9ab866b5ffedc214ba4c8141c577"
     }
   ]
 }

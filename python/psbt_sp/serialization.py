@@ -142,7 +142,7 @@ class PSBTv2:
         return result
 
 
-def parse_psbt_bytes(psbt_data: bytes) -> Tuple[List['PSBTField'], List[List['PSBTField']], List[List['PSBTField']]]:
+def parse_psbt_bytes(psbt_data: bytes) -> Tuple[List[PSBTField], List[List[PSBTField]], List[List[PSBTField]]]:
     """
     Parse PSBT bytes into field lists
 
