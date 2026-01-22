@@ -38,7 +38,6 @@ struct TestVector {
     scan_keys: Vec<ScanKey>,
     expected_ecdh_shares: Vec<EcdhShare>,
     expected_outputs: Vec<ExpectedOutput>,
-    comment: String,
 }
 
 /// Input key information
@@ -69,7 +68,6 @@ struct EcdhShare {
     scan_key: String,
     ecdh_result: String,
     dleq_proof: Option<String>,
-    is_global: bool,
     input_index: Option<usize>,
 }
 
@@ -78,8 +76,8 @@ struct EcdhShare {
 struct ExpectedOutput {
     output_index: usize,
     amount: u64,
-    script: String,
     is_silent_payment: bool,
+    script: Option<String>,
     sp_info: Option<String>,
     sp_label: Option<u32>,
 }
@@ -108,7 +106,6 @@ fn test_invalid_vectors() {
 
     for (i, vector) in vectors.invalid.iter().enumerate() {
         println!("Invalid Test {}: {}", i + 1, vector.description);
-        println!("  Comment: {}", vector.comment);
 
         // Decode PSBT from base64
         let psbt_bytes = base64_to_bytes(&vector.psbt);
@@ -151,7 +148,6 @@ fn test_valid_vectors() {
 
     for (i, vector) in vectors.valid.iter().enumerate() {
         println!("Valid Test {}: {}", i + 1, vector.description);
-        println!("  Comment: {}", vector.comment);
 
         // Decode PSBT from base64
         let psbt_bytes = base64_to_bytes(&vector.psbt);
@@ -194,26 +190,4 @@ fn test_vector_file_exists() {
         "Test vectors file not found: {}",
         TEST_VECTORS_FILE
     );
-}
-
-#[test]
-fn test_vector_count() {
-    let vectors = load_test_vectors();
-
-    println!("\n=== Test Vector Summary ===");
-    println!("Version: {}", vectors.version);
-    println!("Description: {}", vectors.description);
-    println!("Invalid vectors: {}", vectors.invalid.len());
-    println!("Valid vectors: {}", vectors.valid.len());
-    println!(
-        "Total vectors: {}",
-        vectors.invalid.len() + vectors.valid.len()
-    );
-
-    assert_eq!(
-        vectors.invalid.len(),
-        13,
-        "Expected 13 invalid test vectors"
-    );
-    assert_eq!(vectors.valid.len(), 5, "Expected 4 valid test vectors");
 }

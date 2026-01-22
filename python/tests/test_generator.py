@@ -58,7 +58,6 @@ class GenECDHShare:
     scan_key: str  # 33 bytes hex (compressed)
     ecdh_result: str  # 33 bytes hex (compressed)
     dleq_proof: Optional[str] = None  # 64 bytes hex
-    is_global: bool = False  # True if global ECDH share, False if per-input
     input_index: Optional[int] = None  # For per-input shares
 
 
@@ -68,8 +67,8 @@ class GenOutput:
 
     output_index: int
     amount: int
-    script: str  # hex
     is_silent_payment: bool
+    script: Optional[str] = None  # PSBT_OUT_SCRIPT hex data
     sp_info: Optional[str] = None  # PSBT_OUT_SP_V0_INFO hex data
     sp_label: Optional[int] = None  # PSBT_OUT_SP_V0_LABEL
 
@@ -251,7 +250,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=None,  # Missing!
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -356,7 +354,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=invalid_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -452,7 +449,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -548,7 +544,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -701,7 +696,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=None,  # Missing!
-                    is_global=True,
                 )
             ],
             expected_outputs=[
@@ -790,7 +784,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -861,9 +854,7 @@ class TestVectorGenerator:
         prevout_txid_1 = hashlib.sha256(hashlib.sha256(prev_tx).digest()).digest()
 
         # Add required PSBTv2 fields for input 1
-        psbt.add_input_field(
-            1, PSBTKeyType.PSBT_IN_PREVIOUS_TXID, b"", prevout_txid_1
-        )
+        psbt.add_input_field(1, PSBTKeyType.PSBT_IN_PREVIOUS_TXID, b"", prevout_txid_1)
         psbt.add_input_field(
             1, PSBTKeyType.PSBT_IN_OUTPUT_INDEX, b"", struct.pack("<I", 0)
         )
@@ -886,9 +877,7 @@ class TestVectorGenerator:
 
         # Generate DLEQ proof for input 0
         dleq_proof = dleq_generate_proof(input_priv_0, scan_pub, Wallet.random_bytes())
-        psbt.add_input_field(
-            0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof
-        )
+        psbt.add_input_field(0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof)
 
         # Compute proper BIP-352 output (using only eligible input)
         outpoints = [(prevout_txid_0, 0)]
@@ -943,7 +932,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=dleq_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -957,7 +945,6 @@ class TestVectorGenerator:
                 )
             ],
         )
-
 
     def generate_invalid_mixed_input_types_test(self) -> GenTestVector:
         """Invalid mixed eligible and ineligible input types where ineligible input includes ECDH shares"""
@@ -1015,9 +1002,7 @@ class TestVectorGenerator:
         prevout_txid_1 = hashlib.sha256(hashlib.sha256(prev_tx).digest()).digest()
 
         # Add required PSBTv2 fields for input 1
-        psbt.add_input_field(
-            1, PSBTKeyType.PSBT_IN_PREVIOUS_TXID, b"", prevout_txid_1
-        )
+        psbt.add_input_field(1, PSBTKeyType.PSBT_IN_PREVIOUS_TXID, b"", prevout_txid_1)
         psbt.add_input_field(
             1, PSBTKeyType.PSBT_IN_OUTPUT_INDEX, b"", struct.pack("<I", 0)
         )
@@ -1042,17 +1027,13 @@ class TestVectorGenerator:
             PSBTKeyType.PSBT_IN_SP_ECDH_SHARE,
             scan_pub.bytes,
             ecdh_result.to_bytes_compressed(),
-        ) # INVALID: ineligible input should NOT have ECDH share
+        )  # INVALID: ineligible input should NOT have ECDH share
 
         # Generate DLEQ proof for input 0
         dleq_proof = dleq_generate_proof(input_priv_0, scan_pub, Wallet.random_bytes())
-        psbt.add_input_field(
-            0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof
-        )
+        psbt.add_input_field(0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof)
         dleq_proof = dleq_generate_proof(input_priv_1, scan_pub, Wallet.random_bytes())
-        psbt.add_input_field(
-            1, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof
-        )
+        psbt.add_input_field(1, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof)
 
         # Compute proper BIP-352 output (using only eligible input)
         outpoints = [(prevout_txid_0, 0)]
@@ -1107,7 +1088,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=dleq_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -1153,9 +1133,7 @@ class TestVectorGenerator:
         )
         # Generate DLEQ proof for input 0
         dleq_proof = dleq_generate_proof(input_priv, scan_pub, Wallet.random_bytes())
-        psbt.add_input_field(
-            0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof
-        )
+        psbt.add_input_field(0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof)
 
         outpoints = [(prevout_txid, 0)]
         output_script = compute_bip352_output_script(
@@ -1235,9 +1213,7 @@ class TestVectorGenerator:
             scan_pub.bytes,
             ecdh_result.to_bytes_compressed(),
         )
-        psbt.add_input_field(
-            0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, wrong_dleq
-        )
+        psbt.add_input_field(0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, wrong_dleq)
 
         outpoints = [(prevout_txid, 0)]
         output_script = compute_bip352_output_script(
@@ -1385,9 +1361,7 @@ class TestVectorGenerator:
         psbt.add_output_field(
             0, PSBTKeyType.PSBT_OUT_AMOUNT, b"", struct.pack("<Q", 95000)
         )
-        psbt.add_output_field(
-            0, PSBTKeyType.PSBT_OUT_SCRIPT, b"", wrong_output_script
-        )
+        psbt.add_output_field(0, PSBTKeyType.PSBT_OUT_SCRIPT, b"", wrong_output_script)
         psbt.add_output_field(
             0, PSBTKeyType.PSBT_OUT_SP_V0_INFO, b"", scan_pub.bytes + spend_pub.bytes
         )
@@ -1415,7 +1389,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -1430,106 +1403,8 @@ class TestVectorGenerator:
             ],
         )
 
-    def generate_both_global_and_input_ecdh_test(self) -> GenTestVector:
-        """Both global and per-input ECDH shares present"""
-        input_priv, input_pub = self.wallet.input_key_pair(0)
-        scan_pub = self.wallet.scan_pub
-        spend_pub = self.wallet.spend_pub
-
-        ecdh_result = input_priv * scan_pub
-        valid_proof = dleq_generate_proof(input_priv, scan_pub, Wallet.random_bytes())
-
-        psbt = self.create_complete_psbt_base(1, 1)
-
-        prevout_txid = hashlib.sha256("prevout_11".encode()).digest()
-        witness_script = (
-            bytes([0x00, 0x14]) + hashlib.sha256(input_pub.bytes).digest()[:20]
-        )
-        witness_utxo = create_witness_utxo(100000, witness_script)
-
-        self.add_base_input_fields(
-            psbt, 0, prevout_txid, 0, witness_utxo, input_pubkey=input_pub.bytes
-        )
-        psbt.add_input_field(
-            0, PSBTKeyType.PSBT_IN_SIGHASH_TYPE, b"", struct.pack("<I", 0x01)
-        )
-
-        # Add BOTH global AND per-input ECDH shares (conflicting!)
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE,
-            scan_pub.bytes,
-            ecdh_result.to_bytes_compressed(),
-        )
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_SP_DLEQ, scan_pub.bytes, valid_proof
-        )
-        psbt.add_input_field(
-            0,
-            PSBTKeyType.PSBT_IN_SP_ECDH_SHARE,
-            scan_pub.bytes,
-            ecdh_result.to_bytes_compressed(),
-        )
-        psbt.add_input_field(
-            0, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, valid_proof
-        )
-
-        outpoints = [(prevout_txid, 0)]
-        output_script = compute_bip352_output_script(
-            outpoints=outpoints,
-            summed_pubkey_bytes=input_pub.bytes,
-            ecdh_share_bytes=ecdh_result.to_bytes_compressed(),
-            spend_pubkey_bytes=spend_pub.bytes,
-            k=0,
-        )
-
-        psbt.add_output_field(
-            0, PSBTKeyType.PSBT_OUT_AMOUNT, b"", struct.pack("<Q", 95000)
-        )
-        psbt.add_output_field(0, PSBTKeyType.PSBT_OUT_SCRIPT, b"", output_script)
-        psbt.add_output_field(
-            0, PSBTKeyType.PSBT_OUT_SP_V0_INFO, b"", scan_pub.bytes + spend_pub.bytes
-        )
-
-        return GenTestVector(
-            description="Reject PSBT with PSBT_GLOBAL_SP_ECDH_SHARE and PSBT_IN_SP_ECDH_SHARE fields present for the same scan key",
-            psbt=base64.b64encode(psbt.serialize()).decode(),
-            input_keys=[
-                GenInputKey(
-                    input_index=0,
-                    private_key=input_priv.hex,
-                    public_key=input_pub.hex,
-                    prevout_txid=prevout_txid.hex(),
-                    prevout_index=0,
-                    prevout_scriptpubkey=witness_script.hex(),
-                    amount=100000,
-                    witness_utxo=witness_utxo.hex(),
-                )
-            ],
-            scan_keys=[
-                GenScanKey(scan_pubkey=scan_pub.hex, spend_pubkey=spend_pub.hex)
-            ],
-            expected_ecdh_shares=[
-                GenECDHShare(
-                    scan_key=scan_pub.hex,
-                    ecdh_result=ecdh_result.to_bytes_compressed().hex(),
-                    dleq_proof=valid_proof.hex(),
-                    is_global=True,
-                    input_index=None,
-                )
-            ],
-            expected_outputs=[
-                GenOutput(
-                    output_index=0,
-                    amount=95000,
-                    script=output_script.hex(),
-                    is_silent_payment=True,
-                    sp_info=(scan_pub.bytes + spend_pub.bytes).hex(),
-                )
-            ],
-        )
-
-    def generate_invalid_ecdh_coverage_test(self) -> GenTestVector:
-        """Incomplete ECDH coverage - multiple eligible inputs but only some have ECDH shares"""
+    def generate_incomplete_ecdh_with_output_script_test(self) -> GenTestVector:
+        """Incomplete ECDH coverage WITH output script set - should be rejected"""
         input1_priv, input1_pub = self.wallet.input_key_pair(0)
         input2_priv, input2_pub = self.wallet.input_key_pair(1)
         scan_pub = self.wallet.scan_pub
@@ -1592,13 +1467,14 @@ class TestVectorGenerator:
         psbt.add_output_field(
             0, PSBTKeyType.PSBT_OUT_AMOUNT, b"", struct.pack("<Q", 95000)
         )
+        # KEY: Output script IS set despite incomplete coverage
         psbt.add_output_field(0, PSBTKeyType.PSBT_OUT_SCRIPT, b"", output_script)
         psbt.add_output_field(
             0, PSBTKeyType.PSBT_OUT_SP_V0_INFO, b"", scan_pub.bytes + spend_pub.bytes
         )
 
         return GenTestVector(
-            description="Reject PSBT with incomplete ECDH coverage: 2 eligible inputs but only input 0 has ECDH share",
+            description="Reject PSBT with incomplete ECDH coverage when PSBT_OUT_SCRIPT is set: 2 eligible inputs but only input 0 has ECDH share",
             psbt=base64.b64encode(psbt.serialize()).decode(),
             input_keys=[
                 GenInputKey(
@@ -1630,7 +1506,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result1.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof1.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -1646,6 +1521,112 @@ class TestVectorGenerator:
         )
 
     # Valid Test Case Generators
+
+    def generate_incomplete_ecdh_work_in_progress_test(self) -> GenTestVector:
+        """Incomplete ECDH coverage without output script - valid work in progress"""
+        input1_priv, input1_pub = self.wallet.input_key_pair(0)
+        input2_priv, input2_pub = self.wallet.input_key_pair(1)
+        scan_pub = self.wallet.scan_pub
+        spend_pub = self.wallet.spend_pub
+
+        # Only compute ECDH for input #1 (incomplete coverage, but valid because PSBT_OUT_SCRIPT not set)
+        ecdh_result2 = input2_priv * scan_pub
+        valid_proof2 = dleq_generate_proof(input2_priv, scan_pub, Wallet.random_bytes())
+
+        psbt = self.create_complete_psbt_base(2, 1)
+
+        # Input 0: Add base fields but NO ECDH share (incomplete coverage, awaiting next signer)
+        prevout_txid1 = hashlib.sha256("prevout_14".encode()).digest()
+        witness_script1 = (
+            bytes([0x00, 0x14]) + hashlib.sha256(input2_pub.bytes).digest()[:20]
+        )
+        witness_utxo1 = create_witness_utxo(50000, witness_script1)
+
+        self.add_base_input_fields(
+            psbt, 0, prevout_txid1, 0, witness_utxo1, input_pubkey=input1_pub.bytes
+        )
+        psbt.add_input_field(
+            0, PSBTKeyType.PSBT_IN_SIGHASH_TYPE, b"", struct.pack("<I", 0x01)
+        )
+        # Deliberately NOT adding ECDH share for input 0 - awaiting next party
+
+        # Input 1: Add ECDH share and proof
+        prevout_txid2 = hashlib.sha256("prevout_15".encode()).digest()
+        witness_script2 = (
+            bytes([0x00, 0x14]) + hashlib.sha256(input1_pub.bytes).digest()[:20]
+        )
+        witness_utxo2 = create_witness_utxo(50000, witness_script2)
+        self.add_base_input_fields(
+            psbt, 1, prevout_txid2, 0, witness_utxo2, input_pubkey=input2_pub.bytes
+        )
+        psbt.add_input_field(
+            1, PSBTKeyType.PSBT_IN_SIGHASH_TYPE, b"", struct.pack("<I", 0x01)
+        )
+        psbt.add_input_field(
+            1,
+            PSBTKeyType.PSBT_IN_SP_ECDH_SHARE,
+            scan_pub.bytes,
+            ecdh_result2.to_bytes_compressed(),
+        )
+        psbt.add_input_field(
+            1, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, valid_proof2
+        )
+
+        # Add output with amount and SP info, but NO output script yet (not computed until coverage complete)
+        psbt.add_output_field(
+            0, PSBTKeyType.PSBT_OUT_AMOUNT, b"", struct.pack("<Q", 95000)
+        )
+        # KEY: NO PSBT_OUT_SCRIPT - work in progress!
+        psbt.add_output_field(
+            0, PSBTKeyType.PSBT_OUT_SP_V0_INFO, b"", scan_pub.bytes + spend_pub.bytes
+        )
+
+        return GenTestVector(
+            description="Valid PSBT with incomplete ECDH coverage: 2 eligible inputs but only input 0 has ECDH share, no PSBT_OUT_SCRIPT field",
+            psbt=base64.b64encode(psbt.serialize()).decode(),
+            input_keys=[
+                GenInputKey(
+                    input_index=0,
+                    private_key=input1_priv.hex,
+                    public_key=input1_pub.hex,
+                    prevout_txid=prevout_txid1.hex(),
+                    prevout_index=0,
+                    prevout_scriptpubkey=witness_script1.hex(),
+                    amount=50000,
+                    witness_utxo=witness_utxo1.hex(),
+                ),
+                GenInputKey(
+                    input_index=1,
+                    private_key=input2_priv.hex,
+                    public_key=input2_pub.hex,
+                    prevout_txid=prevout_txid2.hex(),
+                    prevout_index=0,
+                    prevout_scriptpubkey=witness_script2.hex(),
+                    amount=50000,
+                    witness_utxo=witness_utxo2.hex(),
+                ),
+            ],
+            scan_keys=[
+                GenScanKey(scan_pubkey=scan_pub.hex, spend_pubkey=spend_pub.hex)
+            ],
+            expected_ecdh_shares=[
+                GenECDHShare(
+                    scan_key=scan_pub.hex,
+                    ecdh_result=ecdh_result2.to_bytes_compressed().hex(),
+                    dleq_proof=valid_proof2.hex(),
+                    input_index=1,
+                )
+            ],
+            expected_outputs=[
+                GenOutput(
+                    output_index=0,
+                    amount=95000,
+                    script=None,  # No script yet - work in progress
+                    is_silent_payment=True,
+                    sp_info=(scan_pub.bytes + spend_pub.bytes).hex(),
+                )
+            ],
+        )
 
     def generate_single_signer_global_test(self) -> GenTestVector:
         """Single signer with global ECDH share"""
@@ -1728,7 +1709,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof.hex(),
-                    is_global=True,
                 )
             ],
             expected_outputs=[
@@ -1868,14 +1848,12 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result1.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof1.hex(),
-                    is_global=False,
                     input_index=0,
                 ),
                 GenECDHShare(
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result2.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof2.hex(),
-                    is_global=False,
                     input_index=1,
                 ),
             ],
@@ -2009,7 +1987,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -2152,9 +2129,7 @@ class TestVectorGenerator:
         psbt.add_output_field(
             1, PSBTKeyType.PSBT_OUT_AMOUNT, b"", struct.pack("<Q", 55000)
         )
-        psbt.add_output_field(
-            1, PSBTKeyType.PSBT_OUT_SCRIPT, b"", change_output_script
-        )
+        psbt.add_output_field(1, PSBTKeyType.PSBT_OUT_SCRIPT, b"", change_output_script)
         psbt.add_output_field(1, PSBTKeyType.PSBT_OUT_SP_V0_INFO, b"", sp_info_change)
         psbt.add_output_field(1, PSBTKeyType.PSBT_OUT_SP_V0_LABEL, b"", label_value)
 
@@ -2192,14 +2167,12 @@ class TestVectorGenerator:
                     scan_key=scan_pub_recipient.hex,
                     ecdh_result=ecdh_result_recipient.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 ),
                 GenECDHShare(
                     scan_key=scan_pub_sender.hex,
                     ecdh_result=ecdh_result_sender.to_bytes_compressed().hex(),
                     dleq_proof=sender_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 ),
             ],
@@ -2315,7 +2288,6 @@ class TestVectorGenerator:
                     scan_key=scan_pub.hex,
                     ecdh_result=ecdh_result.to_bytes_compressed().hex(),
                     dleq_proof=valid_proof.hex(),
-                    is_global=False,
                     input_index=0,
                 )
             ],
@@ -2354,19 +2326,18 @@ class TestVectorGenerator:
             asdict(self.generate_wrong_dleq_size_test()),
             asdict(self.generate_label_without_info_test()),
             asdict(self.generate_address_mismatch_test()),
-            asdict(self.generate_both_global_and_input_ecdh_test()),
-            asdict(self.generate_invalid_ecdh_coverage_test()),
+            asdict(self.generate_incomplete_ecdh_with_output_script_test()),
         ]
 
         # Valid cases
         valid_vectors = [
             asdict(self.generate_single_signer_global_test()),
             asdict(self.generate_multi_party_per_input_test()),
+            asdict(self.generate_incomplete_ecdh_work_in_progress_test()),
             asdict(self.generate_silent_payment_with_change_test()),
             asdict(self.generate_sp_change_label_zero_test()),
             asdict(self.generate_multiple_silent_payment_outputs_test()),
             asdict(self.generate_valid_mixed_input_types_test()),
-            # TODO: asdict(self.generate_multi_ecdh_shares_per_input_test()),
         ]
 
         self.test_vectors["invalid"] = invalid_vectors
