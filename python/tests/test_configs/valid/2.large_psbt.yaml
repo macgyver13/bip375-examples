@@ -1,0 +1,32 @@
+description: "Large PSBT test cases demonstrating scalability"
+
+test_cases:
+  - description: "WIP: large PSBT with 20 P2WPKH inputs / 5 sp recipients"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        count: 20
+        amount: 100000
+        key_derivation_suffix: "large_batch"
+    outputs:
+      - type: "silent_payment"
+        count: 3
+        amount: 300000
+        scan_key_id: "recipient_a"
+      - type: "silent_payment"
+        count: 2
+        amount: 200000
+        scan_key_id: "recipient_b"
+      - type: "silent_payment"
+        count: 1
+        amount: 100000
+        scan_key_id: "recipient_c"
+      - type: "regular_p2tr"
+        amount: 500000  # Change output
+    scan_keys:
+      - key_id: "recipient_a"
+        derivation_suffix: "recipient_a"
+      - key_id: "recipient_b"
+        derivation_suffix: "recipient_b"
+      - key_id: "recipient_c"
+        derivation_suffix: "recipient_c"

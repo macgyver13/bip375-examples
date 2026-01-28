@@ -1,0 +1,44 @@
+description: "Multi-scan-key validation errors"
+
+test_cases:
+  - description: "ecdh coverage: one input/two sp outputs (different scan keys) - Output 0 missing ECDH share for scan key"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 200000
+        key_derivation_suffix: "multi_scan_missing_ecdh"
+    outputs:
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "scan_key_a"
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "scan_key_b"
+    scan_keys:
+      - key_id: "scan_key_a"
+        derivation_suffix: "recipient_a"
+      - key_id: "scan_key_b"
+        derivation_suffix: "recipient_b"
+    control_override:
+      missing_ecdh_for_scan_key: "scan_key_a"
+      force_output_script: true
+
+  - description: "ecdh coverage: two inputs/one sp output (two scan keys) - Input 1 missing ECDH share for scan key"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 50000
+        key_derivation_suffix: "incomplete_1"
+      - type: "p2wpkh"
+        amount: 50000
+        key_derivation_suffix: "incomplete_2"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      missing_ecdh_for_input: 1
+      force_output_script: true
+      reverse_k_order: true

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Refactored BIP-375 Test Vector Generator
+BIP-375 Test Vector Generator
 
 Configuration-driven system for generating test vectors with support for large PSBTs.
 Organized by validation type → input/output type → complexity.
@@ -27,6 +27,12 @@ from psbt_sp.crypto import Wallet
 from psbt_sp.serialization import create_witness_utxo
 from psbt_sp.psbt import SilentPaymentPSBT
 from psbt_sp.constants import PSBTKeyType
+from secp256k1_374 import G
+
+
+def _deterministic_hash(s: str) -> int:
+    """Deterministic hash that is stable across Python sessions (unlike hash())."""
+    return int.from_bytes(hashlib.sha256(s.encode()).digest()[:4], "big") % 1000
 
 
 # ============================================================================
@@ -60,13 +66,10 @@ class InputSpec:
     amount: int
     sequence: int = 0xFFFFFFFE
     # Type-specific parameters
+    use_segwit_v2: bool = False
     multisig_threshold: Optional[int] = None
     multisig_pubkey_count: Optional[int] = None
     key_derivation_suffix: str = ""  # For deterministic key generation
-
-    def __setattr__(self, name, value):
-        """Allow dynamic attributes for error injection"""
-        super().__setattr__(name, value)
 
 
 @dataclass
@@ -80,6 +83,12 @@ class OutputSpec:
     spend_key_id: Optional[str] = None
     label: Optional[int] = None
     force_wrong_script: bool = False  # For testing wrong addresses
+    force_k_index: Optional[int] = None
+    spend_derivation_suffix: Optional[str] = None  # Override spend key per output
+    # Regular output specific
+    add_bip32_derivation: bool = (
+        False  # Add PSBT_OUT_BIP32_DERIVATION for change identification
+    )
 
 
 @dataclass
@@ -99,17 +108,18 @@ class TestScenario:
     inputs: List[InputSpec]
     outputs: List[OutputSpec]
     scan_keys: List[ScanKeySpec]
+    # List of explicit validation checks to perform - all checks will be performed if empty
+    #  (e.g. ["psbt_structure", "ecdh_coverage", "signer_constraints", "output_scripts"])
+    checks: List[str]
 
-    # Error injection for invalid tests
+    # control override for invalid tests
     missing_dleq_for_input: Optional[int] = None
     invalid_dleq_for_input: Optional[int] = None
     wrong_sighash_for_input: Optional[int] = None
     missing_ecdh_for_input: Optional[int] = None
     wrong_sp_info_size: bool = False
     missing_global_dleq: bool = False
-    use_global_ecdh: bool = False  # vs per-input
-
-    # New error injection types
+    use_global_ecdh: Optional[List[str]] = None  # list of scan key IDs to use global ECDH
     use_segwit_v2_input: bool = False
     set_tx_modifiable: bool = False
     missing_sp_info_field: bool = False
@@ -118,7 +128,6 @@ class TestScenario:
     missing_ecdh_for_scan_key: Optional[str] = None
     missing_dleq_for_scan_key: Optional[str] = None
     invalid_dleq_for_scan_key: Optional[str] = None
-    # Flag to explicitly inject ECDH shares into ineligible inputs (for invalid test cases)
     inject_ineligible_ecdh: bool = False
     force_output_script: bool = False
 
@@ -161,7 +170,7 @@ class InputFactory:
         # Deterministic key generation
         key_suffix = f"{spec.key_derivation_suffix}_{input_index}"
         input_priv, input_pub = self.wallet.create_key_pair(
-            "input", hash(key_suffix) % 1000
+            "input", _deterministic_hash(key_suffix)
         )
 
         # Create prevout
@@ -171,11 +180,7 @@ class InputFactory:
 
         # Create P2WPKH script: OP_0 OP_PUSHBYTES_20 <20-byte-hash160(pubkey)>
         # Error injection: Use segwit v2 instead of v0
-        segwit_version = (
-            0x02
-            if hasattr(spec, "use_segwit_v2") and getattr(spec, "use_segwit_v2", False)
-            else 0x00
-        )
+        segwit_version = 0x52 if spec.use_segwit_v2 else 0x00
         witness_script = (
             bytes([segwit_version, 0x14])
             + hashlib.sha256(input_pub.bytes).digest()[:20]
@@ -193,8 +198,7 @@ class InputFactory:
             "witness_utxo": witness_utxo,
             "amount": spec.amount,
             "sequence": spec.sequence,
-            "is_eligible": segwit_version
-            == 0x00,  # Only v0 segwit is eligible for silent payments
+            "is_eligible": True,
         }
 
     def _create_p2sh_multisig_input(
@@ -209,7 +213,7 @@ class InputFactory:
         for i in range(pubkey_count):
             key_suffix = f"{spec.key_derivation_suffix}_{input_index}_{i}"
             priv_key, pub_key = self.wallet.create_key_pair(
-                "multisig", hash(key_suffix) % 1000
+                "multisig", _deterministic_hash(key_suffix)
             )
             keys.append((priv_key, pub_key))
 
@@ -261,7 +265,7 @@ class InputFactory:
         for i in range(pubkey_count):
             key_suffix = f"{spec.key_derivation_suffix}_{input_index}_{i}"
             priv_key, pub_key = self.wallet.create_key_pair(
-                "wsh_multisig", hash(key_suffix) % 1000
+                "wsh_multisig", _deterministic_hash(key_suffix)
             )
             keys.append((priv_key, pub_key))
 
@@ -355,6 +359,10 @@ class OutputFactory:
 
         scan_pub, spend_pub = scan_keys[spec.scan_key_id]
 
+        if spec.spend_derivation_suffix is not None:
+            spend_seed = _deterministic_hash(f"spend_{spec.spend_derivation_suffix}")
+            _, spend_pub = self.wallet.create_key_pair("spend", spend_seed)
+
         return {
             "output_index": output_index,
             "output_type": OutputType.SILENT_PAYMENT,
@@ -363,6 +371,7 @@ class OutputFactory:
             "spend_pubkey": spend_pub,
             "label": spec.label,
             "force_wrong_script": spec.force_wrong_script,
+            "force_k_index": spec.force_k_index,
         }
 
     def _create_regular_p2tr_output(
@@ -380,6 +389,7 @@ class OutputFactory:
             "output_type": OutputType.REGULAR_P2TR,
             "amount": spec.amount,
             "script": output_script,
+            "add_bip32_derivation": spec.add_bip32_derivation,
         }
 
     def _create_regular_p2wpkh_output(
@@ -397,6 +407,7 @@ class OutputFactory:
             "output_type": OutputType.REGULAR_P2WPKH,
             "amount": spec.amount,
             "script": output_script,
+            "add_bip32_derivation": spec.add_bip32_derivation,
         }
 
 
@@ -441,7 +452,7 @@ class PSBTBuilder:
         ecdh_data = self._compute_ecdh_shares(input_data, scan_keys, scenario)
 
         # Add ECDH shares to PSBT (with error injection)
-        self._add_ecdh_shares_to_psbt(psbt, ecdh_data, scenario)
+        self._add_ecdh_shares_to_psbt(psbt, ecdh_data, scenario, input_data)
 
         # Compute and add outputs to PSBT
         self._add_outputs_to_psbt(psbt, output_data, input_data, ecdh_data, scenario)
@@ -500,9 +511,9 @@ class PSBTBuilder:
                 scan_keys[spec.key_id] = (self.wallet.scan_pub, self.wallet.spend_pub)
             else:
                 # Generate deterministic keys
-                seed_suffix = hash(f"{spec.key_id}_{spec.derivation_suffix}") % 1000
-                scan_priv, scan_pub = self.wallet.create_key_pair("scan", seed_suffix)
-                spend_priv, spend_pub = self.wallet.create_key_pair(
+                seed_suffix = _deterministic_hash(f"{spec.key_id}_{spec.derivation_suffix}")
+                _, scan_pub = self.wallet.create_key_pair("scan", seed_suffix)
+                _, spend_pub = self.wallet.create_key_pair(
                     "spend", seed_suffix
                 )
                 scan_keys[spec.key_id] = (scan_pub, spend_pub)
@@ -582,7 +593,7 @@ class PSBTBuilder:
         for input_info in eligible_inputs:
             input_idx = input_info["input_index"]
 
-            # Skip if error injection says to skip this input
+            # Error injection says to skip this input
             if scenario.missing_ecdh_for_input == input_idx:
                 continue
 
@@ -596,7 +607,7 @@ class PSBTBuilder:
                 # Compute ECDH share
                 ecdh_result = private_key * scan_pub
 
-                # Generate DLEQ proof (with potential error injection)
+                # Generate DLEQ proof (with potential Error injection)
                 if (
                     scenario.invalid_dleq_for_input == input_idx
                     or scenario.invalid_dleq_for_scan_key == scan_key_id
@@ -629,20 +640,33 @@ class PSBTBuilder:
         return ecdh_shares
 
     def _add_ecdh_shares_to_psbt(
-        self, psbt: SilentPaymentPSBT, ecdh_data: Dict, scenario: TestScenario
+        self, psbt: SilentPaymentPSBT, ecdh_data: Dict, scenario: TestScenario, input_data: List[Dict]
     ):
         """Add ECDH shares and DLEQ proofs to PSBT"""
-        if scenario.use_global_ecdh:
-            self._add_global_ecdh_shares(psbt, ecdh_data, scenario)
-        else:
-            self._add_per_input_ecdh_shares(psbt, ecdh_data, scenario)
+        global_scan_keys = scenario.use_global_ecdh or []
+
+        if global_scan_keys:
+            global_ecdh = {k: v for k, v in ecdh_data.items() if k[1] in global_scan_keys}
+            if global_ecdh:
+                self._add_global_ecdh_shares(psbt, global_ecdh, scenario)
+
+        per_input_ecdh = {k: v for k, v in ecdh_data.items() if k[1] not in global_scan_keys}
+        if per_input_ecdh:
+            self._add_per_input_ecdh_shares(psbt, per_input_ecdh, scenario, input_data)
 
         # Error injection: Add ECDH share for ineligible input (only when explicitly requested)
         if scenario.inject_ineligible_ecdh:
             self._inject_ineligible_input_ecdh_shares(psbt, scenario)
 
+    def _find_input_info_by_index(self, input_data: List[Dict], input_idx: int) -> Optional[Dict]:
+        """Find input info by index"""
+        for input_info in input_data:
+            if input_info.get("input_index") == input_idx:
+                return input_info
+        return None
+
     def _add_per_input_ecdh_shares(
-        self, psbt: SilentPaymentPSBT, ecdh_data: Dict, scenario: TestScenario
+        self, psbt: SilentPaymentPSBT, ecdh_data: Dict, scenario: TestScenario, input_data: List[Dict]
     ):
         """Add per-input ECDH shares"""
         scan_keys = self._generate_scan_keys(scenario.scan_keys)
@@ -656,7 +680,7 @@ class PSBTBuilder:
 
             scan_pub = scan_keys[scan_key_id][0]
 
-            # Add ECDH share with potential error injection
+            # Add ECDH share with potential Error injection
             ecdh_bytes = ecdh_result.to_bytes_compressed()
             if scenario.wrong_ecdh_share_size:
                 ecdh_bytes = ecdh_bytes[:32]  # Wrong size: 32 instead of 33 bytes
@@ -665,7 +689,7 @@ class PSBTBuilder:
                 input_idx, PSBTKeyType.PSBT_IN_SP_ECDH_SHARE, scan_pub.bytes, ecdh_bytes
             )
 
-            # Add DLEQ proof (if not missing due to error injection)
+            # Add DLEQ proof (if not missing due to Error injection)
             if dleq_proof is not None:
                 psbt.add_input_field(
                     input_idx, PSBTKeyType.PSBT_IN_SP_DLEQ, scan_pub.bytes, dleq_proof
@@ -682,7 +706,32 @@ class PSBTBuilder:
                     b"",
                     struct.pack("<I", sighash_type),
                 )
+                
+                if scenario.wrong_sighash_for_input == input_idx or scenario.use_segwit_v2_input:
+                    # Partially sign to support correct detection at signed stage
+                    input_info = self._find_input_info_by_index(input_data, input_idx)
+                    if input_info and input_info.get("is_eligible", False):
+                        # Create proper UTXO from input data for signing
+                        from psbt_sp.crypto import UTXO
+                        utxo = UTXO(
+                            txid=input_info["prevout_txid"].hex(),
+                            vout=input_info["prevout_index"],
+                            amount=input_info["amount"],
+                            script_pubkey=input_info.get("witness_script", input_info.get("script_pubkey", b"")).hex(),
+                            private_key=input_info["private_key"]
+                        )
+                        
+                        # Sign this specific input to create a partial signature
+                        psbt._sign_controlled_inputs([utxo], [input_idx])
+
                 processed_inputs.add(input_idx)
+
+    def _compute_global_dleq_proof(self, scan_key_id: str, summed_private_key, scan_pub) -> bytes:
+        """Compute a global DLEQ proof for a scan key using the summed private key"""
+        random_bytes = hashlib.sha256(
+            f"{self.base_seed}_global_dleq_{scan_key_id}".encode()
+        ).digest()
+        return dleq_generate_proof(summed_private_key, scan_pub, random_bytes)
 
     def _add_global_ecdh_shares(
         self, psbt: SilentPaymentPSBT, ecdh_data: Dict, scenario: TestScenario
@@ -709,7 +758,7 @@ class PSBTBuilder:
                 summed_ecdh.to_bytes_compressed(),
             )
 
-            # Add global DLEQ proof (if not missing due to error injection)
+            # Add global DLEQ proof (if not missing due to Error injection)
             if not scenario.missing_global_dleq:
                 # For global DLEQ, we need to prove sum of private keys
                 # Sum all private keys from eligible inputs for this scan key
@@ -732,12 +781,8 @@ class PSBTBuilder:
                                 summed_private_key = summed_private_key + inp_priv_key
 
                 if summed_private_key is not None:
-                    # Generate valid DLEQ proof with summed private key
-                    random_bytes = hashlib.sha256(
-                        f"{self.base_seed}_global_dleq_{scan_key_id}".encode()
-                    ).digest()
-                    global_dleq_proof = dleq_generate_proof(
-                        summed_private_key, scan_pub, random_bytes
+                    global_dleq_proof = self._compute_global_dleq_proof(
+                        scan_key_id, summed_private_key, scan_pub
                     )
                     psbt.add_global_field(
                         PSBTKeyType.PSBT_GLOBAL_SP_DLEQ,
@@ -769,9 +814,9 @@ class PSBTBuilder:
                 if scan_keys:
                     scan_key_id, (scan_pub, _) = next(iter(scan_keys.items()))
                     # Create fake ECDH share
-                    fake_ecdh_bytes = hashlib.sha256(
+                    fake_ecdh_bytes = b"\x02" + hashlib.sha256(
                         f"fake_ecdh_{i}".encode()
-                    ).digest()[:33]
+                    ).digest()
                     fake_dleq = b"\x00" * 64
 
                     psbt.add_input_field(
@@ -811,10 +856,14 @@ class PSBTBuilder:
                     psbt, output_info, input_data, ecdh_data, scenario
                 )
             else:
-                # Regular output - just add script
+                # Regular output - add script and optional BIP32_DERIVATION
                 psbt.add_output_field(
                     idx, PSBTKeyType.PSBT_OUT_SCRIPT, b"", output_info["script"]
                 )
+
+                # Add BIP32_DERIVATION if requested (for change identification)
+                if output_info.get("add_bip32_derivation", False):
+                    self._add_output_bip32_derivation(psbt, idx, input_data)
 
     def _add_silent_payment_output(
         self,
@@ -827,7 +876,14 @@ class PSBTBuilder:
         """Add silent payment output with proper BIP-352 script computation"""
         idx = output_info["output_index"]
         scan_pub = output_info["scan_pubkey"]
-        spend_pub = output_info["spend_pubkey"]
+        original_spend_pub = output_info["spend_pubkey"]
+
+        # Apply BIP-352 label if specified
+        spend_pub = original_spend_pub
+        if output_info.get("label") is not None:
+            spend_pub = self._compute_labeled_spend_key(
+                psbt, original_spend_pub, output_info["label"]
+            )
 
         if output_info["force_wrong_script"]:
             # Force wrong script for address mismatch tests
@@ -842,21 +898,30 @@ class PSBTBuilder:
             ]
 
             if eligible_inputs and ecdh_data:
-                # Create outpoints
-                outpoints = [
-                    (inp["prevout_txid"], inp["prevout_index"])
-                    for inp in eligible_inputs
-                ]
-
-                # Sum all eligible input public keys (proper BIP-352 implementation)
-                summed_pubkey = None
+                # Create outpoints and sort them deterministically (BIP-352 requirement)
+                outpoints = []
                 for inp in eligible_inputs:
+                    outpoints.append((inp["prevout_txid"], inp["prevout_index"]))
+                # Sort outpoints lexicographically (txid first, then vout)
+                outpoints.sort(key=lambda x: (x[0], x[1]))
+
+                # Sum all eligible input public keys in the same order as sorted outpoints
+                # Create a mapping from outpoint to input data
+                outpoint_to_input = {
+                    (inp["prevout_txid"], inp["prevout_index"]): inp
+                    for inp in eligible_inputs
+                }
+                
+                # Sum public keys in sorted outpoint order (BIP-352 requirement)
+                summed_pubkey = None
+                for outpoint in outpoints:
+                    inp = outpoint_to_input[outpoint]
                     if summed_pubkey is None:
                         summed_pubkey = inp["public_key"]
                     else:
                         summed_pubkey = summed_pubkey + inp["public_key"]
 
-                summed_pubkey_bytes = summed_pubkey.bytes
+                summed_pubkey_bytes = summed_pubkey.to_bytes_compressed()
 
                 # Get ECDH share for this scan key - find the scan key ID
                 scan_key_id = None
@@ -868,49 +933,57 @@ class PSBTBuilder:
 
                 if scan_key_id:
                     # Check if ALL eligible inputs have ECDH shares for complete coverage
-                    eligible_input_indices = [
-                        inp["input_index"] for inp in eligible_inputs
-                    ]
+                    # Sum ECDH shares in the same order as sorted outpoints
                     inputs_with_ecdh = set()
                     summed_ecdh_share = None
-
-                    for (inp_idx, sk_id), (ecdh_result, _) in ecdh_data.items():
-                        if sk_id == scan_key_id and inp_idx in eligible_input_indices:
+                    
+                    for outpoint in outpoints:
+                        inp = outpoint_to_input[outpoint]
+                        inp_idx = inp["input_index"]
+                        
+                        # Look for ECDH share for this specific input and scan key
+                        ecdh_key = (inp_idx, scan_key_id)
+                        if ecdh_key in ecdh_data:
+                            ecdh_result, _ = ecdh_data[ecdh_key]
                             inputs_with_ecdh.add(inp_idx)
                             if summed_ecdh_share is None:
                                 summed_ecdh_share = ecdh_result
                             else:
                                 summed_ecdh_share = summed_ecdh_share + ecdh_result
 
-                    # Only generate output script if ALL eligible inputs have ECDH shares OR force_output_script is set
-                    coverage_complete = len(inputs_with_ecdh) == len(
-                        eligible_input_indices
-                    )
+                    # Only generate output script if ALL eligible inputs have ECDH shares
+                    coverage_complete = len(inputs_with_ecdh) == len(eligible_inputs)
 
-                    if coverage_complete:
+                    if coverage_complete and summed_ecdh_share is not None:
                         ecdh_share_bytes = summed_ecdh_share.to_bytes_compressed()
 
+                        # Override k order with index
+                        k_index = idx
+                        if output_info["force_k_index"] is not None:
+                            k_index = output_info["force_k_index"]
                         # Compute BIP-352 output script
                         output_script = compute_bip352_output_script(
                             outpoints=outpoints,
                             summed_pubkey_bytes=summed_pubkey_bytes,
                             ecdh_share_bytes=ecdh_share_bytes,
-                            spend_pubkey_bytes=spend_pub.bytes,
-                            k=idx,  # k is the output index
+                            spend_pubkey_bytes=spend_pub.to_bytes_compressed(),
+                            k=k_index,  # k is the output index
                         )
                         psbt.add_output_field(
                             idx, PSBTKeyType.PSBT_OUT_SCRIPT, b"", output_script
                         )
                     elif scenario.force_output_script:
                         wrong_script = (
-                            bytes([0x51, 0x20]) + hashlib.sha256(b"wrong_address").digest()
+                            bytes([0x51, 0x20])
+                            + hashlib.sha256(b"wrong_address").digest()
                         )
-                        psbt.add_output_field(0, PSBTKeyType.PSBT_OUT_SCRIPT, b"", wrong_script)
-                        
+                        psbt.add_output_field(
+                            0, PSBTKeyType.PSBT_OUT_SCRIPT, b"", wrong_script
+                        )
 
-        # Add SP_V0_INFO field (unless error injection says to skip it)
+        # Add SP_V0_INFO field (unless Error injection says to skip it)
         if not scenario.missing_sp_info_field:
-            sp_info = scan_pub.bytes + spend_pub.bytes
+            sp_info = scan_pub.to_bytes_compressed() + spend_pub.to_bytes_compressed()
             if scenario.wrong_sp_info_size:
                 sp_info = sp_info[:65]  # Wrong size (65 instead of 66)
 
@@ -923,6 +996,36 @@ class PSBTBuilder:
                 PSBTKeyType.PSBT_OUT_SP_V0_LABEL,
                 b"",
                 struct.pack("<I", output_info["label"]),
+            )
+
+    def _compute_labeled_spend_key(self, psbt: SilentPaymentPSBT, spend_pub, label: int):
+        """Compute BIP-352 labeled spend key: B_m = B_spend + hash_BIP0352/Label(b_scan || m) * G"""
+        # Get scan private key for label computation
+        scan_priv = self.wallet.scan_priv
+
+        label_tweak = psbt._compute_label_tweak(scan_priv.to_bytes(32, "big"), label)
+        labeled_spend_key = spend_pub + (label_tweak * G)
+        return labeled_spend_key
+
+    def _add_output_bip32_derivation(
+        self, psbt: SilentPaymentPSBT, output_idx: int, input_data: List[Dict]
+    ):
+        """Add PSBT_OUT_BIP32_DERIVATION for change identification"""
+        # Use the first input's public key for the derivation (common pattern)
+        if input_data and "public_key" in input_data[0]:
+            pubkey = input_data[0]["public_key"]
+
+            # Create BIP32 derivation path (master_fingerprint + path)
+            # Format: 4-byte fingerprint + 8-byte path (m/0/1 for change)
+            master_fingerprint = struct.pack(">I", 0)  # Dummy fingerprint
+            derivation_path = struct.pack(">I", 0) + struct.pack(">I", 1)  # m/0/1
+            bip32_derivation_value = master_fingerprint + derivation_path
+
+            psbt.add_output_field(
+                output_idx,
+                PSBTKeyType.PSBT_OUT_BIP32_DERIVATION,
+                pubkey.bytes,
+                bip32_derivation_value,
             )
 
 
@@ -989,6 +1092,9 @@ class ConfigBasedTestGenerator:
                 spend_key_id=output_config.get("spend_key_id"),
                 label=output_config.get("label"),
                 force_wrong_script=output_config.get("force_wrong_script", False),
+                force_k_index=output_config.get("force_k_index", None),
+                spend_derivation_suffix=output_config.get("spend_derivation_suffix"),
+                add_bip32_derivation=output_config.get("add_bip32_derivation", False),
             )
 
             # Handle batch creation
@@ -1005,37 +1111,49 @@ class ConfigBasedTestGenerator:
             )
             scan_keys.append(scan_key_spec)
 
-        # Parse error injection
-        error_injection = config.get("error_injection", {})
+        # Parse control override
+        control_override = config.get("control_override", {})
+
+        # Parse use_global_ecdh: true -> all scan keys, list -> specific scan keys, absent -> None
+        raw_global_ecdh = control_override.get("use_global_ecdh")
+        if raw_global_ecdh is True:
+            use_global_ecdh = [sk.key_id for sk in scan_keys]
+        elif isinstance(raw_global_ecdh, list):
+            use_global_ecdh = raw_global_ecdh
+        else:
+            use_global_ecdh = None
 
         return TestScenario(
             description=config["description"],
             validation_result=ValidationResult(
                 config.get("validation_result", "valid")
             ),
+            checks=config.get("checks", []),
             inputs=inputs,
             outputs=outputs,
             scan_keys=scan_keys,
-            missing_dleq_for_input=error_injection.get("missing_dleq_for_input"),
-            invalid_dleq_for_input=error_injection.get("invalid_dleq_for_input"),
-            wrong_sighash_for_input=error_injection.get("wrong_sighash_for_input"),
-            missing_ecdh_for_input=error_injection.get("missing_ecdh_for_input"),
-            wrong_sp_info_size=error_injection.get("wrong_sp_info_size", False),
-            missing_global_dleq=error_injection.get("missing_global_dleq", False),
-            use_global_ecdh=error_injection.get("use_global_ecdh", False),
-            # New error injection types
-            use_segwit_v2_input=error_injection.get("use_segwit_v2_input", False),
-            set_tx_modifiable=error_injection.get("set_tx_modifiable", False),
-            missing_sp_info_field=error_injection.get("missing_sp_info_field", False),
-            wrong_ecdh_share_size=error_injection.get("wrong_ecdh_share_size", False),
-            wrong_dleq_proof_size=error_injection.get("wrong_dleq_proof_size", False),
-            missing_ecdh_for_scan_key=error_injection.get("missing_ecdh_for_scan_key"),
-            missing_dleq_for_scan_key=error_injection.get("missing_dleq_for_scan_key"),
-            invalid_dleq_for_scan_key=error_injection.get("invalid_dleq_for_scan_key"),
-            inject_ineligible_ecdh=error_injection.get("inject_ineligible_ecdh", False),
-            force_output_script=error_injection.get("force_output_script", False),
+            missing_dleq_for_input=control_override.get("missing_dleq_for_input"),
+            invalid_dleq_for_input=control_override.get("invalid_dleq_for_input"),
+            wrong_sighash_for_input=control_override.get("wrong_sighash_for_input"),
+            missing_ecdh_for_input=control_override.get("missing_ecdh_for_input"),
+            wrong_sp_info_size=control_override.get("wrong_sp_info_size", False),
+            missing_global_dleq=control_override.get("missing_global_dleq", False),
+            use_global_ecdh=use_global_ecdh,
+            use_segwit_v2_input=control_override.get("use_segwit_v2_input", False),
+            set_tx_modifiable=control_override.get("set_tx_modifiable", False),
+            missing_sp_info_field=control_override.get("missing_sp_info_field", False),
+            wrong_ecdh_share_size=control_override.get("wrong_ecdh_share_size", False),
+            wrong_dleq_proof_size=control_override.get("wrong_dleq_proof_size", False),
+            missing_ecdh_for_scan_key=control_override.get("missing_ecdh_for_scan_key"),
+            missing_dleq_for_scan_key=control_override.get("missing_dleq_for_scan_key"),
+            invalid_dleq_for_scan_key=control_override.get("invalid_dleq_for_scan_key"),
+            inject_ineligible_ecdh=control_override.get(
+                "inject_ineligible_ecdh", False
+            ),
+            force_output_script=control_override.get("force_output_script", False),
         )
 
+    # Generate test vector for a given scenario
     def generate_test_vector_from_scenario(
         self, scenario: TestScenario
     ) -> Dict[str, Any]:
@@ -1047,50 +1165,17 @@ class ConfigBasedTestGenerator:
         # Convert to GenTestVector format for compatibility
         input_keys = []
         for inp in psbt_data["input_data"]:
-            # Handle both single and multi-key inputs
-            private_key = None
-            public_key = None
+            private_key = ""
+            public_key = ""
 
             if "private_key" in inp and inp["private_key"] is not None:
-                private_key = inp["private_key"]
-                public_key = inp["public_key"]
-            elif (
-                "private_keys" in inp
-                and inp["private_keys"]
-                and len(inp["private_keys"]) > 0
-            ):
-                # For multi-key inputs, use the first key
-                private_key = inp["private_keys"][0]
-                public_key = (
-                    inp["public_keys"][0]
-                    if inp["public_keys"]
-                    else inp.get("public_key")
-                )
-            elif "public_key" in inp and inp["public_key"] is not None:
-                # Use the existing public key but no private key for multisig
-                public_key = inp["public_key"]
-                private_key = (
-                    inp.get("private_keys", [None])[0]
-                    if inp.get("private_keys")
-                    else None
-                )
-
-            if private_key is None or public_key is None:
-                # Fallback - create a dummy key
-                fallback_priv, fallback_pub = self.builder.wallet.create_key_pair(
-                    "dummy", inp["input_index"]
-                )
-                private_key = private_key or fallback_priv
-                public_key = public_key or fallback_pub
+                private_key = inp["private_key"].hex
+                public_key = inp["public_key"].hex
 
             input_key = {
                 "input_index": inp["input_index"],
-                "private_key": private_key.hex
-                if hasattr(private_key, "hex")
-                else str(private_key),
-                "public_key": public_key.hex
-                if hasattr(public_key, "hex")
-                else str(public_key),
+                "private_key": private_key,
+                "public_key": public_key,
                 "prevout_txid": inp["prevout_txid"].hex(),
                 "prevout_index": inp["prevout_index"],
                 "prevout_scriptpubkey": inp.get(
@@ -1114,10 +1199,45 @@ class ConfigBasedTestGenerator:
             }
             scan_keys.append(scan_key)
 
+        global_scan_keys = psbt_data["scenario"].use_global_ecdh or []
+
         expected_ecdh_shares = []
+        # Global ECDH shares: one summed entry per scan key, no input_index
+        if global_scan_keys:
+            global_sums = {}  # scan_key_id -> summed ecdh_result
+            global_priv_sums = {}  # scan_key_id -> summed private key
+            for (input_idx, scan_key_id), (ecdh_result, _) in psbt_data["ecdh_data"].items():
+                if scan_key_id in global_scan_keys and scan_key_id in psbt_data["scan_keys"]:
+                    if scan_key_id not in global_sums:
+                        global_sums[scan_key_id] = ecdh_result
+                    else:
+                        global_sums[scan_key_id] += ecdh_result
+                    # Sum private keys for DLEQ proof
+                    for inp in psbt_data["input_data"]:
+                        if inp["input_index"] == input_idx and inp.get("is_eligible"):
+                            if scan_key_id not in global_priv_sums:
+                                global_priv_sums[scan_key_id] = inp["private_key"]
+                            else:
+                                global_priv_sums[scan_key_id] = global_priv_sums[scan_key_id] + inp["private_key"]
+            for scan_key_id, summed_ecdh in global_sums.items():
+                scan_pub = psbt_data["scan_keys"][scan_key_id][0]
+                entry = {
+                    "scan_key": scan_pub.hex if hasattr(scan_pub, "hex") else str(scan_pub),
+                    "ecdh_result": summed_ecdh.to_bytes_compressed().hex(),
+                }
+                if scan_key_id in global_priv_sums and not scenario.missing_global_dleq:
+                    global_dleq_proof = self.builder._compute_global_dleq_proof(
+                        scan_key_id, global_priv_sums[scan_key_id], scan_pub
+                    )
+                    entry["dleq_proof"] = global_dleq_proof.hex()
+                expected_ecdh_shares.append(entry)
+
+        # Per-input ECDH shares: one entry per (input, scan_key), with input_index
         for (input_idx, scan_key_id), (ecdh_result, dleq_proof) in psbt_data[
             "ecdh_data"
         ].items():
+            if scan_key_id in global_scan_keys:
+                continue
             if scan_key_id in psbt_data["scan_keys"]:
                 ecdh_share = {
                     "scan_key": psbt_data["scan_keys"][scan_key_id][0].hex
@@ -1148,21 +1268,23 @@ class ConfigBasedTestGenerator:
 
             expected_outputs.append(output)
 
-        return {
+        test_dict = {
             "description": scenario.description,
             "psbt": base64.b64encode(psbt.serialize()).decode(),
             "input_keys": input_keys,
             "scan_keys": scan_keys,
             "expected_ecdh_shares": expected_ecdh_shares,
             "expected_outputs": expected_outputs,
-            "expected_psbt_id": psbt.compute_unique_id()
-            if scenario.validation_result == ValidationResult.VALID
-            else None,
         }
+        if scenario.validation_result == ValidationResult.VALID:
+            test_dict["expected_psbt_id"] = psbt.compute_unique_id()
+        if scenario.checks:
+            test_dict["checks"] = scenario.checks
+        return test_dict
 
 
 # ============================================================================
-# Backward Compatibility Layer
+# Test Vector Generator Section
 # ============================================================================
 
 
@@ -1172,8 +1294,8 @@ class TestVectorGenerator:
     def __init__(self, seed: str = "bip375_deterministic_seed"):
         self.config_generator = ConfigBasedTestGenerator(seed)
         self.test_vectors = {
-            "description": "BIP-375 Test Vectors (Refactored)",
-            "version": "2.0",
+            "description": "BIP-375 Test Vectors",
+            "version": "1.2",
             "format_notes": [
                 "Generated using configuration-driven approach",
                 "All keys are hex-encoded",
@@ -1188,12 +1310,6 @@ class TestVectorGenerator:
         """Generate all test vectors using configuration files"""
         # Load test configurations
         test_configs_dir = Path(__file__).parent / "test_configs"
-
-        if not test_configs_dir.exists():
-            print(
-                f"Warning: {test_configs_dir} does not exist. Creating with sample configs."
-            )
-            self._create_sample_configs()
 
         # Load invalid test cases
         invalid_configs = list(test_configs_dir.glob("invalid/**/*.yaml"))
@@ -1216,8 +1332,7 @@ class TestVectorGenerator:
                 traceback.print_exc()
 
         # Add custom invalid test cases that require manual PSBT construction
-        custom_invalid_tests = self.generate_custom_invalid_tests()
-        self.test_vectors["invalid"].extend(custom_invalid_tests)
+        self.test_vectors["invalid"].insert(9,self._generate_incomplete_per_input_ecdh_for_one_scan_key_test())
 
         # Load valid test cases
         valid_configs = list(test_configs_dir.glob("valid/**/*.yaml"))
@@ -1241,78 +1356,8 @@ class TestVectorGenerator:
 
         return self.test_vectors
 
-    def _create_sample_configs(self):
-        """Create sample configuration files for testing"""
-        test_configs_dir = Path(__file__).parent / "test_configs"
-        test_configs_dir.mkdir(exist_ok=True)
-        (test_configs_dir / "invalid").mkdir(exist_ok=True)
-        (test_configs_dir / "valid").mkdir(exist_ok=True)
-
-        # Create a simple sample config
-        sample_invalid = {
-            "description": "Sample invalid test cases",
-            "test_cases": [
-                {
-                    "description": "Missing DLEQ proof test",
-                    "validation_result": "invalid",
-                    "inputs": [{"type": "p2wpkh", "amount": 100000}],
-                    "outputs": [
-                        {
-                            "type": "silent_payment",
-                            "amount": 95000,
-                            "scan_key_id": "default",
-                        }
-                    ],
-                    "scan_keys": [{"key_id": "default"}],
-                    "error_injection": {"missing_dleq_for_input": 0},
-                }
-            ],
-        }
-
-        sample_valid = {
-            "description": "Sample valid test cases",
-            "test_cases": [
-                {
-                    "description": "Simple valid single input test",
-                    "validation_result": "valid",
-                    "inputs": [{"type": "p2wpkh", "amount": 100000}],
-                    "outputs": [
-                        {
-                            "type": "silent_payment",
-                            "amount": 95000,
-                            "scan_key_id": "default",
-                        }
-                    ],
-                    "scan_keys": [{"key_id": "default"}],
-                }
-            ],
-        }
-
-        with open(test_configs_dir / "invalid" / "sample.yaml", "w") as f:
-            yaml.dump(sample_invalid, f, default_flow_style=False)
-
-        with open(test_configs_dir / "valid" / "sample.yaml", "w") as f:
-            yaml.dump(sample_valid, f, default_flow_style=False)
-
-    def generate_custom_invalid_tests(self) -> List[Dict[str, Any]]:
-        """Generate custom invalid test cases that require manual PSBT construction.
-
-        These tests are too complex for the config-driven approach because they require
-        specific per-output ECDH share handling that the generic builder cannot express.
-        """
-        wallet = self.config_generator.wallet
-        tests = []
-
-        # Test 15: Two inputs, two outputs with different scan keys;
-        # input 1 missing ECDH for scan key B
-        tests.append(
-            self._generate_incomplete_per_input_ecdh_for_one_scan_key_test(wallet)
-        )
-
-        return tests
-
     def _generate_incomplete_per_input_ecdh_for_one_scan_key_test(
-        self, wallet: Wallet
+        self
     ) -> Dict[str, Any]:
         """Two inputs, two outputs with different scan keys; input 1 missing ECDH for scan key B.
 
@@ -1322,6 +1367,7 @@ class TestVectorGenerator:
         - Output 0 (scan key A) uses correct summed ECDH
         - Output 1 (scan key B) uses incomplete ECDH (only from input 0)
         """
+        wallet = self.config_generator.wallet
         input0_priv, input0_pub = wallet.input_key_pair(0)
         input1_priv, input1_pub = wallet.input_key_pair(1)
 
@@ -1484,7 +1530,7 @@ class TestVectorGenerator:
         psbt.add_output_field(1, PSBTKeyType.PSBT_OUT_SP_V0_INFO, b"", sp_info_b)
 
         return {
-            "description": "Reject PSBT with two inputs and two silent payment outputs (different scan keys) where input 1 is missing ECDH share for scan key B",
+            "description": "ecdh coverage: two inputs/two sp outputs (different scan keys) - full coverage input 0 / partial coverage input 1",
             "psbt": base64.b64encode(psbt.serialize()).decode(),
             "input_keys": [
                 {

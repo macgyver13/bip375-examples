@@ -969,7 +969,7 @@ class SilentPaymentPSBT:
                 return False
             print("   Signatures added successfully")
         else:
-            print("⚠️  Some outputs missing scripts - cannot sign yet")
+            print("⚠️  Some outputs missing scripts - cannot finalize yet")
             # For multi-signer: still sign inputs even without complete coverage
             # This allows incremental signing as each party processes their inputs
             if not is_complete:

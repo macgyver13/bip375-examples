@@ -1,0 +1,46 @@
+description: "Valid PSBT with incomplete ECDH coverage scenarios"
+
+test_cases:
+  - description: "one P2WPKH input using per-input ECDH shares"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "single_signer_per_input"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+
+  # - description: "1 P2TR input using per-input ECDH shares"
+  #   validation_result: "valid"
+  #   inputs:
+  #     - type: "p2tr"
+  #       amount: 100000
+  #       key_derivation_suffix: "single_signer_per_input"
+  #   outputs:
+  #     - type: "silent_payment"
+  #       amount: 95000
+  #       scan_key_id: "default"
+  #   scan_keys:
+  #     - key_id: "default"
+
+  - description: "WIP: incomplete ECDH coverage - no PSBT_OUT_SCRIPT"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "incomplete_input_0"
+      - type: "p2wpkh"
+        amount: 150000
+        key_derivation_suffix: "incomplete_input_1"
+    outputs:
+      - type: "silent_payment"
+        amount: 200000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      missing_ecdh_for_input: 1  # Input 1 will not have ECDH share

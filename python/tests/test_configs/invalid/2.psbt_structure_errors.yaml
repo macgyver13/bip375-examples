@@ -1,0 +1,64 @@
+description: "PSBT structure validation errors"
+
+test_cases:
+  - description: "psbt structure: missing PSBT_OUT_SP_V0_INFO with PSBT_OUT_SP_V0_LABEL set"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "label_without_info"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+        label: 1
+        # This will need special handling - label but force missing SP_V0_INFO
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      missing_sp_info_field: true
+
+  - description: "psbt structure: PSBT_OUT_SP_V0_INFO field with incorrect size"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "wrong_sp_info_size"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      wrong_sp_info_size: true
+
+  - description: "psbt structure: PSBT_IN_SP_ECDH_SHARE field with incorrect size"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "wrong_ecdh_size"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      wrong_ecdh_share_size: true
+
+  - description: "psbt structure: PSBT_IN_SP_DLEQ proof field with incorrect size"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "wrong_dleq_size"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      wrong_dleq_proof_size: true

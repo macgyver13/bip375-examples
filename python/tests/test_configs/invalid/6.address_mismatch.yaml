@@ -1,0 +1,54 @@
+description: "Address computation validation errors"
+
+test_cases:
+  - description: "output scripts: computed output script mismatch in PSBT_OUT_SCRIPT field from transaction inputs"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "address_mismatch"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+        force_wrong_script: true
+    scan_keys:
+      - key_id: "default"
+
+  - description: "output scripts: two sp outputs (same scan key/different spend keys) - outputs are not sorted lexicographically by spend key"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "address_mismatch"
+    outputs:
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "default"
+        spend_derivation_suffix: "low_lex_key"
+        force_k_index: 1
+      - type: "silent_payment"
+        amount: 10000
+        scan_key_id: "default"
+        spend_derivation_suffix: "high_lex_key"
+        force_k_index: 0
+    scan_keys:
+      - key_id: "default"
+
+  - description: "output scripts: two sp outputs (same scan/spend keys) - output scripts are computed with swapped k values"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "address_mismatch"
+    outputs:
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "default"
+        force_k_index: 1
+      - type: "silent_payment"
+        amount: 10000
+        scan_key_id: "default"
+        force_k_index: 0
+    scan_keys:
+      - key_id: "default"

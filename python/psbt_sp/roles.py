@@ -565,10 +565,6 @@ class PSBTSigner:
             try:
                 # Extract public key hash from P2WPKH script_pubkey
                 script_bytes = utxo.script_pubkey_bytes
-                if len(script_bytes) != 22 or script_bytes[:2] != b'\x00\x14':
-                    print(f"⚠️  Skipping input {input_index}: Not P2WPKH")
-                    continue
-
                 pubkey_hash = script_bytes[2:]
 
                 # Generate signature

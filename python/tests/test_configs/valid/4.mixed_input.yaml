@@ -1,0 +1,20 @@
+description: "Valid mixed-input scenarios"
+
+test_cases:
+  - description: "two mixed input types - only eligible inputs contribute ECDH shares (P2SH excluded)"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "mixed_p2wpkh"
+      - type: "p2sh_multisig"
+        amount: 150000
+        multisig_threshold: 2
+        multisig_pubkey_count: 2
+        key_derivation_suffix: "mixed_p2sh"
+    outputs:
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"

@@ -1,0 +1,39 @@
+description: "Valid PSBT with labeled silent payments and change outputs"
+
+test_cases:
+  - description: "P2WPKH to sp with labeled output and BIP 32 change"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 500000
+        key_derivation_suffix: "with_change"
+    outputs:
+      - type: "silent_payment"
+        amount: 100000
+        scan_key_id: "default"
+        label: 1  # Labeled silent payment
+      - type: "regular_p2wpkh"
+        amount: 390000  # Change output (after fees)
+        add_bip32_derivation: true
+    scan_keys:
+      - key_id: "default"
+
+  - description: "two sp outputs - output 0 no label / output 1 uses label=0 convention for sp change"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 300000
+        key_derivation_suffix: "sp_change"
+    outputs:
+      - type: "silent_payment"
+        amount: 100000
+        scan_key_id: "recipient"
+        # No label = recipient
+      - type: "silent_payment"
+        amount: 190000
+        scan_key_id: "change"
+        label: 0  # BIP-352 change convention
+    scan_keys:
+      - key_id: "change"
+      - key_id: "recipient"
+        derivation_suffix: "recipient"

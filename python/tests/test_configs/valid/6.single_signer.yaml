@@ -1,0 +1,54 @@
+description: "Valid single-signer ECDH share scenarios"
+
+test_cases:
+  - description: "two inputs single-signer - using global ECDH share"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        count: 2
+        key_derivation_suffix: "single_signer"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      use_global_ecdh: true
+
+  - description: "two inputs single-signer - using per-input ECDH shares"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        count: 2
+        key_derivation_suffix: "single_signer_per_input"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+
+  - description: "two inputs/two sp outputs - mixed global and per-input ECDH shares"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 200000
+        count: 2
+        key_derivation_suffix: "mixed_ecdh"
+    outputs:
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "recipient_a"
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "recipient_b"
+    scan_keys:
+      - key_id: "recipient_a"
+        derivation_suffix: "recipient_a"
+      - key_id: "recipient_b"
+        derivation_suffix: "recipient_b"
+    control_override:
+      use_global_ecdh: ["recipient_a"]

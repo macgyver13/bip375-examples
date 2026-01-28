@@ -1,0 +1,26 @@
+description: "Valid PSBT with multiple outputs to same scan key"
+
+test_cases:
+  - description: "three sp outputs (same scan key) - each output has distinct k value"
+    validation_result: "valid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 400000
+        key_derivation_suffix: "multi_same_key"
+    outputs:
+      - type: "silent_payment"
+        amount: 100000
+        scan_key_id: "default"
+        # k=0 (first output)
+      - type: "silent_payment"
+        amount: 100000
+        scan_key_id: "default"
+        # k=1 (second output)
+      - type: "silent_payment"
+        amount: 100000
+        scan_key_id: "default"
+        # k=2 (third output)
+      - type: "regular_p2tr"
+        amount: 90000  # Change
+    scan_keys:
+      - key_id: "default"

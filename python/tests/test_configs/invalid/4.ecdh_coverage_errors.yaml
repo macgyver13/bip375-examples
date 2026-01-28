@@ -1,0 +1,156 @@
+description: "ECDH coverage validation errors"
+
+test_cases:
+  - description: "ecdh coverage: PSBT_OUT_SCRIPT set - no eligible inputs"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wsh_multisig"
+        amount: 100000
+        multisig_threshold: 2
+        multisig_pubkey_count: 2
+        key_derivation_suffix: "p2wsh_only"
+    outputs:
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "default"
+        force_wrong_script: true
+    scan_keys:
+      - key_id: "default"
+
+  - description: "ecdh coverage: PSBT_OUT_SCRIPT set - Input 0 missing PSBT_IN_SP_ECDH_SHARE"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "missing_ecdh"
+      - type: "p2wpkh"
+        amount: 10000
+        key_derivation_suffix: "default"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      missing_ecdh_for_input: 0
+      force_output_script: true
+
+  - description: "ecdh coverage: two sp outputs - Input 1 missing PSBT_IN_SP_ECDH_SHARE"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 200000
+        key_derivation_suffix: "multi_scan_missing_ecdh"
+    outputs:
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "scan_key_a"
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "scan_key_b"
+    scan_keys:
+      - key_id: "scan_key_a"
+        derivation_suffix: "recipient_a"
+      - key_id: "scan_key_b"
+        derivation_suffix: "recipient_b"
+    control_override:
+      missing_ecdh_for_scan_key: "scan_key_b"
+      force_output_script: true
+
+  - description: "ecdh coverage: ineligible P2SH multisig input with PSBT_IN_SP_ECDH_SHARE set"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "mixed_eligible"
+      - type: "p2sh_multisig"
+        amount: 150000
+        multisig_threshold: 2
+        multisig_pubkey_count: 2
+        key_derivation_suffix: "mixed_ineligible"
+    outputs:
+      - type: "silent_payment"
+        amount: 90000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      inject_ineligible_ecdh: true # Inject fake ECDH shares into the ineligible P2SH input
+
+  - description: "ecdh coverage: PSBT_IN_SP_DLEQ missing for input with ECDH share"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "missing_dleq"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      missing_dleq_for_input: 0
+
+  - description: "ecdh coverage: PSBT_GLOBAL_SP_DLEQ missing with global ECDH share"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "global_missing_dleq"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      use_global_ecdh: true
+      missing_global_dleq: true
+
+  - description: "ecdh coverage: invalid proof set for PSBT_IN_SP_DLEQ field"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "invalid_dleq"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      invalid_dleq_for_input: 0
+
+  - description: "ecdh coverage: invalid proof set for PSBT_GLOBAL_SP_DLEQ field"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "invalid_global_dleq"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      use_global_ecdh: true
+      invalid_global_dleq: true
+
+  - description: "ecdh coverage: input missing public key for DLEQ verification"
+    validation_result: "invalid"
+    inputs:
+      - type: "p2wpkh"
+        amount: 100000
+        key_derivation_suffix: "missing_pubkey_dleq"
+    outputs:
+      - type: "silent_payment"
+        amount: 95000
+        scan_key_id: "default"
+    scan_keys:
+      - key_id: "default"
+    control_override:
+      strip_input_pubkeys_for_input: 0
