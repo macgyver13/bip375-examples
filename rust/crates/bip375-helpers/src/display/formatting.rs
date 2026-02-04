@@ -80,7 +80,8 @@ pub fn key_type_name(category: FieldCategory, key_type: u8) -> &'static str {
             0x1c => "PSBT_IN_MUSIG2_PARTIAL_SIG",
             0x1d => "PSBT_IN_SP_ECDH_SHARE", // BIP-375
             0x1e => "PSBT_IN_SP_DLEQ",       // BIP-375
-            0x1f => "PSBT_IN_SP_TWEAK",
+            0x1f => "PSBT_IN_SP_SPEND_BIP32_DERIVATION",  // BIP-376
+            0x20 => "PSBT_IN_SP_TWEAK",      // BIP-376
             _ => "PSBT_IN_UNKNOWN",
         },
         FieldCategory::Output => match key_type {
