@@ -286,37 +286,42 @@ impl SimpleWallet {
         }
     }
 
-    /// Get the full BIP32 derivation path for a specific input index
+    /// Get BIP84 (P2WPKH) derivation path for a specific input index
     ///
-    /// Returns the path that matches the wallet's internal key derivation:
-    /// - For BIP84 (P2WPKH): m/84'/0'/0'/0/index
-    /// - For BIP86 (P2TR): m/86'/0'/0'/0/index
-    ///
-    /// For seed-based wallets (demo mode): Returns BIP84 path
-    /// for demonstration purposes, even though seed wallets don't use hierarchical derivation.
+    /// Returns: m/84'/0'/0'/0/index
     ///
     /// # Arguments
     /// * `index` - The UTXO/input index
     ///
     /// # Returns
     /// Vec of path components as u32 values with hardening applied (0x80000000 bit set)
-    pub fn get_input_derivation_path(&self, index: u32) -> Option<Vec<u32>> {
-        match &self.source {
-            WalletSource::Seed(_) => {
-                // For demo purposes, return BIP84 path for seed-based wallets
-                // This allows PSBT bip32 input derviations to be added to psbt
-                Some(vec![0x80000054, 0x80000000, 0x80000000, 0, index]) // m/84'/0'/0'/0/index
-            }
-            WalletSource::Mnemonic {
-                derivation_path, ..
-            } => {
-                let purpose = match derivation_path {
-                    DerivationPath::Bip84 => 0x80000054, // 84'
-                    DerivationPath::Bip86 => 0x80000056, // 86'
-                };
-                Some(vec![purpose, 0x80000000, 0x80000000, 0, index])
-            }
-        }
+    pub fn get_p2wpkh_derivation_path(&self, index: u32) -> Vec<u32> {
+        vec![0x80000054, 0x80000000, 0x80000000, 0, index] // m/84'/0'/0'/0/index
+    }
+
+    /// Get BIP86 (P2TR) derivation path for a specific input index
+    ///
+    /// Returns: m/86'/0'/0'/0/index
+    ///
+    /// # Arguments
+    /// * `index` - The UTXO/input index
+    ///
+    /// # Returns
+    /// Vec of path components as u32 values with hardening applied (0x80000000 bit set)
+    pub fn get_p2tr_derivation_path(&self, index: u32) -> Vec<u32> {
+        vec![0x80000056, 0x80000000, 0x80000000, 0, index] // m/86'/0'/0'/0/index
+    }
+
+    /// Get BIP352 Silent Payment spend key derivation path
+    ///
+    /// Returns: m/352'/0'/0'/1/0
+    ///
+    /// All SP inputs use the same spend key (with different tweaks applied per output).
+    ///
+    /// # Returns
+    /// Vec of path components as u32 values with hardening applied (0x80000000 bit set)
+    pub fn get_sp_spend_derivation_path(&self) -> Vec<u32> {
+        vec![0x80000160, 0x80000000, 0x80000000, 0x00000001, 0] // m/352'/0'/0'/1/0
     }
 
     /// Derive a key using BIP32 from a seed

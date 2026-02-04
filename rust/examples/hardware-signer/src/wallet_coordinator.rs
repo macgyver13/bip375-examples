@@ -129,7 +129,7 @@ impl WalletCoordinator {
             println!("  UPDATER: Added BIP32 derivation information");
             if input_deriv_count > 0 {
                 println!(
-                    "   {} PSBT_IN_BIP32_DERIVATION entries across {} inputs",
+                    "   {} BIP32 derivation entries across {} inputs",
                     input_deriv_count,
                     inputs.len()
                 );

@@ -432,32 +432,50 @@ impl HardwareDevice {
         }
 
         // Determine which inputs are controlled by hardware wallet via BIP32 derivations
+        // Priority order:
+        // 1. PSBT_IN_SP_SPEND_BIP32_DERIVATION (0x1f) - BIP-376 for Silent Payment inputs
+        // 2. PSBT_IN_TAP_BIP32_DERIVATION (0x16) - Standard P2TR inputs
+        // 3. PSBT_IN_BIP32_DERIVATION (0x06) - Legacy/SegWit inputs
         println!("   Verifying input control via BIP32 derivations...");
 
         let hw_master_fingerprint = hw_wallet.master_fingerprint();
         let mut hw_controlled_inputs = Vec::new();
 
         for (input_idx, input) in psbt.inputs.iter().enumerate() {
-            // Check for BIP32 derivations (tap_key_origins for P2TR, bip32_derivations for others)
-            let has_our_derivation = if !input.tap_key_origins.is_empty() {
-                // P2TR input - check tap_key_origins
-                input
+            // Check for Silent Payment spend derivation FIRST (BIP-376)
+            let sp_derivation = psbt.get_input_sp_spend_bip32_derivation(input_idx);
+            let has_sp_derivation = sp_derivation
+                .as_ref()
+                .map(|(_, fp, _)| *fp == hw_master_fingerprint)
+                .unwrap_or(false);
+
+            // Check standard BIP32 derivations
+            let has_tap_derivation = !input.tap_key_origins.is_empty()
+                && input
                     .tap_key_origins
                     .values()
-                    .any(|(_, (fp, _))| fp.to_bytes() == hw_master_fingerprint)
-            } else {
-                // Legacy/SegWit input - check bip32_derivations
-                input
+                    .any(|(_, (fp, _))| fp.to_bytes() == hw_master_fingerprint);
+
+            let has_legacy_derivation = !input.bip32_derivations.is_empty()
+                && input
                     .bip32_derivations
                     .values()
-                    .any(|(fp, _)| fp.to_bytes() == hw_master_fingerprint)
-            };
+                    .any(|(fp, _)| fp.to_bytes() == hw_master_fingerprint);
+
+            let has_our_derivation = has_sp_derivation || has_tap_derivation || has_legacy_derivation;
 
             if has_our_derivation {
                 hw_controlled_inputs.push(input_idx);
+                let derivation_type = if has_sp_derivation {
+                    "SP_SPEND_BIP32_DERIVATION"
+                } else if has_tap_derivation {
+                    "TAP_BIP32_DERIVATION"
+                } else {
+                    "BIP32_DERIVATION"
+                };
                 println!(
-                    "     ✓ Input {}: Controlled by hardware wallet (BIP32 derivation verified)",
-                    input_idx
+                    "     ✓ Input {}: Controlled by hardware wallet ({} verified)",
+                    input_idx, derivation_type
                 );
             } else {
                 println!(
@@ -561,7 +579,7 @@ impl HardwareDevice {
             println!("\n     Standard Signing:");
             println!("       ECDH shares computed");
             println!("       DLEQ proofs generated");
-            println!("       P2WPKH inputs signed");
+            println!("       Inputs signed");
         }
 
         // Check ECDH coverage
