@@ -14,18 +14,8 @@ slint::include_modules!();
 
 /// Convert AppState to Slint data structures
 fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
-    // Update workflow state and has_unsigned_parties
+    // Update workflow state and party action availability
     match &state.workflow_state {
-        WorkflowState::PartialSigned(n) => {
-            window.set_workflow_state(format!("PartialSigned({})", n).into());
-            // Check if there are unsigned parties
-            let has_unsigned = state
-                .multi_config
-                .parties
-                .iter()
-                .any(|p| !state.signing_progress.parties_completed.contains(&p.name));
-            window.set_has_unsigned_parties(has_unsigned);
-        }
         WorkflowState::ConfiguringParties => {
             window.set_workflow_state("ConfiguringParties".into());
             window.set_has_unsigned_parties(false);
@@ -34,12 +24,35 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
             window.set_workflow_state("PsbtCreated".into());
             window.set_has_unsigned_parties(false);
         }
+        WorkflowState::EcdhInProgress(n) => {
+            window.set_workflow_state(format!("EcdhInProgress({})", n).into());
+            let has_pending = state
+                .multi_config
+                .parties
+                .iter()
+                .any(|p| WorkflowOrchestrator::can_party_add_ecdh(state, &p.name));
+            window.set_has_unsigned_parties(has_pending);
+        }
+        WorkflowState::OutputScriptsComputed => {
+            window.set_workflow_state("OutputScriptsComputed".into());
+            let has_unsigned = state
+                .multi_config
+                .parties
+                .iter()
+                .any(|p| WorkflowOrchestrator::can_party_sign(state, &p.name));
+            window.set_has_unsigned_parties(has_unsigned);
+        }
+        WorkflowState::PartialSigned(n) => {
+            window.set_workflow_state(format!("PartialSigned({})", n).into());
+            let has_unsigned = state
+                .multi_config
+                .parties
+                .iter()
+                .any(|p| WorkflowOrchestrator::can_party_sign(state, &p.name));
+            window.set_has_unsigned_parties(has_unsigned);
+        }
         WorkflowState::FullySigned => {
             window.set_workflow_state("FullySigned".into());
-            window.set_has_unsigned_parties(false);
-        }
-        WorkflowState::Finalized => {
-            window.set_workflow_state("Finalized".into());
             window.set_has_unsigned_parties(false);
         }
         WorkflowState::TransactionExtracted => {
@@ -118,12 +131,22 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         window.set_has_validation(false);
     }
 
-    // Populate dropdown with unsigned parties
+    // Populate dropdown with available parties based on current phase
+    let is_ecdh_phase = matches!(
+        state.workflow_state,
+        WorkflowState::EcdhInProgress(_) | WorkflowState::PsbtCreated
+    );
     let unsigned_parties: Vec<slint::SharedString> = state
         .multi_config
         .parties
         .iter()
-        .filter(|p| WorkflowOrchestrator::can_party_sign(state, &p.name))
+        .filter(|p| {
+            if is_ecdh_phase {
+                WorkflowOrchestrator::can_party_add_ecdh(state, &p.name)
+            } else {
+                WorkflowOrchestrator::can_party_sign(state, &p.name)
+            }
+        })
         .map(|p| slint::SharedString::from(p.name.as_str()))
         .collect();
 
@@ -171,11 +194,11 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
             let state_rc = state_rc.clone();
             move || {
                 let mut state = state_rc.borrow_mut();
-                if let Err(e) = WorkflowOrchestrator::execute_create_psbt_flexible(&mut state) {
+                if let Err(e) = WorkflowOrchestrator::execute_create_psbt(&mut state) {
                     eprintln!("Error creating PSBT: {}", e);
                     return;
                 }
-                eprintln!("✓ PSBT created successfully");
+                eprintln!("PSBT created successfully");
                 if let Some(window) = window_weak.upgrade() {
                     sync_state_to_ui(&window, &state);
                 }
@@ -189,11 +212,21 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
                 let mut state = state_rc.borrow_mut();
                 let party_str = party_name.as_str();
 
-                eprintln!("Signing as: {}", party_str);
-                if let Err(e) =
-                    WorkflowOrchestrator::execute_sign_for_party_flexible(&mut state, party_str)
-                {
-                    eprintln!("Error signing as {}: {}", party_str, e);
+                let is_ecdh_phase = matches!(
+                    state.workflow_state,
+                    WorkflowState::EcdhInProgress(_) | WorkflowState::PsbtCreated
+                );
+
+                let result = if is_ecdh_phase {
+                    eprintln!("Adding ECDH shares for: {}", party_str);
+                    WorkflowOrchestrator::execute_add_ecdh_for_party(&mut state, party_str)
+                } else {
+                    eprintln!("Signing as: {}", party_str);
+                    WorkflowOrchestrator::execute_sign_for_party(&mut state, party_str)
+                };
+
+                if let Err(e) = result {
+                    eprintln!("Error for {}: {}", party_str, e);
                 }
 
                 if let Some(window) = window_weak.upgrade() {
@@ -207,8 +240,8 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
             let state_rc = state_rc.clone();
             move || {
                 let mut state = state_rc.borrow_mut();
-                if let Err(e) = WorkflowOrchestrator::execute_finalize_flexible(&mut state) {
-                    eprintln!("Error finalizing: {}", e);
+                if let Err(e) = WorkflowOrchestrator::execute_extract_transaction(&mut state) {
+                    eprintln!("Error extracting transaction: {}", e);
                 }
                 if let Some(window) = window_weak.upgrade() {
                     sync_state_to_ui(&window, &state);

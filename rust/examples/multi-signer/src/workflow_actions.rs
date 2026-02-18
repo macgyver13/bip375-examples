@@ -13,6 +13,7 @@ use spdk_core::psbt::roles::{
     extractor::extract_transaction,
     input_finalizer::finalize_inputs,
     signer::{add_ecdh_shares_partial, sign_inputs},
+    updater::{add_input_bip32_derivation, Bip32Derivation},
     validation::{self, ValidationLevel},
 };
 use spdk_core::psbt::{PsbtInput, SilentPaymentPsbt};
@@ -30,6 +31,25 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
     let inputs = build_inputs_from_multi_party_config(config)?;
 
     add_inputs(&mut psbt, &inputs).map_err(|e| format!("Failed to add inputs: {}", e))?;
+
+    // Updater role: add BIP32 derivations so public keys are available in the PSBT.
+    // Per BIP 375, the Updater should add PSBT_IN_BIP32_DERIVATION for p2wpkh inputs
+    // so the public key is available for DLEQ proof verification.
+    let mut input_offset = 0;
+    for party in &config.parties {
+        let wallet = SimpleWallet::new(&format!(
+            "{}_multi_signer_silent_payment_test_seed",
+            party.name.to_lowercase()
+        ));
+        let fingerprint = wallet.master_fingerprint();
+        for i in 0..party.controlled_input_indices.len() {
+            let (_, pubkey) = wallet.input_key_pair(i as u32);
+            let derivation = Bip32Derivation::new(fingerprint, vec![0]);
+            add_input_bip32_derivation(&mut psbt, input_offset, &pubkey, &derivation)
+                .map_err(|e| format!("Failed to add BIP32 derivation: {}", e))?;
+            input_offset += 1;
+        }
+    }
 
     let recipient_address = shared_utils::get_recipient_address();
 
@@ -52,7 +72,11 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
     Ok(psbt)
 }
 
-pub fn sign_inputs_for_party(
+/// Add ECDH shares and DLEQ proofs for a party's controlled inputs (no signing).
+///
+/// Per BIP 375, each Signer adds ECDH shares first. Signatures are only added
+/// after all SP output scripts have been computed.
+pub fn add_ecdh_shares_for_party(
     psbt: &mut SilentPaymentPsbt,
     party: &PartyConfig,
     config: &MultiPartyConfig,
@@ -88,20 +112,71 @@ pub fn sign_inputs_for_party(
     )
     .map_err(|e| format!("Failed to add ECDH shares: {}", e))?;
 
+    Ok(party.controlled_input_indices.clone())
+}
+
+/// Compute SP output scripts from aggregated ECDH shares.
+///
+/// Called automatically when all inputs have ECDH shares. This computes the
+/// PSBT_OUT_SCRIPT for each SP output and clears tx_modifiable_flags.
+pub fn compute_output_scripts(
+    psbt: &mut SilentPaymentPsbt,
+    secp: &Secp256k1<secp256k1::All>,
+) -> Result<(), String> {
+    finalize_inputs(secp, psbt).map_err(|e| format!("Failed to compute output scripts: {}", e))
+}
+
+/// Sign inputs for a party. Must only be called after all SP output scripts are set.
+///
+/// Per BIP 375: "If any output does not have PSBT_OUT_SCRIPT set, the Signer
+/// must not yet add a signature."
+pub fn sign_inputs_for_party(
+    psbt: &mut SilentPaymentPsbt,
+    party: &PartyConfig,
+    config: &MultiPartyConfig,
+    secp: &Secp256k1<secp256k1::All>,
+) -> Result<Vec<usize>, String> {
+    // Guard: all outputs must have script_pubkey set before signing
+    for (idx, output) in psbt.outputs.iter().enumerate() {
+        if output.script_pubkey.is_empty() {
+            return Err(format!(
+                "Output {} has no script_pubkey - cannot sign until all SP output scripts are computed",
+                idx
+            ));
+        }
+    }
+
+    let private_key = get_party_private_key(&party.name)?;
+
+    let inputs = build_inputs_from_multi_party_config(config)?;
+
+    let inputs_with_keys: Vec<PsbtInput> = inputs
+        .into_iter()
+        .enumerate()
+        .map(|(idx, mut input)| {
+            if party.controlled_input_indices.contains(&idx) {
+                input.private_key = Some(private_key);
+            }
+            input
+        })
+        .collect();
+
     sign_inputs(secp, psbt, &inputs_with_keys)
         .map_err(|e| format!("Failed to sign inputs: {}", e))?;
 
     Ok(party.controlled_input_indices.clone())
 }
 
-pub fn finalize_and_extract(
+/// Validate and extract the final transaction.
+///
+/// Output scripts must already be computed (via compute_output_scripts) and all
+/// inputs must be signed before calling this.
+pub fn validate_and_extract(
     psbt: &mut SilentPaymentPsbt,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Transaction, String> {
     validation::validate_psbt(secp, psbt, ValidationLevel::Full)
         .map_err(|e| format!("Final validation failed: {}", e))?;
-
-    finalize_inputs(secp, psbt).map_err(|e| format!("Finalization failed: {}", e))?;
 
     let tx = extract_transaction(psbt).map_err(|e| format!("Extraction failed: {}", e))?;
 

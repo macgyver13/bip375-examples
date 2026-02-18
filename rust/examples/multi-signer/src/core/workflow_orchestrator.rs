@@ -5,6 +5,7 @@
 use super::app_state::*;
 use crate::workflow_actions;
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
+use bitcoin::consensus::encode::serialize_hex;
 use secp256k1::Secp256k1;
 use spdk_core::psbt::SilentPaymentPsbt;
 
@@ -54,7 +55,7 @@ impl WorkflowOrchestrator {
             state.has_signature = !input.partial_sigs.is_empty();
 
             // Determine assigned party based on index (Alice=0, Bob=1, Charlie=2)
-            if state.has_signature {
+            if state.has_ecdh_share || state.has_signature {
                 let party_name = match index {
                     0 => "Alice",
                     1 => "Bob",
@@ -80,14 +81,11 @@ impl WorkflowOrchestrator {
         // Check if all DLEQ proofs are present (simplified - not verifying validity here)
         let dleq_proofs_valid = input_states.iter().all(|s| s.has_dleq_proof);
 
-        // Check if output scripts have been computed (outputs have script_pubkey set)
-        let output_scripts_computed = psbt
-            .outputs
-            .iter()
-            .any(|output| !output.script_pubkey.is_empty());
+        // Check if all SP output scripts have been computed
+        let output_scripts_computed = psbt.outputs.iter().all(|o| !o.script_pubkey.is_empty());
 
-        // Check if transaction has been extracted (TX_MODIFIABLE flag in global)
-        let transaction_extracted = psbt.global.tx_modifiable_flags == 0;
+        // Transaction extracted is tracked by workflow state, not PSBT flags
+        let transaction_extracted = false;
 
         ValidationSummary {
             dleq_proofs_valid,
@@ -127,31 +125,84 @@ impl WorkflowOrchestrator {
         Ok(())
     }
 
-    /// Flexible workflow: Create PSBT (without signing)
-    pub fn execute_create_psbt_flexible(state: &mut AppState) -> Result<(), String> {
+    /// Create PSBT (constructor role)
+    pub fn execute_create_psbt(state: &mut AppState) -> Result<(), String> {
         let config = state.multi_config.clone();
 
         let before_psbt = state.current_psbt.clone();
 
-        // Create PSBT without signing
         let psbt = workflow_actions::create_psbt_only(&config)?;
 
         workflow_actions::save_psbt_with_metadata(&psbt, "PSBT Created")?;
 
         Self::load_psbt_and_update(state, before_psbt.as_ref())?;
 
-        // Initialize signing progress but don't mark anything as signed yet
         let total_inputs = config.get_total_inputs();
+        state.ecdh_progress = EcdhProgress::new(total_inputs);
         state.signing_progress = SigningProgress::new(total_inputs);
 
-        // State remains ready for first signer
-        state.workflow_state = WorkflowState::PartialSigned(0);
+        state.workflow_state = WorkflowState::EcdhInProgress(0);
 
         Ok(())
     }
 
-    /// Flexible workflow: Sign inputs for a specific party
-    pub fn execute_sign_for_party_flexible(
+    /// Phase 1: Add ECDH shares for a party (no signing).
+    ///
+    /// If this is the last party to contribute ECDH shares, automatically
+    /// computes SP output scripts and transitions to OutputScriptsComputed.
+    pub fn execute_add_ecdh_for_party(
+        state: &mut AppState,
+        party_name: &str,
+    ) -> Result<(), String> {
+        let config = state.multi_config.clone();
+
+        let party = config
+            .parties
+            .iter()
+            .find(|p| p.name == party_name)
+            .cloned()
+            .ok_or(format!("Party {} not found", party_name))?;
+
+        let secp = Secp256k1::new();
+        let before_psbt = state.current_psbt.clone();
+
+        let (mut psbt, _) = load_psbt().map_err(|e| format!("Load failed: {:?}", e))?;
+
+        workflow_actions::add_ecdh_shares_for_party(&mut psbt, &party, &config, &secp)?;
+
+        workflow_actions::save_psbt_with_metadata(
+            &psbt,
+            format!("{} ECDH shares added", party_name),
+        )?;
+
+        // Check if all ECDH shares are now present
+        let ecdh_coverage = Self::compute_ecdh_coverage(&psbt);
+        if ecdh_coverage.is_complete {
+            workflow_actions::compute_output_scripts(&mut psbt, &secp)?;
+            workflow_actions::save_psbt_with_metadata(&psbt, "Output scripts computed")?;
+        }
+
+        Self::load_psbt_and_update(state, before_psbt.as_ref())?;
+
+        state
+            .ecdh_progress
+            .mark_party_completed(party_name.to_string());
+
+        let ecdh_parties = state.ecdh_progress.parties_completed.len();
+        state.workflow_state = if state.ecdh_coverage.is_complete {
+            WorkflowState::OutputScriptsComputed
+        } else {
+            WorkflowState::EcdhInProgress(ecdh_parties)
+        };
+
+        Ok(())
+    }
+
+    /// Phase 2: Sign inputs for a party.
+    ///
+    /// Only callable after SP output scripts are computed (OutputScriptsComputed
+    /// or PartialSigned state).
+    pub fn execute_sign_for_party(
         state: &mut AppState,
         party_name: &str,
     ) -> Result<(), String> {
@@ -193,14 +244,16 @@ impl WorkflowOrchestrator {
         Ok(())
     }
 
-    /// Flexible workflow: Finalize and extract transaction
-    pub fn execute_finalize_flexible(state: &mut AppState) -> Result<(), String> {
+    /// Validate and extract transaction
+    pub fn execute_extract_transaction(state: &mut AppState) -> Result<(), String> {
         let secp = Secp256k1::new();
         let before_psbt = state.current_psbt.clone();
 
         let (mut psbt, _) = load_psbt().map_err(|e| format!("Load failed: {:?}", e))?;
 
-        let _tx = workflow_actions::finalize_and_extract(&mut psbt, &secp)?;
+        let tx = workflow_actions::validate_and_extract(&mut psbt, &secp)?;
+
+        println!("Transaction validated and ready to broadcast:\n{}", serialize_hex(&tx));
 
         workflow_actions::save_psbt_with_metadata(&psbt, "Transaction Extracted")?;
 
@@ -211,43 +264,31 @@ impl WorkflowOrchestrator {
         Ok(())
     }
 
-    /// Check if party can sign (has unsigned inputs assigned to them)
+    /// Check if party can add ECDH shares (hasn't contributed yet)
+    pub fn can_party_add_ecdh(state: &AppState, party_name: &str) -> bool {
+        !state.ecdh_progress.parties_completed.contains(party_name)
+            && state
+                .multi_config
+                .parties
+                .iter()
+                .any(|p| p.name == party_name)
+    }
+
+    /// Check if party can sign (output scripts computed, has unsigned inputs)
     pub fn can_party_sign(state: &AppState, party_name: &str) -> bool {
-        if let Some(party) = state
-            .multi_config
-            .parties
-            .iter()
-            .find(|p| p.name == party_name)
-        {
-            return party
-                .controlled_input_indices
+        matches!(
+            state.workflow_state,
+            WorkflowState::OutputScriptsComputed | WorkflowState::PartialSigned(_)
+        ) && !state.signing_progress.parties_completed.contains(party_name)
+            && state
+                .multi_config
+                .parties
                 .iter()
-                .any(|&idx| !state.signing_progress.signed_inputs.contains(&idx));
-        }
-        false
+                .any(|p| p.name == party_name)
     }
 
-    /// Get pending input indices for party
-    pub fn get_pending_inputs_for_party(state: &AppState, party_name: &str) -> Vec<usize> {
-        if let Some(party) = state
-            .multi_config
-            .parties
-            .iter()
-            .find(|p| p.name == party_name)
-        {
-            return party
-                .controlled_input_indices
-                .iter()
-                .filter(|&&idx| !state.signing_progress.signed_inputs.contains(&idx))
-                .copied()
-                .collect();
-        }
-
-        Vec::new()
-    }
-
-    /// Check if ready to finalize
-    pub fn is_ready_to_finalize(state: &AppState) -> bool {
-        state.signing_progress.is_fully_signed() && state.ecdh_coverage.is_complete
+    /// Check if ready to extract
+    pub fn is_ready_to_extract(state: &AppState) -> bool {
+        state.signing_progress.is_fully_signed()
     }
 }

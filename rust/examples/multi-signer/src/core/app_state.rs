@@ -18,6 +18,9 @@ pub struct AppState {
     /// Current workflow state
     pub workflow_state: WorkflowState,
 
+    /// ECDH share progress tracking
+    pub ecdh_progress: EcdhProgress,
+
     /// Signing progress tracking
     pub signing_progress: SigningProgress,
 
@@ -49,6 +52,7 @@ impl Default for AppState {
         Self {
             multi_config,
             workflow_state: WorkflowState::ConfiguringParties,
+            ecdh_progress: EcdhProgress::default(),
             signing_progress: SigningProgress::default(),
             current_psbt: None,
             highlighted_fields: HashSet::new(),
@@ -60,15 +64,40 @@ impl Default for AppState {
     }
 }
 
-/// Flexible workflow state for multi-party signing
+/// Workflow state for BIP 375 compliant multi-party signing.
+///
+/// Two-phase flow:
+/// 1. ECDH phase: each party adds ECDH shares (no signatures yet)
+/// 2. Signing phase: after SP output scripts are computed, each party signs
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkflowState {
     ConfiguringParties,
     PsbtCreated,
+    EcdhInProgress(usize),
+    OutputScriptsComputed,
     PartialSigned(usize),
     FullySigned,
-    Finalized,
     TransactionExtracted,
+}
+
+/// ECDH share progress tracking
+#[derive(Clone, Debug, Default)]
+pub struct EcdhProgress {
+    pub total_inputs: usize,
+    pub parties_completed: HashSet<String>,
+}
+
+impl EcdhProgress {
+    pub fn new(total_inputs: usize) -> Self {
+        Self {
+            total_inputs,
+            parties_completed: HashSet::new(),
+        }
+    }
+
+    pub fn mark_party_completed(&mut self, party_name: String) {
+        self.parties_completed.insert(party_name);
+    }
 }
 
 /// Signing progress tracking

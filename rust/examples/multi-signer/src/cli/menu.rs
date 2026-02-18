@@ -61,7 +61,23 @@ fn display_status(state: &AppState) {
 
     println!("\nWorkflow Status: {:?}", state.workflow_state);
 
-    if state.signing_progress.total_inputs > 0 {
+    if state.ecdh_progress.total_inputs > 0 {
+        println!("\nECDH Phase:");
+        for party in &state.multi_config.parties {
+            let completed = state
+                .ecdh_progress
+                .parties_completed
+                .contains(&party.name);
+            let symbol = if completed { "✓" } else { "⧗" };
+            println!(
+                "  {} {} ECDH {}",
+                symbol,
+                party.name,
+                if completed { "done" } else { "pending" }
+            );
+        }
+
+        println!("Signing Phase:");
         for party in &state.multi_config.parties {
             let completed = state
                 .signing_progress
@@ -110,49 +126,50 @@ fn display_menu(state: &AppState) {
         if can_create { "" } else { "[disabled]" }
     );
 
-    let alice_can_sign = WorkflowOrchestrator::can_party_sign(state, "Alice");
-    let alice_completed = state.signing_progress.parties_completed.contains("Alice");
-    println!(
-        "  3. Sign as Alice {}",
-        if alice_completed {
-            "[✓ Completed]"
-        } else if alice_can_sign {
-            ""
-        } else {
-            "[disabled]"
-        }
+    let is_ecdh_phase = matches!(
+        state.workflow_state,
+        WorkflowState::EcdhInProgress(_) | WorkflowState::PsbtCreated
     );
 
-    let bob_can_sign = WorkflowOrchestrator::can_party_sign(state, "Bob");
-    let bob_completed = state.signing_progress.parties_completed.contains("Bob");
-    println!(
-        "  4. Sign as Bob {}",
-        if bob_completed {
-            "[✓ Completed]"
-        } else if bob_can_sign {
-            ""
+    for (i, name) in ["Alice", "Bob", "Charlie"].iter().enumerate() {
+        let num = i + 3;
+        if is_ecdh_phase {
+            let can_add = WorkflowOrchestrator::can_party_add_ecdh(state, name);
+            let completed = state.ecdh_progress.parties_completed.contains(*name);
+            println!(
+                "  {}. Add ECDH for {} {}",
+                num,
+                name,
+                if completed {
+                    "[done]"
+                } else if can_add {
+                    ""
+                } else {
+                    "[disabled]"
+                }
+            );
         } else {
-            "[disabled]"
+            let can_sign = WorkflowOrchestrator::can_party_sign(state, name);
+            let completed = state.signing_progress.parties_completed.contains(*name);
+            println!(
+                "  {}. Sign as {} {}",
+                num,
+                name,
+                if completed {
+                    "[signed]"
+                } else if can_sign {
+                    ""
+                } else {
+                    "[disabled]"
+                }
+            );
         }
-    );
+    }
 
-    let charlie_can_sign = WorkflowOrchestrator::can_party_sign(state, "Charlie");
-    let charlie_completed = state.signing_progress.parties_completed.contains("Charlie");
+    let can_extract = state.workflow_state == WorkflowState::FullySigned;
     println!(
-        "  5. Sign as Charlie {}",
-        if charlie_completed {
-            "[✓ Completed]"
-        } else if charlie_can_sign {
-            ""
-        } else {
-            "[disabled]"
-        }
-    );
-
-    let can_finalize = state.workflow_state == WorkflowState::FullySigned;
-    println!(
-        "  6. Finalize Transaction {}",
-        if can_finalize { "" } else { "[disabled]" }
+        "  6. Extract Transaction {}",
+        if can_extract { "" } else { "[disabled]" }
     );
 
     let has_psbt = state.current_psbt.is_some();
@@ -211,7 +228,7 @@ fn create_psbt(state: &mut AppState) -> Result<(), String> {
     println!("Creating PSBT...");
     println!("{}", "=".repeat(60));
 
-    WorkflowOrchestrator::execute_create_psbt_flexible(state)?;
+    WorkflowOrchestrator::execute_create_psbt(state)?;
 
     println!("\n✓ PSBT created successfully!");
     println!(
@@ -226,31 +243,52 @@ fn create_psbt(state: &mut AppState) -> Result<(), String> {
     Ok(())
 }
 
-/// Sign as a specific party
+/// Process party action (ECDH shares or signing depending on phase)
 fn sign_as_party(state: &mut AppState, party_name: &str) -> Result<(), String> {
-    if !WorkflowOrchestrator::can_party_sign(state, party_name) {
+    let is_ecdh_phase = matches!(
+        state.workflow_state,
+        WorkflowState::EcdhInProgress(_) | WorkflowState::PsbtCreated
+    );
+
+    if is_ecdh_phase {
+        if !WorkflowOrchestrator::can_party_add_ecdh(state, party_name) {
+            println!("\n{} ECDH shares already added", party_name);
+            return Ok(());
+        }
+
+        println!("\n{}", "=".repeat(60));
+        println!("Adding ECDH shares for {}...", party_name);
+        println!("{}", "=".repeat(60));
+
+        WorkflowOrchestrator::execute_add_ecdh_for_party(state, party_name)?;
+
+        println!("\n{} ECDH shares added!", party_name);
         println!(
-            "\n⚠ {} cannot sign (no unsigned inputs assigned)",
-            party_name
+            "  ECDH Coverage: {}/{}",
+            state.ecdh_coverage.inputs_with_ecdh, state.ecdh_coverage.total_inputs
         );
-        return Ok(());
+
+        if state.ecdh_coverage.is_complete {
+            println!("  Output scripts computed - ready for signing!");
+        }
+    } else {
+        if !WorkflowOrchestrator::can_party_sign(state, party_name) {
+            println!("\n{} cannot sign", party_name);
+            return Ok(());
+        }
+
+        println!("\n{}", "=".repeat(60));
+        println!("Signing as {}...", party_name);
+        println!("{}", "=".repeat(60));
+
+        WorkflowOrchestrator::execute_sign_for_party(state, party_name)?;
+
+        println!("\n{} signed!", party_name);
+        println!(
+            "  Signing Progress: {}",
+            state.signing_progress.completion_fraction()
+        );
     }
-
-    println!("\n{}", "=".repeat(60));
-    println!("Signing as {}...", party_name);
-    println!("{}", "=".repeat(60));
-
-    WorkflowOrchestrator::execute_sign_for_party_flexible(state, party_name)?;
-
-    println!("\n✓ {} signed successfully!", party_name);
-    println!(
-        "  ECDH Coverage: {}/{}",
-        state.ecdh_coverage.inputs_with_ecdh, state.ecdh_coverage.total_inputs
-    );
-    println!(
-        "  Signing Progress: {}",
-        state.signing_progress.completion_fraction()
-    );
 
     Ok(())
 }
@@ -266,9 +304,9 @@ fn finalize_transaction(state: &mut AppState) -> Result<(), String> {
     println!("Finalizing transaction...");
     println!("{}", "=".repeat(60));
 
-    WorkflowOrchestrator::execute_finalize_flexible(state)?;
+    WorkflowOrchestrator::execute_extract_transaction(state)?;
 
-    println!("\n✓ Transaction finalized and extracted!");
+    println!("\nTransaction extracted!");
 
     if let Some(summary) = &state.transaction_summary {
         println!("\nTransaction Summary:");

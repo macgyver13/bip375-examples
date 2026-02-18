@@ -188,10 +188,13 @@ export component AppWindow inherits Window {
                 Text {
                     text: workflow-state == "ConfiguringParties" ? "⚪ Configuring" :
                           workflow-state == "PsbtCreated" ? "🔵 PSBT Created" :
-                          workflow-state == "PartialSigned(1)" ? "🔵 Partial (1/3)" :
-                          workflow-state == "PartialSigned(2)" ? "🟡 Partial (2/3)" :
+                          workflow-state == "EcdhInProgress(1)" ? "🔵 ECDH (1/3)" :
+                          workflow-state == "EcdhInProgress(2)" ? "🟡 ECDH (2/3)" :
+                          workflow-state == "EcdhInProgress(3)" ? "🟢 ECDH (3/3)" :
+                          workflow-state == "OutputScriptsComputed" ? "🟢 Scripts Ready" :
+                          workflow-state == "PartialSigned(1)" ? "🔵 Signed (1/3)" :
+                          workflow-state == "PartialSigned(2)" ? "🟡 Signed (2/3)" :
                           workflow-state == "FullySigned" ? "🟢 Fully Signed" :
-                          workflow-state == "Finalized" ? "🟢 Finalized" :
                           workflow-state == "TransactionExtracted" ? "✅ Extracted" :
                           "⚪ Ready";
                     font-size: 16px;
@@ -277,18 +280,24 @@ export component AppWindow inherits Window {
                         Text {
                             text: workflow-state == "ConfiguringParties" ? "● Configuring" :
                                   workflow-state == "PsbtCreated" ? "● PSBT Created" :
-                                  workflow-state == "PartialSigned(1)" ? "● Partial (1/3)" :
-                                  workflow-state == "PartialSigned(2)" ? "● Partial (2/3)" :
+                                  workflow-state == "EcdhInProgress(1)" ? "● ECDH Shares (1/3)" :
+                                  workflow-state == "EcdhInProgress(2)" ? "● ECDH Shares (2/3)" :
+                                  workflow-state == "EcdhInProgress(3)" ? "● ECDH Shares (3/3)" :
+                                  workflow-state == "OutputScriptsComputed" ? "● Scripts Computed" :
+                                  workflow-state == "PartialSigned(1)" ? "● Signed (1/3)" :
+                                  workflow-state == "PartialSigned(2)" ? "● Signed (2/3)" :
                                   workflow-state == "FullySigned" ? "● Fully Signed" :
-                                  workflow-state == "Finalized" ? "● Finalized" :
                                   workflow-state == "TransactionExtracted" ? "● Extracted" :
                                   "● Ready";
                             color: workflow-state == "ConfiguringParties" ? #808080 :
                                    workflow-state == "PsbtCreated" ? #3399e6 :
+                                   workflow-state == "EcdhInProgress(1)" ? #3399e6 :
+                                   workflow-state == "EcdhInProgress(2)" ? #e6b300 :
+                                   workflow-state == "EcdhInProgress(3)" ? #33cc33 :
+                                   workflow-state == "OutputScriptsComputed" ? #33cc33 :
                                    workflow-state == "PartialSigned(1)" ? #3399e6 :
                                    workflow-state == "PartialSigned(2)" ? #e6b300 :
                                    workflow-state == "FullySigned" ? #9966e6 :
-                                   workflow-state == "Finalized" ? #9966e6 :
                                    workflow-state == "TransactionExtracted" ? #33cc33 :
                                    #808080;
                             font-size: 14px;
@@ -314,8 +323,8 @@ export component AppWindow inherits Window {
                             clicked => { root.create-psbt(); }
                         }
 
-                        // Party selector dropdown
-                        if has-unsigned-parties || workflow-state == "PartialSigned(0)": HorizontalBox {
+                        // Party selector dropdown (shown in both ECDH and signing phases)
+                        if has-unsigned-parties || workflow-state == "EcdhInProgress(0)": HorizontalBox {
                             spacing: 8px;
                             alignment: LayoutAlignment.start;
 
@@ -331,16 +340,32 @@ export component AppWindow inherits Window {
                             }
                         }
 
+                        // Phase 1: ECDH shares (shown during ECDH phase)
                         MenuButton {
-                            text: "2. Sign as Selected Party\n(ECDH + Signature)";
-                            enabled: selected-party != "" && (has-unsigned-parties || workflow-state == "PartialSigned(0)");
+                            text: "2. Add ECDH Shares\n(Per-Input Shares + DLEQ)";
+                            enabled: selected-party != "" && has-unsigned-parties &&
+                                (workflow-state == "EcdhInProgress(0)" ||
+                                 workflow-state == "EcdhInProgress(1)" ||
+                                 workflow-state == "EcdhInProgress(2)");
+                            clicked => {
+                                root.sign-party(selected-party);
+                            }
+                        }
+
+                        // Phase 2: Signing (shown after output scripts computed)
+                        MenuButton {
+                            text: "3. Sign as Selected Party\n(SIGHASH_ALL Signatures)";
+                            enabled: selected-party != "" && has-unsigned-parties &&
+                                (workflow-state == "OutputScriptsComputed" ||
+                                 workflow-state == "PartialSigned(1)" ||
+                                 workflow-state == "PartialSigned(2)");
                             clicked => {
                                 root.sign-party(selected-party);
                             }
                         }
 
                         MenuButton {
-                            text: "3. Finalize Transaction\n(Extract)";
+                            text: "4. Extract Transaction";
                             enabled: workflow-state == "FullySigned";
                             clicked => { root.finalize-transaction(); }
                         }
