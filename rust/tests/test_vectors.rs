@@ -100,12 +100,12 @@ fn test_invalid_vectors() {
     let secp = Secp256k1::new();
 
     println!(
-        "\n=== Testing {} Invalid Vectors ===\n",
+        "\nInvalid test cases: {}",
         vectors.invalid.len()
     );
 
-    for (i, vector) in vectors.invalid.iter().enumerate() {
-        println!("Invalid Test {}: {}", i + 1, vector.description);
+    for vector in vectors.invalid.iter() {
+        println!("{}", vector.description);
 
         // Decode PSBT from base64
         let psbt_bytes = base64_to_bytes(&vector.psbt);
@@ -114,29 +114,21 @@ fn test_invalid_vectors() {
         let psbt = match SilentPaymentPsbt::deserialize(&psbt_bytes) {
             Ok(p) => p,
             Err(e) => {
-                println!("    Failed to parse (expected): {:?}", e);
-                continue;
+                println!("  {:?}", e);
+                continue; // Parsing failed as expected for invalid vector
             }
         };
 
         // PSBT parsed, but validation should fail
         match validate_psbt(&secp, &psbt, ValidationLevel::Full) {
             Ok(_) => {
-                panic!(
-                    "  ❌ Test failed: PSBT validation should have failed for: {}",
-                    vector.description
-                );
+                panic!("  ERROR: {}", vector.description);
             }
             Err(e) => {
-                println!("    Validation failed (expected): {}", e);
+                println!("  {}", e);
             }
         }
     }
-
-    println!(
-        "\n  All {} invalid vectors handled correctly\n",
-        vectors.invalid.len()
-    );
 }
 
 #[test]
@@ -144,10 +136,10 @@ fn test_valid_vectors() {
     let vectors = load_test_vectors();
     let secp = Secp256k1::new();
 
-    println!("\n=== Testing {} Valid Vectors ===\n", vectors.valid.len());
+    println!("\nValid test cases: {}", vectors.valid.len());
 
-    for (i, vector) in vectors.valid.iter().enumerate() {
-        println!("Valid Test {}: {}", i + 1, vector.description);
+    for vector in vectors.valid.iter() {
+        println!("{}", vector.description);
 
         // Decode PSBT from base64
         let psbt_bytes = base64_to_bytes(&vector.psbt);
@@ -156,31 +148,20 @@ fn test_valid_vectors() {
         let psbt = match SilentPaymentPsbt::deserialize(&psbt_bytes) {
             Ok(p) => p,
             Err(e) => {
-                panic!("  ❌ Failed to parse valid PSBT: {}", e);
+                panic!("Failed to parse valid PSBT: {}", e);
             }
         };
-
-        println!("    PSBT parsed successfully");
-        println!(
-            "     Inputs: {}, Outputs: {}",
-            psbt.inputs.len(),
-            psbt.outputs.len()
-        );
 
         // Validate PSBT structure (basic validation - test vectors don't have signatures)
         match validate_psbt(&secp, &psbt, ValidationLevel::Full) {
             Ok(_) => {
-                println!("    PSBT validation passed (full)");
+                println!("  All checks passed");
             }
             Err(e) => {
-                panic!("  ❌ Validation failed: {}", e);
+                panic!("  ERROR: {}", e);
             }
         }
-
-        println!("    Test passed\n");
     }
-
-    println!("\n  All {} valid vectors passed\n", vectors.valid.len());
 }
 
 #[test]

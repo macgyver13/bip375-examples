@@ -136,11 +136,9 @@ pub fn display_transaction_summary_with_dnssec(
     println!("  Inputs:");
     for (i, input) in inputs.iter().enumerate() {
         println!("   Input {}: {} sats", i, input.witness_utxo.value.to_sat());
-        let txid_str = input.outpoint.txid.to_string();
         println!(
-            "      TXID: {}...{}",
-            &txid_str[..16],
-            &txid_str[txid_str.len() - 8..]
+            "      TXID: {}",
+            format_txid_short(&input.outpoint.txid)
         );
         println!("      VOUT: {}", input.outpoint.vout);
         println!(
@@ -222,6 +220,12 @@ pub fn display_transaction_summary(
     mnemonic: Option<&str>,
 ) {
     display_transaction_summary_with_dnssec(config, None, hw_wallet, mnemonic);
+}
+
+/// Format a txid for concise display: first 16 + last 8 hex chars.
+fn format_txid_short(txid: &bitcoin::Txid) -> String {
+    let s = txid.to_string();
+    format!("{}...{}", &s[..16], &s[s.len() - 8..])
 }
 
 /// Print a step header

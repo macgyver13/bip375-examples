@@ -82,6 +82,12 @@ pub fn get_transaction_outputs(config: &TransactionConfig) -> Vec<PsbtOutput> {
     ]
 }
 
+/// Format a txid for concise display: first 16 + last 8 hex chars.
+fn format_txid_short(txid: &bitcoin::Txid) -> String {
+    let s = txid.to_string();
+    format!("{}...{}", &s[..16], &s[s.len() - 8..])
+}
+
 /// Print a formatted step header for consistency
 pub fn print_step_header(step_number: u32, step_name: &str, party_name: &str) {
     println!("\n{}", "=".repeat(60));
@@ -114,11 +120,9 @@ pub fn print_scenario_overview(inputs: &[PsbtInput], config: &TransactionConfig)
             input_type,
             input.witness_utxo.value.to_sat()
         );
-        let txid_str = input.outpoint.txid.to_string();
         println!(
-            "      TXID: {}...{}",
-            &txid_str[..16],
-            &txid_str[txid_str.len() - 8..]
+            "      TXID: {}",
+            format_txid_short(&input.outpoint.txid)
         );
         println!("      VOUT: {}", input.outpoint.vout);
     }

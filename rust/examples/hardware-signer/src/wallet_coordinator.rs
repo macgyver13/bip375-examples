@@ -24,6 +24,14 @@ use std::collections::HashSet;
 
 pub struct WalletCoordinator;
 
+/// Returns seconds since UNIX epoch (used for PSBT metadata timestamps).
+fn timestamp_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 impl WalletCoordinator {
     /// Create a new PSBT with inputs and outputs
     ///
@@ -158,12 +166,7 @@ impl WalletCoordinator {
                 outputs.len()
             )),
             creator: Some("wallet_coordinator".to_string()),
-            created_at: Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            ),
+            created_at: Some(timestamp_now()),
             ..Default::default()
         };
 
@@ -347,12 +350,7 @@ impl WalletCoordinator {
         let finalized_metadata = PsbtMetadata {
             description: Some("Finalized PSBT with computed output scripts".to_string()),
             creator: Some("wallet_coordinator".to_string()),
-            modified_at: Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            ),
+            modified_at: Some(timestamp_now()),
             ..Default::default()
         };
         save_psbt(&psbt, Some(finalized_metadata))?;

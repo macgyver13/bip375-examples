@@ -20,6 +20,12 @@ build:
 test:
   cargo test --all-targets --all-features
 
+test-invalid:
+  cargo test --test test_vectors test_invalid_vectors -- --no-capture
+
+test-valid:
+  cargo test --test test_vectors test_valid_vectors -- --no-capture
+
 # Lint everything.
 lint:
   cargo +{{NIGHTLY_VERSION}} clippy --all-targets --all-features -- --deny warnings

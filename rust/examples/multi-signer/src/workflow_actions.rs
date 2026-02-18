@@ -5,7 +5,6 @@ use bip375_helpers::transaction::{
 use bip375_helpers::wallet::{MultiPartyConfig, PartyConfig, SimpleWallet};
 use bitcoin::Transaction;
 use secp256k1::{Secp256k1, SecretKey};
-use silentpayments::{Network, SilentPaymentAddress};
 use spdk_core::psbt::crypto::script_type_string;
 use spdk_core::psbt::io::PsbtMetadata;
 use spdk_core::psbt::roles::{
@@ -19,6 +18,8 @@ use spdk_core::psbt::roles::{
 use spdk_core::psbt::{PsbtInput, SilentPaymentPsbt};
 use std::collections::HashMap;
 
+use crate::shared_utils;
+
 /// Create a new PSBT with inputs and outputs (no ECDH shares, no signatures)
 pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, String> {
     let num_inputs = config.get_total_inputs();
@@ -30,10 +31,7 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
 
     add_inputs(&mut psbt, &inputs).map_err(|e| format!("Failed to add inputs: {}", e))?;
 
-    let recipient_wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
-    let (scan_key, spend_key) = recipient_wallet.scan_spend_keys();
-    let recipient_address = SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
-        .map_err(|e| format!("Failed to create recipient address: {}", e))?;
+    let recipient_address = shared_utils::get_recipient_address();
 
     let change_wallet = SimpleWallet::new("change_address_for_multi_signer_test");
 
@@ -60,8 +58,7 @@ pub fn sign_inputs_for_party(
     config: &MultiPartyConfig,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Vec<usize>, String> {
-    let recipient_wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
-    let (scan_key, _) = recipient_wallet.scan_spend_keys();
+    let scan_key = shared_utils::get_recipient_address().get_scan_key();
 
     validation::validate_psbt(secp, psbt, ValidationLevel::DleqOnly)
         .map_err(|e| format!("Validation failed: {}", e))?;
@@ -101,9 +98,6 @@ pub fn finalize_and_extract(
     psbt: &mut SilentPaymentPsbt,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Transaction, String> {
-    let recipient_wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
-    let (_scan_key, _) = recipient_wallet.scan_spend_keys();
-
     validation::validate_psbt(secp, psbt, ValidationLevel::Full)
         .map_err(|e| format!("Final validation failed: {}", e))?;
 
@@ -115,11 +109,7 @@ pub fn finalize_and_extract(
 }
 
 pub fn get_party_private_key(party_name: &str) -> Result<SecretKey, String> {
-    let wallet = SimpleWallet::new(&format!(
-        "{}_multi_signer_silent_payment_test_seed",
-        party_name.to_lowercase()
-    ));
-    Ok(wallet.input_key_pair(0).0)
+    Ok(shared_utils::get_party_private_key(party_name))
 }
 
 pub fn create_input_assignments_metadata(config: &MultiPartyConfig) -> HashMap<usize, String> {
