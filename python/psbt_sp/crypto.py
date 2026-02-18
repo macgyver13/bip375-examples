@@ -28,6 +28,10 @@ class PrivateKey(int):
         """Get as hex string"""
         return self.bytes.hex()
     
+    def __add__(self, other):
+        """Add private keys with modular reduction"""
+        return PrivateKey((int(self) + int(other)) % GE.ORDER)
+
     def __mul__(self, other):
         """Allow multiplication (for ECDH) - return GE point when multiplied with PublicKey"""
         result = super().__mul__(other)
