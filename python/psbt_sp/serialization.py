@@ -160,28 +160,13 @@ def parse_psbt_bytes(psbt_data: bytes) -> Tuple[List[PSBTField], List[List[PSBTF
     if len(psbt_data) < 5 or psbt_data[:5] != b'psbt\xff':
         raise ValueError("Invalid PSBT magic")
 
-    def parse_compact_size_uint(data: bytes, offset: int) -> Tuple[int, int]:
-        """Parse compact size uint, returns (value, new_offset)"""
-        if offset >= len(data):
-            raise ValueError("Not enough data")
-
-        first_byte = data[offset]
-        if first_byte < 0xfd:
-            return first_byte, offset + 1
-        elif first_byte == 0xfd:
-            return struct.unpack('<H', data[offset+1:offset+3])[0], offset + 3
-        elif first_byte == 0xfe:
-            return struct.unpack('<L', data[offset+1:offset+5])[0], offset + 5
-        else:
-            return struct.unpack('<Q', data[offset+1:offset+9])[0], offset + 9
-
     def parse_section(data: bytes, offset: int) -> Tuple[List[PSBTField], int]:
         """Parse a PSBT section (global, input, or output)"""
         fields = []
 
         while offset < len(data):
             # Read key length
-            key_len, offset = parse_compact_size_uint(data, offset)
+            key_len, offset = read_compact_size_uint(data, offset)
             if key_len == 0:  # End of section
                 break
 
@@ -192,7 +177,7 @@ def parse_psbt_bytes(psbt_data: bytes) -> Tuple[List[PSBTField], List[List[PSBTF
             offset += key_len
 
             # Read value length
-            value_len, offset = parse_compact_size_uint(data, offset)
+            value_len, offset = read_compact_size_uint(data, offset)
 
             # Read value data
             if offset + value_len > len(data):

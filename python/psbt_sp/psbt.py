@@ -669,33 +669,6 @@ class SilentPaymentPSBT:
     # region INPUT FINALIZER ROLE - Compute Output Scripts
     # ============================================================================
 
-    def _compute_label_tweak(self, scan_privkey_bytes: bytes, label: int) -> int:
-        """
-        Compute BIP 352 label tweak for modifying spend key
-
-        Formula: hash_BIP0352/Label(ser_256(b_scan) || ser_32(m))
-
-        Args:
-            scan_privkey_bytes: Scan private key (32 bytes)
-            label: Label integer (0 for change, > 0 for other purposes)
-
-        Returns:
-            Scalar for point multiplication to modify spend key
-        """
-        # BIP 352: ser_256(b_scan) || ser_32(m)
-        label_bytes = struct.pack("<I", label)  # 4 bytes little-endian
-
-        # Tagged hash: BIP0352/Label
-        tag = b"BIP0352/Label"
-        tag_hash = hashlib.sha256(tag).digest()
-
-        # hash_BIP0352/Label(b_scan || m)
-        tagged_input = tag_hash + tag_hash + scan_privkey_bytes + label_bytes
-        tweak_hash = hashlib.sha256(tagged_input).digest()
-        tweak_scalar = int.from_bytes(tweak_hash, "big") % GE.ORDER
-
-        return tweak_scalar
-
     def compute_output_scripts(self, scan_privkeys: dict = None) -> None:
         """
         Compute output scripts for all silent payment addresses (INPUT FINALIZER ROLE)

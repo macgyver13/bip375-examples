@@ -13,6 +13,13 @@ from typing import List, Tuple
 from secp256k1_374 import GE, G
 
 
+def TaggedHash(tag: str, data: bytes) -> bytes:
+    ss = hashlib.sha256(tag.encode()).digest()
+    ss += ss
+    ss += data
+    return hashlib.sha256(ss).digest()
+
+
 def compute_label_tweak(scan_privkey_bytes: bytes, label: int) -> int:
     """
     Compute BIP 352 label tweak for modifying spend key
@@ -28,17 +35,8 @@ def compute_label_tweak(scan_privkey_bytes: bytes, label: int) -> int:
     """
     # BIP 352: ser_256(b_scan) || ser_32(m)
     label_bytes = struct.pack('<I', label)  # 4 bytes little-endian
-
-    # Tagged hash: BIP0352/Label
-    tag = b"BIP0352/Label"
-    tag_hash = hashlib.sha256(tag).digest()
-
-    # hash_BIP0352/Label(b_scan || m)
-    tagged_input = tag_hash + tag_hash + scan_privkey_bytes + label_bytes
-    tweak_hash = hashlib.sha256(tagged_input).digest()
-    tweak_scalar = int.from_bytes(tweak_hash, 'big') % GE.ORDER
-
-    return tweak_scalar
+    tweak_hash = TaggedHash("BIP0352/Label", scan_privkey_bytes + label_bytes)
+    return int.from_bytes(tweak_hash, 'big') % GE.ORDER
 
 
 def compute_shared_secret_tweak(ecdh_shared_secret_bytes: bytes, k: int = 0) -> int:
@@ -55,16 +53,8 @@ def compute_shared_secret_tweak(ecdh_shared_secret_bytes: bytes, k: int = 0) -> 
         Scalar tweak for deriving output public key
     """
     k_bytes = k.to_bytes(4, 'big')  # 4 bytes big-endian
-
-    # Tagged hash: BIP0352/SharedSecret
-    tag_data = b"BIP0352/SharedSecret"
-    tag_hash = hashlib.sha256(tag_data).digest()
-
-    tagged_input = tag_hash + tag_hash + ecdh_shared_secret_bytes + k_bytes
-    tweak_hash = hashlib.sha256(tagged_input).digest()
-    tweak_int = int.from_bytes(tweak_hash, 'big') % GE.ORDER
-
-    return tweak_int
+    tweak_hash = TaggedHash("BIP0352/SharedSecret", ecdh_shared_secret_bytes + k_bytes)
+    return int.from_bytes(tweak_hash, 'big') % GE.ORDER
 
 
 def apply_label_to_spend_key(spend_key_point: GE, scan_privkey_bytes: bytes, label: int) -> GE:
@@ -157,23 +147,18 @@ def compute_bip352_output_script(
     smallest_outpoint = min(serialized_outpoints)
 
     # Compute input_hash = hash_BIP0352/Inputs(smallest_outpoint || A)
-    tag_data = b"BIP0352/Inputs"
-    tag_hash = hashlib.sha256(tag_data).digest()
-    input_hash_preimage = tag_hash + tag_hash + smallest_outpoint + summed_pubkey_bytes
-    input_hash_bytes = hashlib.sha256(input_hash_preimage).digest()
-    input_hash = int.from_bytes(input_hash_bytes, "big")
+    input_hash = int.from_bytes(
+        TaggedHash("BIP0352/Inputs", smallest_outpoint + summed_pubkey_bytes), "big"
+    )
 
     # Compute shared_secret = input_hash * ecdh_share
     ecdh_point = GE.from_bytes(ecdh_share_bytes)
-    shared_secret_point = input_hash * ecdh_point
-    shared_secret_bytes = shared_secret_point.to_bytes_compressed()
+    shared_secret_bytes = (input_hash * ecdh_point).to_bytes_compressed()
 
     # Compute t_k = hash_BIP0352/SharedSecret(shared_secret || k)
-    tag_data = b"BIP0352/SharedSecret"
-    tag_hash = hashlib.sha256(tag_data).digest()
-    t_preimage = tag_hash + tag_hash + shared_secret_bytes + k.to_bytes(4, "big")
-    t_k_bytes = hashlib.sha256(t_preimage).digest()
-    t_k = int.from_bytes(t_k_bytes, "big")
+    t_k = int.from_bytes(
+        TaggedHash("BIP0352/SharedSecret", shared_secret_bytes + k.to_bytes(4, "big")), "big"
+    )
 
     # Compute P_k = B_spend + t_k * G
     B_spend = GE.from_bytes(spend_pubkey_bytes)

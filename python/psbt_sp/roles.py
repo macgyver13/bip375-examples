@@ -26,6 +26,68 @@ from .bip352_crypto import (
 from dleq_374 import dleq_generate_proof
 
 
+# ============================================================================
+# Pure helper functions
+# ============================================================================
+
+
+def _ecdh_and_dleq_fields(
+    privkey,
+    scan_key: "PublicKey",
+    ecdh_key_type: int,
+    dleq_key_type: int,
+) -> "tuple[PSBTField, PSBTField]":
+    """Compute one ECDH share + DLEQ proof and return them as two PSBTFields."""
+    ecdh_result_bytes = (privkey * scan_key).to_bytes_compressed()
+    dleq_proof = dleq_generate_proof(a=privkey, B=scan_key, r=Wallet.random_bytes())
+    if dleq_proof is None:
+        raise ValueError("Failed to generate DLEQ proof")
+    return (
+        PSBTField(ecdh_key_type, scan_key.bytes, ecdh_result_bytes),
+        PSBTField(dleq_key_type, scan_key.bytes, dleq_proof),
+    )
+
+
+def _build_transaction_outputs(
+    output_maps: "List[List[PSBTField]]",
+) -> "List[dict]":
+    """Extract amount/script_pubkey dicts from PSBT output maps for signing."""
+    outputs = []
+    for output_fields in output_maps:
+        out: dict = {}
+        for field in output_fields:
+            if field.key_type == PSBTKeyType.PSBT_OUT_AMOUNT:
+                out["amount"] = struct.unpack("<Q", field.value_data)[0]
+            elif field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT:
+                out["script_pubkey"] = field.value_data.hex()
+        outputs.append(out)
+    return outputs
+
+
+def _sign_single_p2wpkh_input(
+    input_maps: "List[List[PSBTField]]",
+    utxo: "UTXO",
+    transaction_data: dict,
+    input_index: int,
+) -> bool:
+    """Sign one P2WPKH input and append PSBT_IN_PARTIAL_SIG. Returns True on success."""
+    script_bytes = utxo.script_pubkey_bytes
+    pubkey_hash = script_bytes[2:]
+    signature = sign_p2wpkh_input(
+        private_key=int(utxo.private_key),
+        transaction_data=transaction_data,
+        input_index=input_index,
+        pubkey_hash=pubkey_hash,
+        amount=utxo.amount,
+    )
+    public_key_compressed = (int(utxo.private_key) * G).to_bytes_compressed()
+    input_maps[input_index].append(
+        PSBTField(PSBTKeyType.PSBT_IN_PARTIAL_SIG, public_key_compressed, signature)
+    )
+    print(f" Signed input {input_index}")
+    return True
+
+
 class PSBTCreator:
     """
     Creator Role: Initializes PSBT with base fields
@@ -307,65 +369,25 @@ class PSBTSigner:
                 combined_private_key = (combined_private_key + adjusted_privkeys[index]) % GE.ORDER
 
             for scan_key in scan_keys:
-                # Compute ECDH: combined_private_key * scan_key
-                ecdh_result_point = combined_private_key * scan_key
-                ecdh_result_bytes = ecdh_result_point.to_bytes_compressed()
-
-                # Generate DLEQ proof
-                dleq_proof = dleq_generate_proof(
-                    a=combined_private_key,
-                    B=scan_key,
-                    r=Wallet.random_bytes()
-                )
-
-                if dleq_proof is None:
-                    raise ValueError("Failed to generate DLEQ proof")
-
-                # Add global ECDH share field
-                global_fields.append(PSBTField(
+                ecdh_field, dleq_field = _ecdh_and_dleq_fields(
+                    combined_private_key, scan_key,
                     PSBTKeyType.PSBT_GLOBAL_SP_ECDH_SHARE,
-                    scan_key.bytes,
-                    ecdh_result_bytes
-                ))
-
-                # Add global DLEQ proof field
-                global_fields.append(PSBTField(
                     PSBTKeyType.PSBT_GLOBAL_SP_DLEQ,
-                    scan_key.bytes,
-                    dleq_proof
-                ))
+                )
+                global_fields.append(ecdh_field)
+                global_fields.append(dleq_field)
         else:
             # Per-input ECDH approach - each input contributes separate shares
             for input_index, utxo in spendable_inputs:
                 privkey = adjusted_privkeys[input_index]
                 for scan_key in scan_keys:
-                    # Compute ECDH: private_key * scan_key
-                    ecdh_result_point = privkey * scan_key
-                    ecdh_result_bytes = ecdh_result_point.to_bytes_compressed()
-
-                    # Generate DLEQ proof
-                    dleq_proof = dleq_generate_proof(
-                        a=privkey,
-                        B=scan_key,
-                        r=Wallet.random_bytes()
-                    )
-
-                    if dleq_proof is None:
-                        raise ValueError(f"Failed to generate DLEQ proof for input {input_index}")
-
-                    # Add per-input ECDH share field
-                    input_maps[input_index].append(PSBTField(
+                    ecdh_field, dleq_field = _ecdh_and_dleq_fields(
+                        privkey, scan_key,
                         PSBTKeyType.PSBT_IN_SP_ECDH_SHARE,
-                        scan_key.bytes,
-                        ecdh_result_bytes
-                    ))
-
-                    # Add per-input DLEQ proof field
-                    input_maps[input_index].append(PSBTField(
                         PSBTKeyType.PSBT_IN_SP_DLEQ,
-                        scan_key.bytes,
-                        dleq_proof
-                    ))
+                    )
+                    input_maps[input_index].append(ecdh_field)
+                    input_maps[input_index].append(dleq_field)
 
     @staticmethod
     def sign_inputs(
@@ -395,56 +417,22 @@ class PSBTSigner:
 
         # Prepare transaction data for signing
         transaction_data = {
-            'inputs': inputs,
-            'outputs': []
+            "inputs": inputs,
+            "outputs": _build_transaction_outputs(output_maps),
         }
-
-        # Extract outputs from PSBT output maps
-        for output_fields in output_maps:
-            output_dict = {}
-            for field in output_fields:
-                if field.key_type == PSBTKeyType.PSBT_OUT_AMOUNT:
-                    output_dict['amount'] = struct.unpack('<Q', field.value_data)[0]
-                elif field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT:
-                    output_dict['script_pubkey'] = field.value_data.hex()
-            transaction_data['outputs'].append(output_dict)
 
         # Sign each spendable input
         signatures_added = 0
         for input_index, utxo in spendable_inputs:
+            script_bytes = utxo.script_pubkey_bytes
+            if len(script_bytes) != 22 or script_bytes[:2] != b"\x00\x14":
+                print(f"\u26a0\ufe0f  Skipping input {input_index}: Not P2WPKH")
+                continue
             try:
-                # Extract public key hash from P2WPKH script_pubkey
-                script_bytes = utxo.script_pubkey_bytes
-                if len(script_bytes) != 22 or script_bytes[:2] != b'\x00\x14':
-                    print(f"⚠️  Skipping input {input_index}: Not P2WPKH")
-                    continue
-
-                pubkey_hash = script_bytes[2:]
-
-                # Generate signature
-                signature = sign_p2wpkh_input(
-                    private_key=int(utxo.private_key),
-                    transaction_data=transaction_data,
-                    input_index=input_index,
-                    pubkey_hash=pubkey_hash,
-                    amount=utxo.amount
-                )
-
-                # Add partial signature to PSBT input
-                public_key_point = int(utxo.private_key) * G
-                public_key_compressed = public_key_point.to_bytes_compressed()
-
-                input_maps[input_index].append(PSBTField(
-                    PSBTKeyType.PSBT_IN_PARTIAL_SIG,
-                    public_key_compressed,
-                    signature
-                ))
-
-                signatures_added += 1
-                print(f" Signed input {input_index}")
-
+                if _sign_single_p2wpkh_input(input_maps, utxo, transaction_data, input_index):
+                    signatures_added += 1
             except Exception as e:
-                print(f"❌ Failed to sign input {input_index}: {e}")
+                print(f"\u274c Failed to sign input {input_index}: {e}")
                 raise
 
         return signatures_added
@@ -481,33 +469,13 @@ class PSBTSigner:
                 input_maps.append([])
 
             for scan_key in scan_keys:
-                # Compute ECDH: private_key * scan_key
-                ecdh_result_point = utxo.private_key * scan_key
-                ecdh_result_bytes = ecdh_result_point.to_bytes_compressed()
-
-                # Generate DLEQ proof
-                dleq_proof = dleq_generate_proof(
-                    a=utxo.private_key,
-                    B=scan_key,
-                    r=Wallet.random_bytes()
-                )
-
-                if dleq_proof is None:
-                    raise ValueError(f"Failed to generate DLEQ proof for input {input_index}")
-
-                # Add per-input ECDH share field
-                input_maps[input_index].append(PSBTField(
+                ecdh_field, dleq_field = _ecdh_and_dleq_fields(
+                    utxo.private_key, scan_key,
                     PSBTKeyType.PSBT_IN_SP_ECDH_SHARE,
-                    scan_key.bytes,
-                    ecdh_result_bytes
-                ))
-
-                # Add per-input DLEQ proof field
-                input_maps[input_index].append(PSBTField(
                     PSBTKeyType.PSBT_IN_SP_DLEQ,
-                    scan_key.bytes,
-                    dleq_proof
-                ))
+                )
+                input_maps[input_index].append(ecdh_field)
+                input_maps[input_index].append(dleq_field)
 
     @staticmethod
     def sign_specific_inputs(
@@ -536,61 +504,27 @@ class PSBTSigner:
 
         # Build transaction data for signing
         transaction_data = {
-            'inputs': inputs,
-            'outputs': []
+            "inputs": inputs,
+            "outputs": _build_transaction_outputs(output_maps),
         }
-
-        # Extract outputs from PSBT output maps
-        for output_fields in output_maps:
-            output_dict = {}
-            for field in output_fields:
-                if field.key_type == PSBTKeyType.PSBT_OUT_AMOUNT:
-                    output_dict['amount'] = struct.unpack('<Q', field.value_data)[0]
-                elif field.key_type == PSBTKeyType.PSBT_OUT_SCRIPT:
-                    output_dict['script_pubkey'] = field.value_data.hex()
-            transaction_data['outputs'].append(output_dict)
 
         # Sign each specified input
         signatures_added = 0
         for input_index in input_indices:
             if input_index >= len(inputs):
-                print(f"⚠️  Skipping input {input_index}: Index out of range")
+                print(f"\u26a0\ufe0f  Skipping input {input_index}: Index out of range")
                 continue
 
             utxo = inputs[input_index]
             if utxo.private_key is None:
-                print(f"⚠️  Skipping input {input_index}: No private key")
+                print(f"\u26a0\ufe0f  Skipping input {input_index}: No private key")
                 continue
 
             try:
-                # Extract public key hash from P2WPKH script_pubkey
-                script_bytes = utxo.script_pubkey_bytes
-                pubkey_hash = script_bytes[2:]
-
-                # Generate signature
-                signature = sign_p2wpkh_input(
-                    private_key=int(utxo.private_key),
-                    transaction_data=transaction_data,
-                    input_index=input_index,
-                    pubkey_hash=pubkey_hash,
-                    amount=utxo.amount
-                )
-
-                # Add partial signature to PSBT input
-                public_key_point = int(utxo.private_key) * G
-                public_key_compressed = public_key_point.to_bytes_compressed()
-
-                input_maps[input_index].append(PSBTField(
-                    PSBTKeyType.PSBT_IN_PARTIAL_SIG,
-                    public_key_compressed,
-                    signature
-                ))
-
-                signatures_added += 1
-                print(f" Signed input {input_index}")
-
+                if _sign_single_p2wpkh_input(input_maps, utxo, transaction_data, input_index):
+                    signatures_added += 1
             except Exception as e:
-                print(f"❌ Failed to sign input {input_index}: {e}")
+                print(f"\u274c Failed to sign input {input_index}: {e}")
                 raise
 
         return signatures_added

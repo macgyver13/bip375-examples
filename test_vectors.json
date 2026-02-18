@@ -634,6 +634,83 @@
       ]
     },
     {
+      "description": "ecdh coverage: invalid proof set for PSBT_GLOBAL_SP_DLEQ field",
+      "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBACIHAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQNDBMksBVkLlOZLw1AbzfZ45DClvF696vGYebl6l5bTziIIAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQOfI/UQrlNiKKmoskrQ0ZI+gB8n+CARyozeA0LUjKETQm9iLP+6G0S1DhsRlf7t4Xi0vFL/PkYV0P+EqyCUPldkAAQ4gGKcXZjsLqxSxKhp3EyP/HkB53VMuXdE+KOoQgccAmEoBDwQAAAAAARAE/v///wEBH6CGAQAAAAAAFgAU1J4EpZttXykS2eydNIgTbX2K6nMiBgMVxubl2+bRiP1spx5M7VaFBEFX1qMWPBn7u7w2VSvOnAgAAACAAAAAAAABAwgYcwEAAAAAAAEEIlEg3cEaiL1DRRvH10ppoJUb0y80V5WMpQ1k5HzJhqOPJ8sBCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
+      "input_keys": [
+        {
+          "input_index": 0,
+          "private_key": "ccfd8b4533bd8512e141f2173714952247b4dbdd184b569bf53eb158ac9777fc",
+          "public_key": "0315c6e6e5dbe6d188fd6ca71e4ced5685044157d6a3163c19fbbbbc36552bce9c",
+          "prevout_txid": "18a717663b0bab14b12a1a771323ff1e4079dd532e5dd13e28ea1081c700984a",
+          "prevout_index": 0,
+          "prevout_scriptpubkey": "0014d49e04a59b6d5f2912d9ec9d3488136d7d8aea73",
+          "amount": 100000,
+          "witness_utxo": "a086010000000000160014d49e04a59b6d5f2912d9ec9d3488136d7d8aea73",
+          "sequence": 4294967294
+        }
+      ],
+      "scan_keys": [
+        {
+          "scan_pubkey": "027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe068",
+          "spend_pubkey": "0361e1b1e9de5e42cb2007f7ca54b9e0d57ed13938fad56d3f19e57513a8fce039"
+        }
+      ],
+      "expected_ecdh_shares": [
+        {
+          "scan_key": "027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe068",
+          "ecdh_result": "034304c92c05590b94e64bc3501bcdf678e430a5bc5ebdeaf19879b97a9796d3ce",
+          "dleq_proof": "bf1b45241c43a4bea753b80dd9586518c24c6d61c5f7c93fec10e17efafddebba2a34c0cd55b8be5dbb1da5c8ec94b73ba347a70036985f04133271be429140b"
+        }
+      ],
+      "expected_outputs": [
+        {
+          "output_index": 0,
+          "amount": 95000,
+          "is_silent_payment": true,
+          "sp_info": "027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe0680361e1b1e9de5e42cb2007f7ca54b9e0d57ed13938fad56d3f19e57513a8fce039"
+        }
+      ]
+    },
+    {
+      "description": "ecdh coverage: input missing public key for DLEQ verification",
+      "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAAABDiAYpxdmOwurFLEqGncTI/8eQHndUy5d0T4o6hCBxwCYSgEPBAAAAAABEAT+////AQEfoIYBAAAAAAAWABSpCQAvGEIogRio9tGgaG94ywPH0SIdAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoIQL95ufLiw0FAZAPHpIH0Yima9zYGeuIoBne+XHGISmGLyIeAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoQKwswEHBNCUlkmEYyrhaXvddATO1+21q3pZouOAD5SXznNZv6K+/CUMHfe0Xh7sV5ASG23LR9B3rN8DRqa6SrLUBAwQBAAAAAAEDCBhzAQAAAAAAAQQiUSCNmubvUqRjUcK00JR0WR5QncJP+slpS/lQZfcdYZwPbQEJQgJ6SH/Bn7dph3uHQtbqGBGPPE5yseqMbeYCp61KQdvgaANh4bHp3l5CyyAH98pUueDVftE5OPrVbT8Z5XUTqPzgOQA=",
+      "input_keys": [
+        {
+          "input_index": 0,
+          "private_key": "9b8cf7af42b8942b381c224b1e7c40276fd465ef2715fd6288f24579003cfe6f",
+          "public_key": "02f907945ff35aad2fb3cd793295848cdf62692abe75c083cea03f80b817c32dde",
+          "prevout_txid": "18a717663b0bab14b12a1a771323ff1e4079dd532e5dd13e28ea1081c700984a",
+          "prevout_index": 0,
+          "prevout_scriptpubkey": "0014a909002f1842288118a8f6d1a0686f78cb03c7d1",
+          "amount": 100000,
+          "witness_utxo": "a086010000000000160014a909002f1842288118a8f6d1a0686f78cb03c7d1",
+          "sequence": 4294967294
+        }
+      ],
+      "scan_keys": [
+        {
+          "scan_pubkey": "027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe068",
+          "spend_pubkey": "0361e1b1e9de5e42cb2007f7ca54b9e0d57ed13938fad56d3f19e57513a8fce039"
+        }
+      ],
+      "expected_ecdh_shares": [
+        {
+          "scan_key": "027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe068",
+          "ecdh_result": "02fde6e7cb8b0d0501900f1e9207d188a66bdcd819eb88a019def971c62129862f",
+          "dleq_proof": "ac2cc041c1342525926118cab85a5ef75d0133b5fb6d6ade9668b8e003e525f39cd66fe8afbf0943077ded1787bb15e40486db72d1f41deb37c0d1a9ae92acb5",
+          "input_index": 0
+        }
+      ],
+      "expected_outputs": [
+        {
+          "output_index": 0,
+          "amount": 95000,
+          "is_silent_payment": true,
+          "sp_info": "027a487fc19fb769877b8742d6ea18118f3c4e72b1ea8c6de602a7ad4a41dbe0680361e1b1e9de5e42cb2007f7ca54b9e0d57ed13938fad56d3f19e57513a8fce039"
+        }
+      ]
+    },
+    {
       "description": "signer constraints: segwit version greater than 1 in transaction inputs with silent payments output",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAAABDiAYpxdmOwurFLEqGncTI/8eQHndUy5d0T4o6hCBxwCYSgEPBAAAAAABEAT+////AQEfoIYBAAAAAAAWUhRT+qKc43zEiZsjDpV6IKJkrczeRyIGAqXe3Y4sl9tnrm2DPalbpcZLmlHzEjjypfnm24rGDcDiCAAAAIAAAAAAIh0Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghA3JW1z0tsG4hGXEqv4jpv1y0y+1/KkUIr5DM4AyEmCm2Ih4Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhA5k7kSRL3pdy6apUv8E+xV8RouT4TAX5I1x5cqOmU2p0boi/QVNx5Ih6Y30lv0E3kn4GZMVFY1XQOGL0avAmAEwEDBAEAAAAiAgKl3t2OLJfbZ65tgz2pW6XGS5pR8xI48qX55tuKxg3A4kcwRAIgL0dmd/TCjyMU8SOvCkQuFM8ZnwPsEMFFMX+UvDddIc8CIEaUkRvV2LrUFgbLbXb/hQBiWUkq8NDnUXXIQg6tTPLkAQABAwgYcwEAAAAAAAEEIlEgPJg7UYWUtNT48bzdJuA/GP02xccuPm25+lQVbBx/iPEBCUICekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GgDYeGx6d5eQssgB/fKVLng1X7ROTj61W0/GeV1E6j84DkA",
       "input_keys": [
@@ -885,7 +962,7 @@
   ],
   "valid": [
     {
-      "description": "1 P2WPKH input using per-input ECDH shares",
+      "description": "one P2WPKH input using per-input ECDH shares",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAEAAAABBQQBAAAAAQYBAAABDiAYpxdmOwurFLEqGncTI/8eQHndUy5d0T4o6hCBxwCYSgEPBAAAAAABEAT+////AQEfoIYBAAAAAAAWABRZeFlwATZgq+Fio/MoIoa30OLtgSIGAx675RWpWF++ZxSw/KuCVsejsNuoRrvh7sh34OguZZj1CAAAAIAAAAAAIh0Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghA0UFRDzOuLut1bsDhWQzZCOfb8X1/5GGKmu0hjigF0lFIh4Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhACqfFEHUmJd8RmngfME+LQpk1Bv1P+7pfl6Gb/1gHbnUp1cYagnI1/JEvI39aetVyz44E+yUG4X/UauIchDVIngEDBAEAAAAAAQMIGHMBAAAAAAABBCJRICBJqKYpYg5OSPwwpF//A2d95/VC8NVZ2wiCZiIwb39QAQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
       "input_keys": [
         {
@@ -1727,7 +1804,7 @@
       "expected_psbt_id": "ed5d29e3e9ee6f1db767e0ce94c27c313fd2e93f97ef7508471e8334766193fd"
     },
     {
-      "description": "2 mixed input types - only eligible inputs contribute ECDH shares (P2SH excluded)",
+      "description": "two mixed input types - only eligible inputs contribute ECDH shares (P2SH excluded)",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAIAAAABBQQBAAAAAQYBAAABDiAYpxdmOwurFLEqGncTI/8eQHndUy5d0T4o6hCBxwCYSgEPBAAAAAABEAT+////AQEfoIYBAAAAAAAWABRDRj1NbyEmbkh9QgNLA0Xj7JANVCIGAnSSVXQyEpAZ5fxAe05YoukWVxUQ89IQf7ghScfKMViKCAAAAIAAAAAAIh0Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GghA4T8nViPE4MKiHalm8pCAzO9Vs42Aaqem9ubdzHAys+MIh4Cekh/wZ+3aYd7h0LW6hgRjzxOcrHqjG3mAqetSkHb4GhAw8bgtQvvLn/PmRtFL4A58o5SUrfkWuRGAY1KKI5T/vn9C+BC3bPDEqqcAliw4XXjtXR8rY6VLDjbGkt+8ZM47AEDBAEAAAAAAQ4gMSiieXMH9JI3mYW34dwYbesU2RoDC2AnrhfbdvsgdRUBDwQAAAAAARAE/v///wEAUwIAAAABQOb6phJo8XoQEB1iVTWCiCrkhYvuEzY9uA/fKB+CX/wAAAAAAP////8B8EkCAAAAAAAXqRQqRPXlsgJWidUwO6uQVMVnuwJJZIcAAAAAAQRHUiED5fY29wJ7YmBwEqhfYrb+2Z1AH+XY97x3sS6FOrG+gCQhA8W3EkCnJPKwt0DHtRKyAj5B4uCUwZQFiKpYm/lhCKVKUq4AAQMIkF8BAAAAAAABBCJRINHDkl4cArKeYeddxg5c+NFKwlEvg+by53zyrh8Ntg89AQlCAnpIf8Gft2mHe4dC1uoYEY88TnKx6oxt5gKnrUpB2+BoA2HhseneXkLLIAf3ylS54NV+0Tk4+tVtPxnldROo/OA5AA==",
       "input_keys": [
         {
@@ -1943,7 +2020,7 @@
       "expected_psbt_id": "47fe62b0265ca3f61788dc98d1ff0fadaeb8ffcbb7e3d54655e1d14750a750ee"
     },
     {
-      "description": "mixed global and per-input ECDH shares for two recipients",
+      "description": "two inputs/two sp outputs - mixed global and per-input ECDH shares",
       "psbt": "cHNidP8B+wQCAAAAAQIEAgAAAAEEBAIAAAABBQQCAAAAAQYBACIHAzNh0/9y805rTnp775bluBUeZql5rc51PDnFg8vldm0oIQM1TON28rs/xxNH3fMzMDKwLdGvkIrV4fmoQmKdi9VjoyIIAzNh0/9y805rTnp775bluBUeZql5rc51PDnFg8vldm0oQA7cED+wwSYDY+ljx6WGch+Qi3pD5+GIt4ruK/3j6YF+/d/GBUmyrO/6fm4mkbFn7VPxzQUE5diriQ9+pAX81w0AAQ4gGKcXZjsLqxSxKhp3EyP/HkB53VMuXdE+KOoQgccAmEoBDwQAAAAAARAE/v///wEBH0ANAwAAAAAAFgAUe1Jjv1LEljQA/IXs73TuVEqsvnwiBgKwOwkMDnwjMwWuTGDtMK+X3Zm2ttM6xnOrDweVSslKXQgAAACAAAAAACIdAqnx+sLMRXaE8z3pAHP+INIslHySFjuGKxTQq6HfRxUQIQOK3M3Xoe6WofWtCARaMFZGX9kizL1O5OLM3wObgbryMSIeAqnx+sLMRXaE8z3pAHP+INIslHySFjuGKxTQq6HfRxUQQEmcyWSRFyOTBvJ6xbLAC3IuvvulnSTxwp8zPjt9HEUogVg4iY32hGll3iY5XCIxCDG2Hj7vtiDvR0E0ML3sDA0BAwQBAAAAAAEOIL6dZcg5FfsJJIq738qMo+7mzjUMVU9l6NUm5d9SerUiAQ8EAAAAAAEQBP7///8BAR9ADQMAAAAAABYAFGLm8LKhLPZSGBortkjP5uwYXiyMIgYD6rKOY+RmrQ6S1nj60MF2Rjsmr8ZMa6BFy/KEgold1jIIAAAAgAEAAAAiHQKp8frCzEV2hPM96QBz/iDSLJR8khY7hisU0Kuh30cVECED9YBNRPCSo1zhNFg5qaJawp/817Xs+dwbNXMm4y+pnMwiHgKp8frCzEV2hPM96QBz/iDSLJR8khY7hisU0Kuh30cVEEAzPs5O0IYrkoCqPVK8zrtOa/AtZH3xk475a1M52NZxM9/g+2jo42yN/9p3qwJ4zjEh3e2Ql69FZsECR+iG6clfAQMEAQAAAAABAwiQXwEAAAAAAAEJQgMzYdP/cvNOa056e++W5bgVHmapea3OdTw5xYPL5XZtKAMSZlgePoQcu5TeYupzVYOiMsTIiPpu3vLsL4cHifwd1AABAwiQXwEAAAAAAAEJQgKp8frCzEV2hPM96QBz/iDSLJR8khY7hisU0Kuh30cVEAJKSNduINQLz18uGlw//rPcKos7iNeaSG1UydnqqPoYjgA=",
       "input_keys": [
         {

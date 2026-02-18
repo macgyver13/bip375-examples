@@ -22,14 +22,11 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dleq_374 import dleq_generate_proof
-from psbt_sp.bip352_crypto import compute_bip352_output_script
+from psbt_sp.bip352_crypto import apply_label_to_spend_key, compute_bip352_output_script
 from psbt_sp.crypto import Wallet
 from psbt_sp.serialization import create_witness_utxo
 from psbt_sp.psbt import SilentPaymentPSBT
 from psbt_sp.constants import PSBTKeyType
-from secp256k1_374 import G
-
-
 def _deterministic_hash(s: str) -> int:
     """Deterministic hash that is stable across Python sessions (unlike hash())."""
     return int.from_bytes(hashlib.sha256(s.encode()).digest()[:4], "big") % 1000
@@ -1036,12 +1033,8 @@ class PSBTBuilder:
 
     def _compute_labeled_spend_key(self, psbt: SilentPaymentPSBT, spend_pub, label: int):
         """Compute BIP-352 labeled spend key: B_m = B_spend + hash_BIP0352/Label(b_scan || m) * G"""
-        # Get scan private key for label computation
-        scan_priv = self.wallet.scan_priv
-
-        label_tweak = psbt._compute_label_tweak(scan_priv.to_bytes(32, "big"), label)
-        labeled_spend_key = spend_pub + (label_tweak * G)
-        return labeled_spend_key
+        scan_priv_bytes = self.wallet.scan_priv.to_bytes(32, "big")
+        return apply_label_to_spend_key(spend_pub, scan_priv_bytes, label)
 
     def _add_output_bip32_derivation(
         self, psbt: SilentPaymentPSBT, output_idx: int, input_data: List[Dict]
