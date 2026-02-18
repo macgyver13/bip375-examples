@@ -36,6 +36,85 @@ def _deterministic_hash(s: str) -> int:
 
 
 # ============================================================================
+# Pure PSBT helper functions
+# ============================================================================
+
+
+def _init_psbt_globals(
+    psbt: "SilentPaymentPSBT",
+    num_inputs: int,
+    num_outputs: int,
+    *,
+    tx_modifiable: bool = False,
+) -> None:
+    """Populate the five mandatory PSBT v2 global fields."""
+    psbt.add_global_field(PSBTKeyType.PSBT_GLOBAL_VERSION, b"", struct.pack("<I", 2))
+    psbt.add_global_field(PSBTKeyType.PSBT_GLOBAL_TX_VERSION, b"", struct.pack("<I", 2))
+    psbt.add_global_field(
+        PSBTKeyType.PSBT_GLOBAL_INPUT_COUNT, b"", struct.pack("<I", num_inputs)
+    )
+    psbt.add_global_field(
+        PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT, b"", struct.pack("<I", num_outputs)
+    )
+    psbt.add_global_field(
+        PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE, b"", b"\x01" if tx_modifiable else b"\x00"
+    )
+
+
+def _sorted_outpoints_and_input_map(
+    eligible_inputs: List[Dict],
+) -> tuple:
+    """Sort outpoints lexicographically (BIP-352 requirement) and build an index map.
+
+    Returns (sorted_outpoints, outpoint_to_input) where each outpoint is a
+    (txid_bytes, vout_int) tuple sorted by (txid, vout).
+    """
+    outpoints = [
+        (inp["prevout_txid"], inp["prevout_index"]) for inp in eligible_inputs
+    ]
+    outpoints.sort(key=lambda x: (x[0], x[1]))
+    outpoint_to_input = {
+        (inp["prevout_txid"], inp["prevout_index"]): inp for inp in eligible_inputs
+    }
+    return outpoints, outpoint_to_input
+
+
+def _sum_pubkeys_in_outpoint_order(
+    outpoints: List[tuple],
+    outpoint_to_input: Dict,
+):
+    """Sum input public keys in sorted outpoint order (BIP-352 requirement)."""
+    summed = None
+    for outpoint in outpoints:
+        pk = outpoint_to_input[outpoint]["public_key"]
+        summed = pk if summed is None else summed + pk
+    return summed
+
+
+def _sum_ecdh_shares_for_scan_key(
+    outpoints: List[tuple],
+    outpoint_to_input: Dict,
+    ecdh_data: Dict,
+    scan_key_id: str,
+) -> tuple:
+    """Sum ECDH shares for one scan key in sorted outpoint order.
+
+    Returns (summed_ecdh_point_or_None, coverage_complete) where
+    coverage_complete is True only when every outpoint contributed a share.
+    """
+    inputs_with_ecdh: set = set()
+    summed = None
+    for outpoint in outpoints:
+        inp = outpoint_to_input[outpoint]
+        ecdh_key = (inp["input_index"], scan_key_id)
+        if ecdh_key in ecdh_data:
+            ecdh_result, _ = ecdh_data[ecdh_key]
+            inputs_with_ecdh.add(inp["input_index"])
+            summed = ecdh_result if summed is None else summed + ecdh_result
+    return summed, len(inputs_with_ecdh) == len(outpoints)
+
+
+# ============================================================================
 # Core Data Structures
 # ============================================================================
 
@@ -130,6 +209,8 @@ class TestScenario:
     invalid_dleq_for_scan_key: Optional[str] = None
     inject_ineligible_ecdh: bool = False
     force_output_script: bool = False
+    strip_input_pubkeys_for_input: Optional[int] = None
+    invalid_global_dleq: bool = False
 
 
 # ============================================================================
@@ -454,6 +535,14 @@ class PSBTBuilder:
         # Add ECDH shares to PSBT (with error injection)
         self._add_ecdh_shares_to_psbt(psbt, ecdh_data, scenario, input_data)
 
+        # Error injection: strip BIP32_DERIVATION from specified input
+        if scenario.strip_input_pubkeys_for_input is not None:
+            idx = scenario.strip_input_pubkeys_for_input
+            psbt.input_maps[idx] = [
+                f for f in psbt.input_maps[idx]
+                if f.key_type != PSBTKeyType.PSBT_IN_BIP32_DERIVATION
+            ]
+
         # Compute and add outputs to PSBT
         self._add_outputs_to_psbt(psbt, output_data, input_data, ecdh_data, scenario)
 
@@ -472,31 +561,10 @@ class PSBTBuilder:
     ) -> SilentPaymentPSBT:
         """Create PSBT v2 base structure"""
         psbt = SilentPaymentPSBT()
-
-        # Add required global fields for PSBT v2
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_VERSION, b"", struct.pack("<I", 2)
+        _init_psbt_globals(
+            psbt, num_inputs, num_outputs,
+            tx_modifiable=scenario.set_tx_modifiable,
         )
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_TX_VERSION, b"", struct.pack("<I", 2)
-        )
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_INPUT_COUNT, b"", struct.pack("<I", num_inputs)
-        )
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT, b"", struct.pack("<I", num_outputs)
-        )
-
-        # Error injection: Set TX_MODIFIABLE to invalid value
-        if scenario.set_tx_modifiable:
-            psbt.add_global_field(
-                PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE, b"", b"\x01"
-            )  # Modifiable
-        else:
-            psbt.add_global_field(
-                PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE, b"", b"\x00"
-            )  # Not modifiable
-
         return psbt
 
     def _generate_scan_keys(
@@ -781,9 +849,16 @@ class PSBTBuilder:
                                 summed_private_key = summed_private_key + inp_priv_key
 
                 if summed_private_key is not None:
-                    global_dleq_proof = self._compute_global_dleq_proof(
-                        scan_key_id, summed_private_key, scan_pub
-                    )
+                    if scenario.invalid_global_dleq:
+                        # Use wrong private key for invalid proof
+                        wrong_priv, _ = self.wallet.create_key_pair("wrong", 999)
+                        global_dleq_proof = self._compute_global_dleq_proof(
+                            scan_key_id, wrong_priv, scan_pub
+                        )
+                    else:
+                        global_dleq_proof = self._compute_global_dleq_proof(
+                            scan_key_id, summed_private_key, scan_pub
+                        )
                     psbt.add_global_field(
                         PSBTKeyType.PSBT_GLOBAL_SP_DLEQ,
                         scan_pub.bytes,
@@ -898,32 +973,11 @@ class PSBTBuilder:
             ]
 
             if eligible_inputs and ecdh_data:
-                # Create outpoints and sort them deterministically (BIP-352 requirement)
-                outpoints = []
-                for inp in eligible_inputs:
-                    outpoints.append((inp["prevout_txid"], inp["prevout_index"]))
-                # Sort outpoints lexicographically (txid first, then vout)
-                outpoints.sort(key=lambda x: (x[0], x[1]))
-
-                # Sum all eligible input public keys in the same order as sorted outpoints
-                # Create a mapping from outpoint to input data
-                outpoint_to_input = {
-                    (inp["prevout_txid"], inp["prevout_index"]): inp
-                    for inp in eligible_inputs
-                }
-                
-                # Sum public keys in sorted outpoint order (BIP-352 requirement)
-                summed_pubkey = None
-                for outpoint in outpoints:
-                    inp = outpoint_to_input[outpoint]
-                    if summed_pubkey is None:
-                        summed_pubkey = inp["public_key"]
-                    else:
-                        summed_pubkey = summed_pubkey + inp["public_key"]
-
+                outpoints, outpoint_to_input = _sorted_outpoints_and_input_map(eligible_inputs)
+                summed_pubkey = _sum_pubkeys_in_outpoint_order(outpoints, outpoint_to_input)
                 summed_pubkey_bytes = summed_pubkey.to_bytes_compressed()
 
-                # Get ECDH share for this scan key - find the scan key ID
+                # Find the scan key ID for this output's scan pub
                 scan_key_id = None
                 scan_keys = self._generate_scan_keys(scenario.scan_keys)
                 for key_id, (key_scan_pub, _) in scan_keys.items():
@@ -932,27 +986,9 @@ class PSBTBuilder:
                         break
 
                 if scan_key_id:
-                    # Check if ALL eligible inputs have ECDH shares for complete coverage
-                    # Sum ECDH shares in the same order as sorted outpoints
-                    inputs_with_ecdh = set()
-                    summed_ecdh_share = None
-                    
-                    for outpoint in outpoints:
-                        inp = outpoint_to_input[outpoint]
-                        inp_idx = inp["input_index"]
-                        
-                        # Look for ECDH share for this specific input and scan key
-                        ecdh_key = (inp_idx, scan_key_id)
-                        if ecdh_key in ecdh_data:
-                            ecdh_result, _ = ecdh_data[ecdh_key]
-                            inputs_with_ecdh.add(inp_idx)
-                            if summed_ecdh_share is None:
-                                summed_ecdh_share = ecdh_result
-                            else:
-                                summed_ecdh_share = summed_ecdh_share + ecdh_result
-
-                    # Only generate output script if ALL eligible inputs have ECDH shares
-                    coverage_complete = len(inputs_with_ecdh) == len(eligible_inputs)
+                    summed_ecdh_share, coverage_complete = _sum_ecdh_shares_for_scan_key(
+                        outpoints, outpoint_to_input, ecdh_data, scan_key_id
+                    )
 
                     if coverage_complete and summed_ecdh_share is not None:
                         ecdh_share_bytes = summed_ecdh_share.to_bytes_compressed()
@@ -1151,6 +1187,8 @@ class ConfigBasedTestGenerator:
                 "inject_ineligible_ecdh", False
             ),
             force_output_script=control_override.get("force_output_script", False),
+            strip_input_pubkeys_for_input=control_override.get("strip_input_pubkeys_for_input"),
+            invalid_global_dleq=control_override.get("invalid_global_dleq", False),
         )
 
     # Generate test vector for a given scenario
@@ -1394,21 +1432,7 @@ class TestVectorGenerator:
         # Deliberately NOT computing ECDH for scan key B on input 1
 
         psbt = SilentPaymentPSBT()
-
-        # Add required global fields for PSBT v2
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_VERSION, b"", struct.pack("<I", 2)
-        )
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_TX_VERSION, b"", struct.pack("<I", 2)
-        )
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_INPUT_COUNT, b"", struct.pack("<I", 2)
-        )
-        psbt.add_global_field(
-            PSBTKeyType.PSBT_GLOBAL_OUTPUT_COUNT, b"", struct.pack("<I", 2)
-        )
-        psbt.add_global_field(PSBTKeyType.PSBT_GLOBAL_TX_MODIFIABLE, b"", b"\x00")
+        _init_psbt_globals(psbt, 2, 2)
 
         # Add input 0
         prevout_txid_0 = hashlib.sha256(
