@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "BIP-375 Contributors" },
+    { name = "macgyver13" },
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -29,9 +29,9 @@ classifiers = [
 keywords = ["bitcoin", "spdk", "silent-payments", "psbt", "cryptography"]
 
 [project.urls]
-Homepage = "https://github.com/your-repo/bip375-examples"
-Repository = "https://github.com/your-repo/bip375-examples"
-Documentation = "https://github.com/your-repo/bip375-examples/blob/main/README.md"
+Homepage = "https://github.com/macgyver13/spdk/spdk_psbt"
+Repository = "https://github.com/macgyver13/spdk/spdk_psbt"
+Documentation = "https://github.com/macgyver13/spdk/spdk_psbt/blob/main/README.md"
 
 [tool.maturin]
 bindings = "uniffi"

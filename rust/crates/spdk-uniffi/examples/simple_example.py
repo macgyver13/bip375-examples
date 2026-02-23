@@ -36,7 +36,7 @@ def main():
     scan_key = bytes.fromhex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
     spend_key = bytes.fromhex("02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5")
 
-    print("\n1. Creating PSBT with Silent Payment output")
+    print("\nCreating PSBT with Silent Payment output")
     print("-" * 50)
 
     # Define inputs
@@ -72,7 +72,7 @@ def main():
     psbt.add_outputs(outputs)
     print(f"✓ Added {len(inputs)} input(s) and {len(outputs)} output(s)")
 
-    print("\n2. Computing ECDH shares")
+    print("\nComputing ECDH shares")
     print("-" * 50)
 
     # Compute ECDH share manually (for demonstration)
@@ -88,7 +88,7 @@ def main():
     is_valid = dleq_verify_proof(pubkey, scan_key, ecdh_share, proof)
     print(f"✓ DLEQ proof valid: {is_valid}")
 
-    print("\n3. Adding ECDH shares to PSBT")
+    print("\nAdding ECDH shares to PSBT")
     print("-" * 50)
 
     # Add ECDH shares for all inputs (with DLEQ proofs)
@@ -106,26 +106,13 @@ def main():
         if share.dleq_proof:
             print(f"  - DLEQ proof: {len(share.dleq_proof)} bytes")
 
-    # print("\n4. Aggregating ECDH shares")
-    # print("-" * 50)
-
-    # # Aggregate ECDH shares
-    # aggregated = aggregation.aggregate_ecdh_shares(psbt)
-    # print(f"✓ Aggregated shares for {len(aggregated.scan_keys())} scan key(s)")
-
-    # for scan_key_bytes in aggregated.scan_keys():
-    #     share_point = aggregated.get_share_point(scan_key_bytes)
-    #     if share_point:
-    #         print(f"  - Scan key: {scan_key_bytes.hex()[:16]}...")
-    #         print(f"    Aggregated point: {share_point.hex()[:16]}...")
-
-    print("\n5. Signing inputs")
+    print("\nSigning inputs")
     print("-" * 50)
 
     psbt.sign_inputs(inputs)
     print("✓ All inputs signed")
 
-    print("\n6. Finalizing PSBT")
+    print("\nFinalizing PSBT")
     print("-" * 50)
 
     # Finalize (compute output scripts from silent payment addresses)
@@ -137,7 +124,7 @@ def main():
     if output_script:
         print(f"  - Output 0 script: {output_script.hex()[:32]}...")
 
-    print("\n7. Extracting transaction")
+    print("\nExtracting transaction")
     print("-" * 50)
 
     # Extract final transaction
@@ -145,7 +132,7 @@ def main():
     print(f"✓ Transaction extracted: {len(tx_bytes)} bytes")
     print(f"  Transaction (hex): {tx_bytes.hex()}")
 
-    print("\n8. Saving and loading PSBT")
+    print("\nSaving and loading PSBT")
     print("-" * 50)
 
     # Save with metadata

@@ -474,138 +474,6 @@ impl SilentPaymentPsbt {
         let mut psbt = self.inner.lock().unwrap();
         f(&mut psbt)
     }
-
-    // ========================================================================
-    // Raw field manipulation (for invalid test vector generation)
-    // ========================================================================
-
-    /// Add a raw key-value pair to the global map's `unknowns`.
-    /// Writes directly to the unknowns BTreeMap, bypassing typed field validation.
-    /// The serialized output is identical to typed fields with the same key type.
-    pub fn add_raw_global_field(
-        &self,
-        type_value: u8,
-        key_data: Vec<u8>,
-        value: Vec<u8>,
-    ) -> Result<(), Bip375Error> {
-        self.with_inner(|p| {
-            let key = PsbtKey { type_value, key: key_data };
-            p.global.unknowns.insert(key, value);
-        });
-        Ok(())
-    }
-
-    /// Add a raw key-value pair to an input map.
-    ///
-    /// For the two required PSBTv2 input fields (PREVIOUS_TXID=0x0e,
-    /// OUTPUT_INDEX=0x0f), the value is set on the corresponding typed field
-    /// to prevent duplicate keys during serialization. All other type_values
-    /// go into the `unknowns` BTreeMap, which is correct for Optional/BTreeMap
-    /// fields since their defaults (None/empty) don't serialize.
-    pub fn add_raw_input_field(
-        &self,
-        input_index: u32,
-        type_value: u8,
-        key_data: Vec<u8>,
-        value: Vec<u8>,
-    ) -> Result<(), Bip375Error> {
-        self.with_inner(|p| {
-            let idx = input_index as usize;
-            if idx >= p.inputs.len() {
-                return Err(Bip375Error::InvalidData);
-            }
-            let input = &mut p.inputs[idx];
-            match type_value {
-                0x0e => {
-                    // PSBT_IN_PREVIOUS_TXID: always serialized, must set typed field
-                    use bitcoin::hashes::Hash;
-                    let txid = bitcoin::Txid::from_slice(&value)
-                        .map_err(|_| Bip375Error::SerializationError)?;
-                    input.previous_txid = txid;
-                }
-                0x0f => {
-                    // PSBT_IN_OUTPUT_INDEX: always serialized, must set typed field
-                    let bytes: [u8; 4] = value
-                        .try_into()
-                        .map_err(|_| Bip375Error::SerializationError)?;
-                    input.spent_output_index = u32::from_le_bytes(bytes);
-                }
-                _ => {
-                    let key = PsbtKey { type_value, key: key_data };
-                    input.unknowns.insert(key, value);
-                }
-            }
-            Ok(())
-        })
-    }
-
-    /// Remove all raw fields with the given type from an input map's `unknowns`.
-    pub fn remove_raw_input_fields_by_type(
-        &self,
-        input_index: u32,
-        type_value: u8,
-    ) -> Result<(), Bip375Error> {
-        self.with_inner(|p| {
-            let idx = input_index as usize;
-            if idx >= p.inputs.len() {
-                return Err(Bip375Error::InvalidData);
-            }
-            p.inputs[idx].unknowns.retain(|k, _| k.type_value != type_value);
-            Ok(())
-        })
-    }
-
-    /// Add a raw key-value pair to an output map.
-    ///
-    /// For known PSBTv2 typed fields (AMOUNT, SCRIPT), the value is dispatched
-    /// to the corresponding typed field on the Output struct. This prevents
-    /// duplicate keys during serialization. All other type_values go into
-    /// the `unknowns` BTreeMap.
-    pub fn add_raw_output_field(
-        &self,
-        output_index: u32,
-        type_value: u8,
-        key_data: Vec<u8>,
-        value: Vec<u8>,
-    ) -> Result<(), Bip375Error> {
-        self.with_inner(|p| {
-            let idx = output_index as usize;
-            if idx >= p.outputs.len() {
-                return Err(Bip375Error::InvalidData);
-            }
-            let output = &mut p.outputs[idx];
-            match type_value {
-                // Required fields (always serialized by get_pairs)
-                0x03 => {
-                    // PSBT_OUT_AMOUNT
-                    let bytes: [u8; 8] = value
-                        .try_into()
-                        .map_err(|_| Bip375Error::SerializationError)?;
-                    output.amount = bitcoin::Amount::from_sat(u64::from_le_bytes(bytes));
-                }
-                0x04 => {
-                    // PSBT_OUT_SCRIPT
-                    output.script_pubkey = bitcoin::ScriptBuf::from(value);
-                }
-                // 0x09 => {
-                //     // PSBT_OUT_SP_V0_INFO: optional typed field, serializes when Some
-                //     output.sp_v0_info = Some(value);
-                // }
-                // 0x0a => {
-                //     // PSBT_OUT_SP_V0_LABEL: optional typed field, serializes when Some
-                //     let bytes: [u8; 4] = value
-                //         .try_into()
-                //         .map_err(|_| Bip375Error::SerializationError)?;
-                //     output.sp_v0_label = Some(u32::from_le_bytes(bytes));
-                // }
-                _ => {
-                    let key = PsbtKey { type_value, key: key_data };
-                    output.unknowns.insert(key, value);
-                }
-            }
-            Ok(())
-        })
-    }
 }
 
 impl Clone for SilentPaymentPsbt {
@@ -615,4 +483,126 @@ impl Clone for SilentPaymentPsbt {
             inner: Arc::new(Mutex::new(psbt.clone())),
         }
     }
+}
+
+// ============================================================================
+// Raw PSBT field accessors — (exposed for test vector generation)
+// ============================================================================
+
+/// Add a raw key-value pair to the global map's `unknowns`.
+/// Writes directly to the unknowns BTreeMap, bypassing typed field validation.
+/// The serialized output is identical to typed fields with the same key type.
+pub fn add_raw_global_field(
+    psbt: Arc<SilentPaymentPsbt>,
+    type_value: u8,
+    key_data: Vec<u8>,
+    value: Vec<u8>,
+) -> Result<(), Bip375Error> {
+    psbt.with_inner(|p| {
+        let key = PsbtKey { type_value, key: key_data };
+        p.global.unknowns.insert(key, value);
+    });
+    Ok(())
+}
+
+/// Add a raw key-value pair to an input map.
+///
+/// For the two required PSBTv2 input fields (PREVIOUS_TXID=0x0e,
+/// OUTPUT_INDEX=0x0f), the value is set on the corresponding typed field
+/// to prevent duplicate keys during serialization. All other type_values
+/// go into the `unknowns` BTreeMap, which is correct for Optional/BTreeMap
+/// fields since their defaults (None/empty) don't serialize.
+pub fn add_raw_input_field(
+    psbt: Arc<SilentPaymentPsbt>,
+    input_index: u32,
+    type_value: u8,
+    key_data: Vec<u8>,
+    value: Vec<u8>,
+) -> Result<(), Bip375Error> {
+    psbt.with_inner(|p| {
+        let idx = input_index as usize;
+        if idx >= p.inputs.len() {
+            return Err(Bip375Error::InvalidData);
+        }
+        let input = &mut p.inputs[idx];
+        match type_value {
+            0x0e => {
+                // PSBT_IN_PREVIOUS_TXID: always serialized, must set typed field
+                use bitcoin::hashes::Hash;
+                let txid = bitcoin::Txid::from_slice(&value)
+                    .map_err(|_| Bip375Error::SerializationError)?;
+                input.previous_txid = txid;
+            }
+            0x0f => {
+                // PSBT_IN_OUTPUT_INDEX: always serialized, must set typed field
+                let bytes: [u8; 4] = value
+                    .try_into()
+                    .map_err(|_| Bip375Error::SerializationError)?;
+                input.spent_output_index = u32::from_le_bytes(bytes);
+            }
+            _ => {
+                let key = PsbtKey { type_value, key: key_data };
+                input.unknowns.insert(key, value);
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Remove all raw fields with the given type from an input map's `unknowns`.
+pub fn remove_raw_input_fields_by_type(
+    psbt: Arc<SilentPaymentPsbt>,
+    input_index: u32,
+    type_value: u8,
+) -> Result<(), Bip375Error> {
+    psbt.with_inner(|p| {
+        let idx = input_index as usize;
+        if idx >= p.inputs.len() {
+            return Err(Bip375Error::InvalidData);
+        }
+        p.inputs[idx].unknowns.retain(|k, _| k.type_value != type_value);
+        Ok(())
+    })
+}
+
+/// Add a raw key-value pair to an output map.
+///
+/// For known PSBTv2 typed fields (AMOUNT, SCRIPT), the value is dispatched
+/// to the corresponding typed field on the Output struct. This prevents
+/// duplicate keys during serialization. All other type_values go into
+/// the `unknowns` BTreeMap.
+pub fn add_raw_output_field(
+    psbt: Arc<SilentPaymentPsbt>,
+    output_index: u32,
+    type_value: u8,
+    key_data: Vec<u8>,
+    value: Vec<u8>,
+) -> Result<(), Bip375Error> {
+    psbt.with_inner(|p| {
+        let idx = output_index as usize;
+        if idx >= p.outputs.len() {
+            return Err(Bip375Error::InvalidData);
+        }
+        let output = &mut p.outputs[idx];
+        match type_value {
+            0x03 => {
+                // PSBT_OUT_AMOUNT
+                let bytes: [u8; 8] = value
+                    .try_into()
+                    .map_err(|_| Bip375Error::SerializationError)?;
+                output.amount = bitcoin::Amount::from_sat(u64::from_le_bytes(bytes));
+            }
+            0x04 => {
+                // PSBT_OUT_SCRIPT
+                output.script_pubkey = bitcoin::ScriptBuf::from(value);
+            }
+            // 0x09 => { /* PSBT_OUT_SP_V0_INFO: optional typed field, serializes when Some */ }
+            // 0x0a => { /* PSBT_OUT_SP_V0_LABEL: optional typed field, serializes when Some */ }
+            _ => {
+                let key = PsbtKey { type_value, key: key_data };
+                output.unknowns.insert(key, value);
+            }
+        }
+        Ok(())
+    })
 }

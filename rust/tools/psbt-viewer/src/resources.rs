@@ -11,7 +11,7 @@ pub fn load_test_vectors() -> Result<String, String> {
     }
 
     // Strategy 2: Use compile-time embedded version as fallback
-    const EMBEDDED_TEST_VECTORS: &str = include_str!("../../../../test_vectors.json");
+    const EMBEDDED_TEST_VECTORS: &str = include_str!("../../../../bip375_test_vectors.json");
     Ok(EMBEDDED_TEST_VECTORS.to_string())
 }
 
@@ -24,7 +24,7 @@ fn get_bundled_resource_path() -> Option<PathBuf> {
             // Example: /Applications/PSBT Viewer.app/Contents/MacOS/psbt-viewer
             // Resource path: /Applications/PSBT Viewer.app/Contents/Resources/test_vectors.json
             if let Some(contents_dir) = exe_path.parent()?.parent() {
-                let resource_path = contents_dir.join("Resources/test_vectors.json");
+                let resource_path = contents_dir.join("Resources/bip375_test_vectors.json");
                 if resource_path.exists() {
                     return Some(resource_path);
                 }
@@ -37,7 +37,7 @@ fn get_bundled_resource_path() -> Option<PathBuf> {
         // On Linux/Windows, check adjacent to binary
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
-                let resource_path = exe_dir.join("test_vectors.json");
+                let resource_path = exe_dir.join("bip375_test_vectors.json");
                 if resource_path.exists() {
                     return Some(resource_path);
                 }
@@ -52,7 +52,7 @@ fn get_bundled_resource_path() -> Option<PathBuf> {
 pub fn browse_for_test_vectors() -> Option<String> {
     let file = rfd::FileDialog::new()
         .add_filter("JSON", &["json"])
-        .set_title("Select test_vectors.json")
+        .set_title("Select bip375_test_vectors.json")
         .pick_file()?;
 
     fs::read_to_string(file).ok()

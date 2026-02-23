@@ -3,7 +3,6 @@ Basic tests for BIP-375 Python bindings.
 """
 
 import pytest
-import spdk_psbt
 
 from spdk_psbt import *
 
@@ -63,14 +62,18 @@ class TestCoreTypes:
         assert addr.scan_key == test_keys["scan_key"]
         assert addr.spend_key == test_keys["spend_key"]
 
-    # def test_silent_payment_address_with_label(self, test_keys):
-    #     """Test SilentPaymentOutputInfo with label."""
-    #     addr = SilentPaymentAddress(
-    #         scan_key=test_keys["scan_key"],
-    #         spend_key=test_keys["spend_key"],
-    #         label=42,
-    #     )
-    #     assert addr.label == 42
+    def test_silent_payment_address_with_label(self, test_keys):
+        """Test SilentPaymentOutputInfo with label."""
+        addr = SilentPaymentAddress(
+            scan_key=test_keys["scan_key"],
+            spend_key=test_keys["spend_key"],
+        )
+        sp_output = PsbtOutput.SILENT_PAYMENT(
+            amount=90000,
+            address=addr,
+            label=42,
+        )
+        assert sp_output.label == 42
 
     def test_ecdh_share(self, test_keys):
         """Test EcdhShare creation."""
@@ -160,31 +163,6 @@ class TestRoles:
         shares = sample_psbt.get_input_ecdh_shares(0)
         assert len(shares) > 0
         assert shares[0].dleq_proof is not None  # DLEQ proof should be included
-
-    # def test_aggregation(self, sample_psbt, test_keys):
-    #     """Test ECDH share aggregation."""
-    #     # First add ECDH shares
-    #     inputs = [
-    #         Utxo(
-    #             txid="a" * 64,
-    #             vout=0,
-    #             amount=100000,
-    #             script_pubkey=bytes.fromhex("0014") + bytes(20),
-    #             private_key=test_keys["privkey"],
-    #         )
-    #     ]
-
-    #     scan_keys = [test_keys["scan_key"]]
-    #     roles_add_ecdh_shares_full(sample_psbt, inputs, scan_keys, include_dleq=False)
-
-    #     # Aggregate
-    #     aggregated = aggregation.aggregate_ecdh_shares(sample_psbt)
-    #     assert len(aggregated.scan_keys()) > 0
-
-    #     # Get share point
-    #     share_point = aggregated.get_share_point(test_keys["scan_key"])
-    #     assert share_point is not None
-    #     assert isinstance(share_point, bytes)
 
 
 class TestFileIO:

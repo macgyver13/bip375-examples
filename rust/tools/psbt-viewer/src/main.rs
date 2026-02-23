@@ -170,8 +170,9 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    // Handle select-test-vector callback (populates import field)
+    // Handle select-test-vector callback (populates import field and auto-imports)
     let window_weak = window.as_weak();
+    let current_psbt_clone = current_psbt.clone();
     window.on_select_test_vector(move |index| {
         let window = window_weak.unwrap();
         let vectors = window.get_test_vectors();
@@ -179,9 +180,20 @@ fn main() -> Result<(), slint::PlatformError> {
         if index >= 0 && (index as usize) < vectors.row_count() {
             if let Some(vector) = vectors.row_data(index as usize) {
                 // Populate the import text field with selected PSBT
-                window.set_import_text(vector.psbt_base64);
+                window.set_import_text(vector.psbt_base64.clone());
                 window.set_selected_test_vector_index(index);
                 window.set_test_vector_status(format!("Selected: {}", vector.description).into());
+
+                // Auto-import the PSBT
+                match psbt_io::import_from_base64(&vector.psbt_base64) {
+                    Ok(psbt) => {
+                        display_psbt(&window, &psbt, &current_psbt_clone);
+                        window.set_status_message("PSBT imported successfully".into());
+                    }
+                    Err(e) => {
+                        window.set_status_message(format!("Import failed: {}", e).into());
+                    }
+                }
             }
         }
     });

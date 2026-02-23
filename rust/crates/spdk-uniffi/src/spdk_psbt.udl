@@ -34,6 +34,21 @@ namespace spdk_psbt {
 
   [Throws=Bip375Error]
   boolean dleq_verify_proof(bytes pubkey_a, bytes pubkey_b, bytes pubkey_c, bytes proof);
+
+  // ============================================================================
+  // Raw PSBT field access (for invalid test vector generation)
+  // ============================================================================
+  [Throws=Bip375Error]
+  void add_raw_global_field(SilentPaymentPsbt psbt, u8 type_value, bytes key_data, bytes value);
+
+  [Throws=Bip375Error]
+  void add_raw_input_field(SilentPaymentPsbt psbt, u32 input_index, u8 type_value, bytes key_data, bytes value);
+
+  [Throws=Bip375Error]
+  void remove_raw_input_fields_by_type(SilentPaymentPsbt psbt, u32 input_index, u8 type_value);
+
+  [Throws=Bip375Error]
+  void add_raw_output_field(SilentPaymentPsbt psbt, u32 output_index, u8 type_value, bytes key_data, bytes value);
 };
 
 [Error]
@@ -136,17 +151,4 @@ interface SilentPaymentPsbt {
   bytes extract_transaction();
 
   void set_tx_modifiable(u8 flags);
-
-  // Raw field manipulation (for test vector generation)
-  [Throws=Bip375Error]
-  void add_raw_global_field(u8 type_value, bytes key_data, bytes value);
-
-  [Throws=Bip375Error]
-  void remove_raw_input_fields_by_type(u32 input_index, u8 type_value);
-
-  [Throws=Bip375Error]
-  void add_raw_input_field(u32 input_index, u8 type_value, bytes key_data, bytes value);
-
-  [Throws=Bip375Error]
-  void add_raw_output_field(u32 output_index, u8 type_value, bytes key_data, bytes value);
 };

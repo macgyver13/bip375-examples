@@ -16,17 +16,6 @@ Demonstration for high-performance Python bindings for BIP-375 (Sending Silent P
 ### From source (development)
 
 ```bash
-# Install maturin
-pip install maturin
-
-# Build and install in development mode
-cd rust/crates/spdk-uniffi
-maturin develop
-```
-
-### From PyPI (when published)
-
-```bash
 cd rust/crates/spdk-uniffi
 pip install -e .
 ```
