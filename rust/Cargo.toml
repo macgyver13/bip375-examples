@@ -22,6 +22,7 @@ members = [
     "crates/spdk-uniffi",
     "examples/hardware-signer",
     "examples/multi-signer",
+    "examples/musig2-signer",
     "tools/psbt-viewer",
 ]
 
@@ -34,22 +35,19 @@ repository = "https://github.com/bitcoin/bips"
 
 [workspace.dependencies]
 bitcoin = "0.32.6"
+musig2 = { version = "0.3.1", features = ["secp256k1"] }
 secp256k1 = { version = "0.29", features = ["rand", "global-context", "serde"] }
-spdk-core = { git = "https://github.com/macgyver13/spdk.git", branch = "bip375-updates-rev2" }
-silentpayments = { git = "https://github.com/macgyver13/spdk.git", branch = "bip375-updates-rev2" }
-
-# Cryptography
-bitcoin_hashes = "0.13"
-hmac = "0.12"
 sha2 = "0.10"
-ripemd = "0.1"
+spdk-core = { path = "/Users/ron/src/spdk/spdk-core" }
+#spdk-core = { git = "https://github.com/macgyver13/spdk.git", branch = "bip375-updates-rev2" }
+silentpayments = { path = "/Users/ron/src/spdk/silentpayments" }
+#silentpayments = { git = "https://github.com/macgyver13/spdk.git", branch = "bip375-updates-rev2" }
 
 # Serialization
+base64 = "0.21"
+hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-hex = "0.4"
-base64 = "0.21"
-chrono = { version = "0.4", features = ["serde"] }
 
 # Error handling
 thiserror = "1.0"
