@@ -58,7 +58,14 @@ impl From<spdk_core::psbt::Error> for Bip375Error {
             // Signature and proof errors
             spdk_core::psbt::Error::InvalidSignature(_) => Bip375Error::InvalidProof,
             spdk_core::psbt::Error::DleqVerificationFailed(_) => Bip375Error::InvalidProof,
+            spdk_core::psbt::Error::InvalidDleqProof(_) => Bip375Error::InvalidProof,
             spdk_core::psbt::Error::InvalidEcdhShare(_) => Bip375Error::InvalidProof,
+            
+            // Musig2-specific errors
+            spdk_core::psbt::Error::MissingMusig2Nonces(_) => Bip375Error::SigningError,
+            spdk_core::psbt::Error::MissingMusig2PartialSigs(_) => Bip375Error::SigningError,
+            spdk_core::psbt::Error::Musig2(_) => Bip375Error::SigningError,
+            spdk_core::psbt::Error::PartialEcdhAggregationFailed => Bip375Error::SigningError,
 
             // PSBT operation errors
             spdk_core::psbt::Error::ExtractionFailed(_) => Bip375Error::PsbtError,

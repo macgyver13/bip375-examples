@@ -1,0 +1,31 @@
+[package]
+name = "musig2-signer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "musig2-signer"
+ 
+[features]
+default = ["gui"]
+gui = ["slint", "slint-build"]
+
+[[bin]]
+name = "musig2-signer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+bip375-helpers.workspace = true
+bitcoin.workspace = true
+hex.workspace = true
+musig2.workspace = true
+secp256k1.workspace = true
+silentpayments.workspace = true
+spdk-core.workspace = true
+ 
+# GUI framework
+slint = { version = "1.8", optional = true }
+
+[build-dependencies]
+slint-build = { version = "1.8", optional = true }
+
