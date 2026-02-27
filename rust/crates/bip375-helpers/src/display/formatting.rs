@@ -82,6 +82,8 @@ pub fn key_type_name(category: FieldCategory, key_type: u8) -> &'static str {
             0x1e => "PSBT_IN_SP_DLEQ",                   // BIP-375
             0x1f => "PSBT_IN_SP_SPEND_BIP32_DERIVATION", // BIP-376
             0x20 => "PSBT_IN_SP_TWEAK",                  // BIP-376
+            0x21 => "PSBT_IN_SP_PARTIAL_ECDH_SHARE",     // proposed BIP-psbt ext
+            0x22 => "PSBT_IN_SP_PARTIAL_DLEQ",           // proposed BIP-psbt ext
             _ => "PSBT_IN_UNKNOWN",
         },
         FieldCategory::Output => match key_type {
