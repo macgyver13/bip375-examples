@@ -59,6 +59,10 @@ hardware-demo:
 hardware-attack:
   cargo r -p hardware-signer -- --demo-flow --auto-read --auto-approve --attack
 
+[group('musig2')]
+musig2:
+    cargo r -p musig2-signer
+
 [group('uniffi')]
 uniffi: uniffi-setup uniffi-test uniffi-example
 

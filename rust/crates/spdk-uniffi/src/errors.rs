@@ -60,7 +60,7 @@ impl From<spdk_core::psbt::Error> for Bip375Error {
             spdk_core::psbt::Error::DleqVerificationFailed(_) => Bip375Error::InvalidProof,
             spdk_core::psbt::Error::InvalidDleqProof(_) => Bip375Error::InvalidProof,
             spdk_core::psbt::Error::InvalidEcdhShare(_) => Bip375Error::InvalidProof,
-            
+
             // Musig2-specific errors
             spdk_core::psbt::Error::MissingMusig2Nonces(_) => Bip375Error::SigningError,
             spdk_core::psbt::Error::MissingMusig2PartialSigs(_) => Bip375Error::SigningError,
