@@ -120,10 +120,7 @@ pub fn print_scenario_overview(inputs: &[PsbtInput], config: &TransactionConfig)
             input_type,
             input.witness_utxo.value.to_sat()
         );
-        println!(
-            "      TXID: {}",
-            format_txid_short(&input.outpoint.txid)
-        );
+        println!("      TXID: {}", format_txid_short(&input.outpoint.txid));
         println!("      VOUT: {}", input.outpoint.vout);
     }
 

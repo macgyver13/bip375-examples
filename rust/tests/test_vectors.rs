@@ -34,10 +34,10 @@ struct TestVectors {
 struct TestVector {
     description: String,
     psbt: String, // Base64-encoded PSBT
-    input_keys: Vec<InputKey>,
-    scan_keys: Vec<ScanKey>,
-    expected_ecdh_shares: Vec<EcdhShare>,
-    expected_outputs: Vec<ExpectedOutput>,
+    input_keys: Option<Vec<InputKey>>,
+    scan_keys: Option<Vec<ScanKey>>,
+    expected_ecdh_shares: Option<Vec<EcdhShare>>,
+    expected_outputs: Option<Vec<ExpectedOutput>>,
 }
 
 /// Input key information
@@ -99,10 +99,7 @@ fn test_invalid_vectors() {
     let vectors = load_test_vectors();
     let secp = Secp256k1::new();
 
-    println!(
-        "\nInvalid test cases: {}",
-        vectors.invalid.len()
-    );
+    println!("\nInvalid test cases: {}", vectors.invalid.len());
 
     for vector in vectors.invalid.iter() {
         println!("{}", vector.description);

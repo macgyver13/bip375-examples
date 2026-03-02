@@ -499,7 +499,10 @@ pub fn add_raw_global_field(
     value: Vec<u8>,
 ) -> Result<(), Bip375Error> {
     psbt.with_inner(|p| {
-        let key = PsbtKey { type_value, key: key_data };
+        let key = PsbtKey {
+            type_value,
+            key: key_data,
+        };
         p.global.unknowns.insert(key, value);
     });
     Ok(())
@@ -541,7 +544,10 @@ pub fn add_raw_input_field(
                 input.spent_output_index = u32::from_le_bytes(bytes);
             }
             _ => {
-                let key = PsbtKey { type_value, key: key_data };
+                let key = PsbtKey {
+                    type_value,
+                    key: key_data,
+                };
                 input.unknowns.insert(key, value);
             }
         }
@@ -560,7 +566,9 @@ pub fn remove_raw_input_fields_by_type(
         if idx >= p.inputs.len() {
             return Err(Bip375Error::InvalidData);
         }
-        p.inputs[idx].unknowns.retain(|k, _| k.type_value != type_value);
+        p.inputs[idx]
+            .unknowns
+            .retain(|k, _| k.type_value != type_value);
         Ok(())
     })
 }
@@ -599,7 +607,10 @@ pub fn add_raw_output_field(
             // 0x09 => { /* PSBT_OUT_SP_V0_INFO: optional typed field, serializes when Some */ }
             // 0x0a => { /* PSBT_OUT_SP_V0_LABEL: optional typed field, serializes when Some */ }
             _ => {
-                let key = PsbtKey { type_value, key: key_data };
+                let key = PsbtKey {
+                    type_value,
+                    key: key_data,
+                };
                 output.unknowns.insert(key, value);
             }
         }

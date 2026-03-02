@@ -136,10 +136,7 @@ pub fn display_transaction_summary_with_dnssec(
     println!("  Inputs:");
     for (i, input) in inputs.iter().enumerate() {
         println!("   Input {}: {} sats", i, input.witness_utxo.value.to_sat());
-        println!(
-            "      TXID: {}",
-            format_txid_short(&input.outpoint.txid)
-        );
+        println!("      TXID: {}", format_txid_short(&input.outpoint.txid));
         println!("      VOUT: {}", input.outpoint.vout);
         println!(
             "      Type: {}",
@@ -360,7 +357,10 @@ pub async fn create_dnssec_proof_async(
 /// In production wallets, handle errors appropriately.
 pub fn create_dnssec_proof(dns_name: &str) -> Vec<u8> {
     // Try to create real DNSSEC proof using Google's public DNS (8.8.8.8)
-    let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .expect("Failed to create Tokio runtime");
 
     match runtime.block_on(create_dnssec_proof_async(dns_name, "8.8.8.8:53")) {
         Ok(proof) => {
