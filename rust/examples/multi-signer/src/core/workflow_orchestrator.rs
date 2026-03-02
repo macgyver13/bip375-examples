@@ -202,10 +202,7 @@ impl WorkflowOrchestrator {
     ///
     /// Only callable after SP output scripts are computed (OutputScriptsComputed
     /// or PartialSigned state).
-    pub fn execute_sign_for_party(
-        state: &mut AppState,
-        party_name: &str,
-    ) -> Result<(), String> {
+    pub fn execute_sign_for_party(state: &mut AppState, party_name: &str) -> Result<(), String> {
         let config = state.multi_config.clone();
 
         let party = config
@@ -253,7 +250,10 @@ impl WorkflowOrchestrator {
 
         let tx = workflow_actions::validate_and_extract(&mut psbt, &secp)?;
 
-        println!("Transaction validated and ready to broadcast:\n{}", serialize_hex(&tx));
+        println!(
+            "Transaction validated and ready to broadcast:\n{}",
+            serialize_hex(&tx)
+        );
 
         workflow_actions::save_psbt_with_metadata(&psbt, "Transaction Extracted")?;
 
@@ -279,7 +279,10 @@ impl WorkflowOrchestrator {
         matches!(
             state.workflow_state,
             WorkflowState::OutputScriptsComputed | WorkflowState::PartialSigned(_)
-        ) && !state.signing_progress.parties_completed.contains(party_name)
+        ) && !state
+            .signing_progress
+            .parties_completed
+            .contains(party_name)
             && state
                 .multi_config
                 .parties

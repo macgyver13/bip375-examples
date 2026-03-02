@@ -462,7 +462,8 @@ impl HardwareDevice {
                     .values()
                     .any(|(fp, _)| fp.to_bytes() == hw_master_fingerprint);
 
-            let has_our_derivation = has_sp_derivation || has_tap_derivation || has_legacy_derivation;
+            let has_our_derivation =
+                has_sp_derivation || has_tap_derivation || has_legacy_derivation;
 
             if has_our_derivation {
                 hw_controlled_inputs.push(input_idx);

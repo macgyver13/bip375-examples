@@ -64,10 +64,7 @@ fn display_status(state: &AppState) {
     if state.ecdh_progress.total_inputs > 0 {
         println!("\nECDH Phase:");
         for party in &state.multi_config.parties {
-            let completed = state
-                .ecdh_progress
-                .parties_completed
-                .contains(&party.name);
+            let completed = state.ecdh_progress.parties_completed.contains(&party.name);
             let symbol = if completed { "✓" } else { "⧗" };
             println!(
                 "  {} {} ECDH {}",

@@ -6,8 +6,8 @@ mod errors;
 mod types;
 
 // Re-export public types
-pub use types::*;
 pub use errors::*;
+pub use types::*;
 
 // Re-export crypto functions for UniFFI
 pub use crypto::{
