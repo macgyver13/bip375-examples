@@ -10,10 +10,14 @@
 use crate::shared_utils::*;
 use bip375_helpers::PSBT_OUT_DNSSEC_PROOF;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
+use bitcoin::taproot::TapTweakHash;
 use bitcoin::{OutPoint, Sequence};
-use secp256k1::{PublicKey, Secp256k1};
-use spdk_core::psbt::crypto::{internal_key_to_p2tr_script, pubkey_to_p2wpkh_script};
+use secp256k1::{Parity, PublicKey, Secp256k1};
+use spdk_core::psbt::crypto::{
+    apply_tweak_to_privkey, internal_key_to_p2tr_script, pubkey_to_p2wpkh_script,
+};
 use spdk_core::psbt::io::PsbtMetadata;
+use spdk_core::psbt::roles::input_finalizer::finalize_sp_outputs;
 use spdk_core::psbt::roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, SilentPaymentPsbt};
 use std::io::{self, Write};
@@ -523,8 +527,29 @@ impl HardwareDevice {
                         continue; // Unsupported script type
                     };
 
+                    // If the candidate script matches the UTXO's scriptPubKey, we found the right key
                     if candidate_script == witness_utxo.script_pubkey {
-                        inputs[input_idx].private_key = Some(candidate_privkey);
+                        // BIP-352: for P2TR inputs, use the tweaked taproot output private key for ECDH, not the internal key.
+                        let privkey = if witness_utxo.script_pubkey.is_p2tr() {
+                            let (xonly, _) = candidate_pubkey.x_only_public_key();
+                            let tweak = TapTweakHash::from_key_and_tweak(xonly, None)
+                                .to_scalar()
+                                .to_be_bytes();
+                            let tweaked_sk =
+                                apply_tweak_to_privkey(&candidate_privkey, &tweak)
+                                    .map_err(|e| format!("BIP-341 tweak failed: {}", e))?;
+                            let (_, parity) =
+                                PublicKey::from_secret_key(&secp, &tweaked_sk)
+                                    .x_only_public_key();
+                            if parity == Parity::Odd {
+                                tweaked_sk.negate()
+                            } else {
+                                tweaked_sk
+                            }
+                        } else {
+                            candidate_privkey
+                        };
+                        inputs[input_idx].private_key = Some(privkey);
                         found_key = true;
                         break;
                     }
@@ -555,6 +580,7 @@ impl HardwareDevice {
         } else {
             println!("   Computing ECDH shares...");
             println!("   Generating DLEQ proofs...");
+            println!("   Deriving silent payment output scripts...");
             println!("   Signing inputs...\n");
         }
 
@@ -567,6 +593,18 @@ impl HardwareDevice {
             &hw_controlled_inputs,
             true, // generate DLEQ proofs
         )?;
+
+        // Finalize SP output scripts before signing so the sighash commits to the
+        // correct output scripts. sign_inputs() builds the transaction from the PSBT,
+        // and SP outputs must have script_pubkey set at that point.
+        //
+        // In attack mode this will fail because ECDH shares were only computed for the
+        // attacker's scan key — the legitimate recipient output has no coverage. Skip
+        // finalization so the coordinator receives the PSBT with wrong DLEQ proofs and
+        // detects the attack via scan key mismatch rather than a local crash.
+        if !attack_mode {
+            finalize_sp_outputs(&secp, &mut psbt)?;
+        }
 
         // Sign all inputs (automatically detects P2PKH, P2WPKH, P2TR, and Silent Payments)
         sign_inputs(&secp, &mut psbt, &inputs)?;
