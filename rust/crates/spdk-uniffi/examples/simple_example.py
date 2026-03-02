@@ -116,7 +116,7 @@ def main():
     print("-" * 50)
 
     # Finalize (compute output scripts from silent payment addresses)
-    psbt.finalize_inputs()
+    psbt.finalize_sp_outputs()
     print("✓ PSBT finalized (output scripts computed)")
 
     # Check output script was computed
