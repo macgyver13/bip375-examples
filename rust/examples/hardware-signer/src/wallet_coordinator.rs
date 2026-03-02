@@ -16,7 +16,6 @@ use spdk_core::psbt::roles::{
     constructor::{add_inputs, add_outputs},
     creator::create_psbt,
     extractor::extract_transaction,
-    input_finalizer::finalize_sp_outputs,
     input_witness_finalizer::finalize_input_witnesses,
     validation::{validate_psbt, ValidationLevel},
 };
@@ -342,14 +341,14 @@ impl WalletCoordinator {
         println!("  ALL VALIDATION CHECKS PASSED");
         println!("{}\n", "=".repeat(60));
 
-        // Finalize inputs to compute output scripts
-        println!("\n INPUT FINALIZER: Computing silent payment output scripts...");
-        finalize_sp_outputs(&secp, &mut psbt)?;
-        println!("     Silent payment output scripts computed\n");
+        // INPUT WITNESS FINALIZER: populate PSBT_IN_FINAL_SCRIPTWITNESS
+        println!("\n  INPUT WITNESS FINALIZER: Finalizing input witnesses...");
+        finalize_input_witnesses(&mut psbt)?;
+        println!("     PSBT_IN_FINAL_SCRIPTWITNESS written for all inputs\n");
 
-        // Save the finalized PSBT (with output scripts computed)
+        // Save finalized PSBT (with PSBT_IN_FINAL_SCRIPTWITNESS set)
         let finalized_metadata = PsbtMetadata {
-            description: Some("Finalized PSBT with computed output scripts".to_string()),
+            description: Some("Finalized PSBT with PSBT_IN_FINAL_SCRIPTWITNESS".to_string()),
             creator: Some("wallet_coordinator".to_string()),
             modified_at: Some(timestamp_now()),
             ..Default::default()
@@ -359,7 +358,6 @@ impl WalletCoordinator {
         // Extract transaction
         println!("  EXTRACTOR: Extracting final transaction...");
 
-        finalize_input_witnesses(&mut psbt)?;
         let final_tx = extract_transaction(&mut psbt)?;
         let tx_bytes = bitcoin::consensus::serialize(&final_tx);
 
