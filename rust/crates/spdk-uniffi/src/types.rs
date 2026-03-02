@@ -447,9 +447,14 @@ impl SilentPaymentPsbt {
         Ok(())
     }
 
-    pub fn finalize_inputs(&self) -> Result<(), Bip375Error> {
+    pub fn finalize_sp_outputs(&self) -> Result<(), Bip375Error> {
         let secp = secp256k1::Secp256k1::new();
-        self.with_inner(|p| psbt::roles::input_finalizer::finalize_inputs(&secp, p))?;
+        self.with_inner(|p| psbt::roles::input_finalizer::finalize_sp_outputs(&secp, p))?;
+        Ok(())
+    }
+
+    pub fn finalize_input_witnesses(&self) -> Result<(), Bip375Error> {
+        self.with_inner(|p| psbt::roles::input_witness_finalizer::finalize_input_witnesses(p))?;
         Ok(())
     }
 

@@ -16,7 +16,8 @@ use spdk_core::psbt::roles::{
     constructor::{add_inputs, add_outputs},
     creator::create_psbt,
     extractor::extract_transaction,
-    input_finalizer::finalize_inputs,
+    input_finalizer::finalize_sp_outputs,
+    input_witness_finalizer::finalize_input_witnesses,
     validation::{validate_psbt, ValidationLevel},
 };
 use spdk_core::psbt::{io::PsbtMetadata, Bip375PsbtExt, PsbtOutput};
@@ -343,7 +344,7 @@ impl WalletCoordinator {
 
         // Finalize inputs to compute output scripts
         println!("\n INPUT FINALIZER: Computing silent payment output scripts...");
-        finalize_inputs(&secp, &mut psbt)?;
+        finalize_sp_outputs(&secp, &mut psbt)?;
         println!("     Silent payment output scripts computed\n");
 
         // Save the finalized PSBT (with output scripts computed)
@@ -358,6 +359,7 @@ impl WalletCoordinator {
         // Extract transaction
         println!("  EXTRACTOR: Extracting final transaction...");
 
+        finalize_input_witnesses(&mut psbt)?;
         let final_tx = extract_transaction(&mut psbt)?;
         let tx_bytes = bitcoin::consensus::serialize(&final_tx);
 

@@ -11,7 +11,8 @@ use spdk_core::psbt::roles::{
     constructor::{add_inputs, add_outputs},
     creator::create_psbt,
     extractor::extract_transaction,
-    input_finalizer::finalize_inputs,
+    input_finalizer::finalize_sp_outputs,
+    input_witness_finalizer::finalize_input_witnesses,
     signer::{add_ecdh_shares_partial, sign_inputs},
     updater::{add_input_bip32_derivation, Bip32Derivation},
     validation::{self, ValidationLevel},
@@ -123,7 +124,7 @@ pub fn compute_output_scripts(
     psbt: &mut SilentPaymentPsbt,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<(), String> {
-    finalize_inputs(secp, psbt).map_err(|e| format!("Failed to compute output scripts: {}", e))
+    finalize_sp_outputs(secp, psbt).map_err(|e| format!("Failed to compute output scripts: {}", e))
 }
 
 /// Sign inputs for a party. Must only be called after all SP output scripts are set.
@@ -177,6 +178,8 @@ pub fn validate_and_extract(
 ) -> Result<Transaction, String> {
     validation::validate_psbt(secp, psbt, ValidationLevel::Full)
         .map_err(|e| format!("Final validation failed: {}", e))?;
+
+    finalize_input_witnesses(psbt).map_err(|e| format!("Finalization failed: {}", e))?;
 
     let tx = extract_transaction(psbt).map_err(|e| format!("Extraction failed: {}", e))?;
 

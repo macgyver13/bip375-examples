@@ -16,15 +16,13 @@ path = "src/main.rs"
 [dependencies]
 bip375-helpers.workspace = true
 bitcoin.workspace = true
+hex.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-hex.workspace = true
 sha2.workspace = true
 silentpayments.workspace = true
 spdk-core.workspace = true
-ripemd.workspace = true
-chrono.workspace = true
 
 # GUI framework
 slint = { version = "1.8", optional = true }
