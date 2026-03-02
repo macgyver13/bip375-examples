@@ -20,17 +20,15 @@ required-features = ["gui"]
 
 [dependencies]
 bip375-helpers.workspace = true
+bip39 = "2.0"
 bitcoin.workspace = true
+hex.workspace = true
 secp256k1.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-hex.workspace = true
 sha2.workspace = true
 silentpayments.workspace = true
 spdk-core.workspace = true
-ripemd.workspace = true
-chrono.workspace = true
-bip39 = "2.0"
 
 # BIP-353 support
 dnssec-prover.workspace = true

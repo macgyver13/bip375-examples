@@ -145,7 +145,10 @@ interface SilentPaymentPsbt {
   void sign_inputs(sequence<Utxo> inputs);
 
   [Throws=Bip375Error]
-  void finalize_inputs();
+  void finalize_sp_outputs();
+
+  [Throws=Bip375Error]
+  void finalize_input_witnesses();
 
   [Throws=Bip375Error]
   bytes extract_transaction();
