@@ -99,10 +99,7 @@ fn test_invalid_vectors() {
     let vectors = load_test_vectors();
     let secp = Secp256k1::new();
 
-    println!(
-        "\nInvalid test cases: {}",
-        vectors.invalid.len()
-    );
+    println!("\nInvalid test cases: {}", vectors.invalid.len());
 
     for vector in vectors.invalid.iter() {
         println!("{}", vector.description);

@@ -33,7 +33,6 @@ chrono.workspace = true
 bip39 = "2.0"
 
 # BIP-353 support
-bip353-rs.workspace = true
 dnssec-prover.workspace = true
 tokio.workspace = true
 
