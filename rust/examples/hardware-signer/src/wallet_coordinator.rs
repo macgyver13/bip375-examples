@@ -11,6 +11,7 @@ use crate::shared_utils::TweakDatabase;
 use crate::shared_utils::*;
 use bip375_helpers::HrnPsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
+use hex;
 use secp256k1::Secp256k1;
 use spdk_core::psbt::roles::{
     constructor::{add_inputs, add_outputs},
@@ -248,10 +249,12 @@ impl WalletCoordinator {
         let inputs = create_transaction_inputs(config, &virtual_wallet);
         let outputs = create_transaction_outputs(config, &hw_wallet);
 
-        // Collect expected scan keys
+        // Collect expected scan keys and spend keys
         let hw_scan_key = hw_wallet.scan_key_pair().1;
+        let (hw_scan_pub, hw_spend_pub) = hw_wallet.scan_spend_keys();
         let recipient_address = get_recipient_address();
         let recipient_scan_key = recipient_address.get_scan_key();
+        let recipient_spend_key = recipient_address.get_spend_key();
 
         let expected_scan_keys: HashSet<Vec<u8>> = [
             hw_scan_key.serialize().to_vec(),
@@ -276,19 +279,67 @@ impl WalletCoordinator {
             found_scan_keys.insert(scan_key_compressed.to_bytes().to_vec());
         }
 
-        // ATTACK DETECTION: Check for unexpected scan keys
+        // DIAGNOSTIC: Log unexpected scan keys (non-fatal; full validation catches the mismatch)
         let unexpected_keys: Vec<_> = found_scan_keys.difference(&expected_scan_keys).collect();
+        if !unexpected_keys.is_empty() {
+            println!("  WARNING: DLEQ proofs contain unexpected scan keys:");
+            for key in &unexpected_keys {
+                println!("   Unexpected key: {}", hex::encode(key));
+            }
+            println!("   Hardware device may have used an attacker's scan key.");
+            println!("   Full validation will confirm whether this is an attack.\n");
+        }
 
-        // if !unexpected_keys.is_empty() {
-        //     println!("🚨 ATTACK DETECTED: DLEQ proofs for unexpected scan keys!");
-        //     for key in &unexpected_keys {
-        //         println!("   Unexpected key: {}", hex::encode(key));
-        //     }
-        //     println!("\n⚠️  CRITICAL: Hardware device used attacker's scan key!");
-        //     println!("   Hardware computed ECDH shares with incorrect scan key");
-        //     println!("   This indicates firmware corruption or malicious modification\n");
-        //     return Err("Attack detected: unexpected scan keys in DLEQ proofs".into());
-        // }
+        // SP FIELD INTEGRITY CHECK
+        // Verify that every expected SP output still has sp_v0_info present and
+        // contains the expected (scan_key, spend_key) pair.  This catches:
+        //   - Attack 3: spend key substituted in sp_v0_info
+        //   - Attack 4: sp_v0_info stripped entirely
+        println!("  Verifying SP field integrity for all outputs...");
+
+        // Expected per-output (scan_key, spend_key): output 0 = change, output 1 = recipient
+        let expected_sp_info: &[(secp256k1::PublicKey, secp256k1::PublicKey)] = &[
+            (hw_scan_pub, hw_spend_pub),
+            (recipient_scan_key, recipient_spend_key),
+        ];
+
+        for (output_idx, (expected_scan, expected_spend)) in expected_sp_info.iter().enumerate() {
+            match psbt.get_output_sp_info(output_idx) {
+                None => {
+                    return Err(format!(
+                        "Attack detected: sp_v0_info missing on output {} (BIP-375 fields stripped)",
+                        output_idx
+                    ).into());
+                }
+                Some((actual_scan, actual_spend)) => {
+                    if actual_scan.serialize() != expected_scan.serialize() {
+                        return Err(format!(
+                            "Attack detected: scan key mismatch on output {} \
+                             (expected {}, got {})",
+                            output_idx,
+                            hex::encode(expected_scan.serialize()),
+                            hex::encode(actual_scan.serialize()),
+                        )
+                        .into());
+                    }
+                    if actual_spend.serialize() != expected_spend.serialize() {
+                        return Err(format!(
+                            "Attack detected: spend key mismatch on output {} \
+                             (expected {}, got {})",
+                            output_idx,
+                            hex::encode(expected_spend.serialize()),
+                            hex::encode(actual_spend.serialize()),
+                        )
+                        .into());
+                    }
+                    println!(
+                        "     PASSED: Output {} sp_v0_info intact (scan + spend keys verified)",
+                        output_idx
+                    );
+                }
+            }
+        }
+        println!();
 
         // Run full validation (includes DLEQ proofs, ECDH coverage, signatures, etc.)
         println!("  Running comprehensive validation...");
