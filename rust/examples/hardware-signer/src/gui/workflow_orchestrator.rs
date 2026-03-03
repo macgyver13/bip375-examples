@@ -49,7 +49,7 @@ impl WorkflowOrchestrator {
             &state.tx_config,
             true,
             true,
-            state.attack_mode,
+            state.attack_variant,
             state.mnemonic.as_deref(),
         )
         .map_err(|e| format!("Failed to sign PSBT: {}", e))?;

@@ -124,6 +124,8 @@ def main():
     if output_script:
         print(f"  - Output 0 script: {output_script.hex()[:32]}...")
 
+    psbt.finalize_input_witnesses()
+
     print("\nExtracting transaction")
     print("-" * 50)
 

@@ -6,6 +6,7 @@
 pub mod app_state;
 pub mod workflow_orchestrator;
 
+use crate::attack_mode::AttackVariant;
 use app_state::*;
 use bip375_helpers::wallet::{TransactionConfig, VirtualWallet};
 use slint::Model;
@@ -28,8 +29,8 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
     };
     window.set_workflow_state(state_str.into());
 
-    // Update attack mode
-    window.set_attack_mode(state.attack_mode);
+    // Update attack variant index
+    window.set_attack_variant_index(attack_variant_to_index(state.attack_variant));
 
     // Update PSBT fields
     if let Some(psbt) = &state.current_psbt {
@@ -143,6 +144,26 @@ fn format_config_summary(config: &TransactionConfig, wallet: &VirtualWallet) -> 
     summary
 }
 
+fn attack_variant_to_index(v: AttackVariant) -> i32 {
+    match v {
+        AttackVariant::None => 0,
+        AttackVariant::MitmWrongSignature => 1,
+        AttackVariant::WrongScanKey => 2,
+        AttackVariant::SubstituteSpendKey => 3,
+        AttackVariant::StripSpFields => 4,
+    }
+}
+
+fn index_to_attack_variant(i: i32) -> AttackVariant {
+    match i {
+        1 => AttackVariant::MitmWrongSignature,
+        2 => AttackVariant::WrongScanKey,
+        3 => AttackVariant::SubstituteSpendKey,
+        4 => AttackVariant::StripSpFields,
+        _ => AttackVariant::None,
+    }
+}
+
 /// Run the GUI application
 #[allow(dead_code)]
 pub fn run_gui(mnemonic: Option<String>) -> Result<(), slint::PlatformError> {
@@ -183,9 +204,9 @@ pub fn run_gui(mnemonic: Option<String>) -> Result<(), slint::PlatformError> {
             let state_rc = state_rc.clone();
             move || {
                 let mut state = state_rc.borrow_mut();
-                // Read attack-mode directly from the window property
+                // Read attack-variant-index directly from the window property
                 if let Some(w) = window_weak.upgrade() {
-                    state.attack_mode = w.get_attack_mode();
+                    state.attack_variant = index_to_attack_variant(w.get_attack_variant_index());
                 }
                 if let Err(e) = WorkflowOrchestrator::execute_sign_psbt(&mut state) {
                     eprintln!("Error signing PSBT: {}", e);

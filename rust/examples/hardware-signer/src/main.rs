@@ -9,6 +9,7 @@ mod hw_device;
 mod shared_utils;
 mod wallet_coordinator;
 
+use attack_mode::AttackVariant;
 use bip375_helpers::wallet::{types::InteractiveConfig, TransactionConfig, VirtualWallet};
 use hw_device::HardwareDevice;
 use std::io::{self, Write};
@@ -44,9 +45,21 @@ fn main() {
     // Parse CLI flags
     let auto_read = args.contains(&"--auto-read".to_string());
     let auto_approve = args.contains(&"--auto-approve".to_string());
-    let attack_mode = args.contains(&"--attack".to_string());
     let demo_flow = args.contains(&"--demo-flow".to_string());
     let interactive_config = args.contains(&"--interactive-config".to_string());
+
+    // Determine attack variant (last flag wins; --attack is backward-compat alias for WrongScanKey)
+    let attack_mode = if args.contains(&"--attack-signature".to_string()) {
+        AttackVariant::MitmWrongSignature
+    } else if args.contains(&"--attack-spend-key".to_string()) {
+        AttackVariant::SubstituteSpendKey
+    } else if args.contains(&"--attack-strip".to_string()) {
+        AttackVariant::StripSpFields
+    } else if args.contains(&"--attack".to_string()) {
+        AttackVariant::WrongScanKey
+    } else {
+        AttackVariant::None
+    };
 
     if demo_flow {
         run_automated_demo(
@@ -105,7 +118,10 @@ fn display_help() {
     println!("    --demo-flow             Run automated demo flow");
     println!("    --auto-read             Auto-confirm PSBT transfers");
     println!("    --auto-approve          Auto-approve transactions");
-    println!("    --attack                Run attack simulation mode");
+    println!("    --attack                Attack 2: wrong scan key");
+    println!("    --attack-signature      Attack 1: redirect output + sign with attacker key");
+    println!("    --attack-spend-key      Attack 3: correct scan key, attacker spend key");
+    println!("    --attack-strip          Attack 4: strip all BIP-375 fields");
     println!("    --interactive-config    Interactively configure UTXOs\n");
     println!("UTXO SELECTION:");
     println!("    --utxos <ids>           Comma-separated UTXO IDs (e.g., 1,2,3)");
@@ -143,7 +159,7 @@ fn display_help() {
 fn run_automated_demo(
     _auto_read: bool,
     _auto_approve: bool,
-    attack_mode: bool,
+    attack: AttackVariant,
     interactive_config: bool,
     mnemonic: Option<String>,
 ) {
@@ -154,7 +170,7 @@ fn run_automated_demo(
         match get_interactive_config() {
             Ok(cfg) => cfg,
             Err(e) => {
-                eprintln!("❌ Configuration error: {}", e);
+                eprintln!("Configuration error: {}", e);
                 return;
             }
         }
@@ -163,16 +179,17 @@ fn run_automated_demo(
         TransactionConfig::from_args(&args, TransactionConfig::hardware_wallet_auto())
     };
 
-    if attack_mode {
-        println!("Running ATTACK SIMULATION mode\n");
-        if let Err(e) = run_attack_simulation_with_config(&config, true, true, mnemonic.as_deref())
+    if attack.is_active() {
+        println!("Running ATTACK SIMULATION mode: {:?}\n", attack);
+        if let Err(e) =
+            run_attack_simulation_with_config(&config, true, true, attack, mnemonic.as_deref())
         {
-            eprintln!("❌ Attack simulation failed: {}", e);
+            eprintln!("Attack simulation failed: {}", e);
         }
     } else {
         println!("Running NORMAL mode\n");
         if let Err(e) = run_normal_flow_with_config(&config, true, true, mnemonic.as_deref()) {
-            eprintln!("❌ Normal flow failed: {}", e);
+            eprintln!("Normal flow failed: {}", e);
         }
     }
 }
@@ -190,7 +207,13 @@ fn run_normal_flow_with_config(
     WalletCoordinator::create_psbt(config, true, mnemonic)?;
 
     // Step 2: Sign on hardware device
-    HardwareDevice::sign_workflow(config, auto_read, auto_approve, false, mnemonic)?;
+    HardwareDevice::sign_workflow(
+        config,
+        auto_read,
+        auto_approve,
+        AttackVariant::None,
+        mnemonic,
+    )?;
 
     // Step 3: Finalize
     WalletCoordinator::finalize_transaction(config, auto_read, mnemonic)?;
@@ -204,15 +227,16 @@ fn run_attack_simulation_with_config(
     config: &TransactionConfig,
     auto_read: bool,
     auto_approve: bool,
+    attack: AttackVariant,
     mnemonic: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== ATTACK SIMULATION ===\n");
+    println!("=== ATTACK SIMULATION: {:?} ===\n", attack);
 
     // Step 1: Create PSBT
     WalletCoordinator::create_psbt(config, true, mnemonic)?;
 
-    // Step 2: Sign with ATTACK MODE
-    HardwareDevice::sign_workflow(config, auto_read, auto_approve, true, mnemonic)?;
+    // Step 2: Sign with chosen attack variant
+    HardwareDevice::sign_workflow(config, auto_read, auto_approve, attack, mnemonic)?;
 
     // Step 3: Finalize (should fail with attack detection)
     println!("\n Coordinator will now verify DLEQ proofs...\n");
@@ -236,7 +260,7 @@ fn run_attack_simulation_with_config(
 fn run_interactive_menu(
     auto_read: bool,
     auto_approve: bool,
-    attack_mode: bool,
+    attack: AttackVariant,
     _interactive_config: bool,
     mnemonic: Option<String>,
 ) {
@@ -295,7 +319,7 @@ fn run_interactive_menu(
                         &config,
                         auto_read,
                         auto_approve,
-                        attack_mode,
+                        attack,
                         mnemonic.as_deref(),
                     ) {
                         Ok(_) => {
@@ -358,6 +382,11 @@ fn run_interactive_menu(
                         &config,
                         auto_read,
                         auto_approve,
+                        if attack.is_active() {
+                            attack
+                        } else {
+                            AttackVariant::WrongScanKey
+                        },
                         mnemonic.as_deref(),
                     ) {
                         eprintln!("\n❌ Attack simulation error: {}\n", e);

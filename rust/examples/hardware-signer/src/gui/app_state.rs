@@ -6,6 +6,8 @@ use bip375_helpers::wallet::TransactionConfig;
 use spdk_core::psbt::SilentPaymentPsbt;
 use std::collections::HashSet;
 
+use crate::attack_mode::AttackVariant;
+
 // Re-export types from gui-common for convenience
 pub use bip375_helpers::display::field_identifier::{FieldIdentifier, TransactionSummary};
 
@@ -21,8 +23,8 @@ pub struct AppState {
     /// Which fields were added in the last operation
     pub highlighted_fields: HashSet<FieldIdentifier>,
 
-    /// Attack mode toggle
-    pub attack_mode: bool,
+    /// Attack variant selection
+    pub attack_variant: AttackVariant,
 
     /// Validation results
     pub validation_results: Option<ValidationResults>,
@@ -43,7 +45,7 @@ impl Default for AppState {
             workflow_state: WorkflowState::Ready,
             current_psbt: None,
             highlighted_fields: HashSet::new(),
-            attack_mode: false,
+            attack_variant: AttackVariant::None,
             validation_results: None,
             transaction_summary: None,
             tx_config: TransactionConfig::hardware_wallet_auto(),
