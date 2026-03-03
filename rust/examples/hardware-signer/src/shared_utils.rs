@@ -46,6 +46,11 @@ pub fn get_attacker_address() -> SilentPaymentAddress {
         .expect("Failed to create attacker address")
 }
 
+/// Get the attacker's wallet (for attack simulation — spend private key access)
+pub fn get_attacker_wallet() -> SimpleWallet {
+    SimpleWallet::new(ATTACKER_SEED)
+}
+
 /// Get the virtual wallet with pre-configured UTXOs
 pub fn get_virtual_wallet(mnemonic: Option<&str>) -> Result<VirtualWallet, String> {
     VirtualWallet::hardware_wallet_default(mnemonic)

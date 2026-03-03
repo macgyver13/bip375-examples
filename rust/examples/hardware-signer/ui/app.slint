@@ -1,7 +1,7 @@
 // BIP-375 Hardware Signer GUI
 // Main application window
 
-import { Button, VerticalBox, HorizontalBox, ScrollView, CheckBox, TextEdit, Palette } from "std-widgets.slint";
+import { Button, VerticalBox, HorizontalBox, ScrollView, ComboBox, TextEdit, Palette } from "std-widgets.slint";
 import { UtxoSelectorDialog, UtxoData, TxConfig } from "utxo_selector.slint";
 
 // Re-export types from utxo_selector so they're available in Rust
@@ -107,7 +107,7 @@ export component AppWindow inherits Window {
 
     // Properties
     in-out property <string> workflow-state: "Ready";
-    in-out property <bool> attack-mode: false;
+    in-out property <int> attack-variant-index: 0;
     in-out property <bool> has-psbt: false;
 
     // PSBT fields (passed from Rust)
@@ -165,8 +165,8 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: attack-mode ? "🚨 ATTACK MODE" : "NORMAL MODE";
-                    color: attack-mode ? #e63333 : #33cc33;
+                    text: attack-variant-index == 0 ? "NORMAL MODE" : "ATTACK MODE";
+                    color: attack-variant-index == 0 ? #33cc33 : #e63333;
                     font-size: 16px;
                     font-weight: 700;
                 }
@@ -258,15 +258,16 @@ export component AppWindow inherits Window {
                             clicked => { root.create-psbt(); }
                         }
 
-                        if workflow-state == "PsbtCreated": HorizontalBox {
-                            padding-top: 0px; padding-bottom: 0px;
+                        if workflow-state == "PsbtCreated": VerticalBox {
+                            padding-top: 0px; padding-bottom: 4px; spacing: 4px;
                             Text {
                                 text: "Simulate Malicious Hardware:";
-                                vertical-alignment: center;
+                                font-size: 12px;
+                                color: #cccccc;
                             }
-
-                            CheckBox {
-                                checked <=> root.attack-mode;
+                            ComboBox {
+                                model: ["None (Honest)", "MITM + Wrong Sig", "Wrong Scan Key", "Substitute Spend Key", "Strip SP Fields"];
+                                current-index <=> root.attack-variant-index;
                             }
                         }
 
