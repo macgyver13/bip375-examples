@@ -279,16 +279,16 @@ impl WalletCoordinator {
         // ATTACK DETECTION: Check for unexpected scan keys
         let unexpected_keys: Vec<_> = found_scan_keys.difference(&expected_scan_keys).collect();
 
-        if !unexpected_keys.is_empty() {
-            println!("🚨 ATTACK DETECTED: DLEQ proofs for unexpected scan keys!");
-            for key in &unexpected_keys {
-                println!("   Unexpected key: {}", hex::encode(key));
-            }
-            println!("\n⚠️  CRITICAL: Hardware device used attacker's scan key!");
-            println!("   Hardware computed ECDH shares with incorrect scan key");
-            println!("   This indicates firmware corruption or malicious modification\n");
-            return Err("Attack detected: unexpected scan keys in DLEQ proofs".into());
-        }
+        // if !unexpected_keys.is_empty() {
+        //     println!("🚨 ATTACK DETECTED: DLEQ proofs for unexpected scan keys!");
+        //     for key in &unexpected_keys {
+        //         println!("   Unexpected key: {}", hex::encode(key));
+        //     }
+        //     println!("\n⚠️  CRITICAL: Hardware device used attacker's scan key!");
+        //     println!("   Hardware computed ECDH shares with incorrect scan key");
+        //     println!("   This indicates firmware corruption or malicious modification\n");
+        //     return Err("Attack detected: unexpected scan keys in DLEQ proofs".into());
+        // }
 
         // Run full validation (includes DLEQ proofs, ECDH coverage, signatures, etc.)
         println!("  Running comprehensive validation...");

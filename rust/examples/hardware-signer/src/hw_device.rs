@@ -7,6 +7,7 @@
 //! - Signs transaction inputs
 //! - Supports attack mode to demonstrate security model
 
+use crate::attack_mode;
 use crate::shared_utils::*;
 use bip375_helpers::PSBT_OUT_DNSSEC_PROOF;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
@@ -243,51 +244,43 @@ impl HardwareDevice {
 
         let secp = Secp256k1::new();
 
-        // Extract scan keys from PSBT outputs (PSBT is source of truth)
-        let mut scan_keys: Vec<PublicKey> = psbt.get_output_scan_keys();
-
-        if attack_mode {
-            // ATTACK SIMULATION: Replace recipient scan key with attacker's scan key
+        // Resolve attacker address once so it's available for both scan key substitution
+        // and output finalization in attack mode.
+        let attacker_address_opt = if attack_mode {
+            let attacker = get_attacker_address();
+            let recipient = get_recipient_address();
             println!("🚨 ATTACK MODE: Using malicious scan key!");
             println!("   Real recipient scan key would be used in honest mode\n");
-
-            let recipient_address = get_recipient_address();
-            let attacker_address = get_attacker_address();
-
             println!(
                 "   Legitimate recipient: {}",
-                hex::encode(recipient_address.get_scan_key().serialize())
+                hex::encode(recipient.get_scan_key().serialize())
             );
             println!(
                 "   Malicious attacker:   {}",
-                hex::encode(attacker_address.get_scan_key().serialize())
+                hex::encode(attacker.get_scan_key().serialize())
             );
             println!("   ⚠️  Funds would go to attacker if this succeeds!\n");
-
-            // Replace recipient scan key with attacker's scan key
-            // Output 0 is change (hardware wallet), Output 1 is recipient
-            if scan_keys.len() >= 2 {
-                println!("   🚨 Replacing recipient scan key with attacker's...");
-                scan_keys[1] = attacker_address.get_scan_key();
-            }
+            Some(attacker)
         } else {
+            None
+        };
+
+        // Extract scan keys: attack mode substitutes the recipient's key with the attacker's;
+        // honest mode reads the PSBT directly and verifies ownership via BIP32 derivations.
+        let scan_keys: Vec<PublicKey> = if attack_mode {
+            attack_mode::prepare_scan_keys(&psbt, attacker_address_opt.as_ref().unwrap())
+        } else {
+            let honest_scan_keys = psbt.get_output_scan_keys();
             println!(
                 "   Extracted {} scan key(s) from PSBT outputs:",
-                scan_keys.len()
+                honest_scan_keys.len()
             );
-            for (i, sk) in scan_keys.iter().enumerate() {
+            for (i, sk) in honest_scan_keys.iter().enumerate() {
                 println!("     Scan key {}: {}", i, hex::encode(sk.serialize()));
             }
 
-            // CHANGE VERIFICATION: Use BIP32 derivations to cryptographically verify
+            // CHANGE VERIFICATION: Use BIP32 derivations to verify
             // which outputs are change (returning to our wallet) vs recipient outputs.
-            //
-            // Security Model:
-            // 1. Check if output has BIP32 derivations (presence = ownership claim)
-            // 2. Verify master fingerprint matches wallet (prevents forged derivations)
-            // 3. Verify derivation paths follow BIP352 pattern (ensures correctness)
-            // 4. Verify pubkeys in derivations match wallet's keys (final proof)
-            // 5. Require BOTH scan and spend derivations (prevents partial attacks)
             println!("\n   Verifying output ownership via BIP32 derivations...");
 
             let hw_master_fingerprint = hw_wallet.master_fingerprint();
@@ -433,7 +426,8 @@ impl HardwareDevice {
             }
 
             println!();
-        }
+            honest_scan_keys
+        };
 
         // Determine which inputs are controlled by hardware wallet via BIP32 derivations
         // Priority order:
@@ -570,12 +564,7 @@ impl HardwareDevice {
         );
 
         if attack_mode {
-            println!("   🚨 Computing ECDH shares with MALICIOUS scan key...");
-            println!("   🚨 Generating DLEQ proofs for WRONG scan key...");
-            println!("   ✓  Signing inputs with CORRECT private keys...\n");
-            println!(
-                "   ⚠️  This attack tries to redirect funds while maintaining valid signatures"
-            );
+            println!("   ⚠️  This attack tries to redirect funds while maintaining valid signatures");
             println!("   ⚠️  The coordinator should detect this via DLEQ proof verification!\n");
         } else {
             println!("   Computing ECDH shares...");
@@ -598,11 +587,22 @@ impl HardwareDevice {
         // correct output scripts. sign_inputs() builds the transaction from the PSBT,
         // and SP outputs must have script_pubkey set at that point.
         //
-        // In attack mode this will fail because ECDH shares were only computed for the
-        // attacker's scan key — the legitimate recipient output has no coverage. Skip
-        // finalization so the coordinator receives the PSBT with wrong DLEQ proofs and
-        // detects the attack via scan key mismatch rather than a local crash.
-        if !attack_mode {
+        // In attack mode, ECDH shares were computed against the attacker's scan key, so
+        // standard finalization would fail for the recipient output (no coverage for the
+        // legitimate scan key). Instead, finalize using malicious scripts: the change
+        // output gets the honest script, but the recipient output is redirected to the
+        // attacker's address. The coordinator detects the attack via scan key mismatch
+        // in the DLEQ proofs.
+        if attack_mode {
+            let hw_scan_key = scan_keys[0]; // scan_keys[0] was not replaced — still the hw wallet's key
+            let attacker_address = attacker_address_opt.as_ref().unwrap();
+            attack_mode::finalize_sp_outputs_malicious(
+                &secp,
+                &mut psbt,
+                &hw_scan_key,
+                attacker_address,
+            )?;
+        } else {
             finalize_sp_outputs(&secp, &mut psbt)?;
         }
 
@@ -612,13 +612,15 @@ impl HardwareDevice {
         if attack_mode {
             println!("\n   🚨 ECDH shares computed with MALICIOUS scan key");
             println!("   🚨 DLEQ proofs generated for WRONG scan key");
+            println!("   🚨 Recipient output script_pubkey set to ATTACKER address");
+            println!("   ✓  Change output script_pubkey set honestly (hw wallet)");
             println!("   ✓  Inputs signed with correct private keys");
             println!("   Attack attempt complete - coordinator should reject this!");
         } else {
-            println!("\n     Standard Signing:");
-            println!("       ECDH shares computed");
-            println!("       DLEQ proofs generated");
-            println!("       Inputs signed");
+            println!("\n    Standard Signing:");
+            println!("      ECDH shares computed");
+            println!("      DLEQ proofs generated");
+            println!("      Inputs signed");
         }
 
         // Check ECDH coverage

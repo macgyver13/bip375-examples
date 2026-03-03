@@ -4,6 +4,7 @@
 #[cfg(feature = "gui")]
 pub mod gui;
 
+pub mod attack_mode;
 pub mod hw_device;
 pub mod shared_utils;
 pub mod wallet_coordinator;
