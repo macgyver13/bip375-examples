@@ -4,9 +4,10 @@
 //! utilities for building BIP-375 demonstration applications.
 
 use spdk_core::psbt::crypto::{
-    apply_tweak_to_privkey, internal_key_to_p2tr_script, pubkey_to_p2wpkh_script,
+    apply_tweak_to_privkey, pubkey_to_p2wpkh_script,
     script_type_string, tweaked_key_to_p2tr_script,
 };
+use bitcoin::key::TapTweak;
 use spdk_core::psbt::PsbtInput;
 
 use bip39::{Language, Mnemonic};
@@ -444,7 +445,9 @@ impl VirtualWallet {
                     }
                     (ScriptType::P2TR, false) => {
                         // Regular BIP-86 taproot - needs BIP-341 tweak
-                        internal_key_to_p2tr_script(&final_pubkey)
+                        let (xonly, _parity) = final_pubkey.x_only_public_key();
+                        let (tweaked, _parity) = xonly.tap_tweak(&secp, None);
+                        ScriptBuf::new_p2tr_tweaked(tweaked)
                     }
                 };
 

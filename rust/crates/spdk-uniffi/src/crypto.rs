@@ -2,6 +2,8 @@
 
 use crate::errors::Bip375Error;
 use secp256k1::{PublicKey, SecretKey};
+use silentpayments::bitcoin_hashes::Hash as SpHash;
+use silentpayments::utils::hash::{InputsHash, LabelHash, SharedSecretHash};
 use spdk_core::psbt::crypto;
 
 // ============================================================================
@@ -51,15 +53,6 @@ pub fn bip352_tweaked_key_to_p2tr_script(pubkey: Vec<u8>) -> Result<Vec<u8>, Bip
     Ok(script.to_bytes())
 }
 
-pub fn bip352_compute_label_tweak(
-    scan_privkey: Vec<u8>,
-    label: u32,
-) -> Result<Vec<u8>, Bip375Error> {
-    let sk = SecretKey::from_slice(&scan_privkey).map_err(|_| Bip375Error::InvalidKey)?;
-    let tweak = crypto::bip352::compute_label_tweak(&sk, label)?;
-    Ok(tweak.to_be_bytes().to_vec())
-}
-
 pub fn bip352_apply_label_to_spend_key(
     spend_key: Vec<u8>,
     scan_privkey: Vec<u8>,
@@ -69,7 +62,10 @@ pub fn bip352_apply_label_to_spend_key(
     let spend_pk = PublicKey::from_slice(&spend_key).map_err(|_| Bip375Error::InvalidKey)?;
     let scan_sk = SecretKey::from_slice(&scan_privkey).map_err(|_| Bip375Error::InvalidKey)?;
 
-    let labeled_pk = crypto::bip352::apply_label_to_spend_key(&secp, &spend_pk, &scan_sk, label)?;
+    let tweak = LabelHash::from_b_scan_and_m(scan_sk, label).to_scalar();
+    let tweak_sk = SecretKey::from_slice(&tweak.to_be_bytes()).map_err(|_| Bip375Error::CryptoError)?;
+    let tweak_point = PublicKey::from_secret_key(&secp, &tweak_sk);
+    let labeled_pk = spend_pk.combine(&tweak_point).map_err(|_| Bip375Error::CryptoError)?;
     Ok(labeled_pk.serialize().to_vec())
 }
 
@@ -78,7 +74,10 @@ pub fn bip352_compute_input_hash(
     summed_pubkey: Vec<u8>,
 ) -> Result<Vec<u8>, Bip375Error> {
     let pk = PublicKey::from_slice(&summed_pubkey).map_err(|_| Bip375Error::InvalidKey)?;
-    let input_hash = crypto::bip352::compute_input_hash(&smallest_outpoint, &pk)?;
+    let outpoint_arr: [u8; 36] = smallest_outpoint
+        .try_into()
+        .map_err(|_| Bip375Error::InvalidData)?;
+    let input_hash = InputsHash::from_outpoint_and_A_sum(&outpoint_arr, pk).to_scalar();
     Ok(input_hash.to_be_bytes().to_vec())
 }
 
@@ -93,8 +92,9 @@ pub fn bip352_compute_shared_secret_tweak(
     let mut ecdh_bytes = [0u8; 33];
     ecdh_bytes.copy_from_slice(&ecdh_secret);
 
-    let tweak = crypto::bip352::compute_shared_secret_tweak(&ecdh_bytes, k)?;
-    Ok(tweak.to_be_bytes().to_vec())
+    let ecdh_pubkey = PublicKey::from_slice(&ecdh_bytes).map_err(|_| Bip375Error::InvalidKey)?;
+    let tweak_bytes = SpHash::to_byte_array(SharedSecretHash::from_ecdh_and_k(&ecdh_pubkey, k));
+    Ok(tweak_bytes.to_vec())
 }
 
 // ============================================================================
