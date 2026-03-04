@@ -12,10 +12,10 @@ use crate::shared_utils::*;
 use bip375_helpers::PSBT_OUT_DNSSEC_PROOF;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bitcoin::taproot::TapTweakHash;
-use bitcoin::{OutPoint, Sequence};
+use bitcoin::{OutPoint, ScriptBuf, Sequence};
 use secp256k1::{Parity, PublicKey, Secp256k1};
 use spdk_core::psbt::crypto::{
-    apply_tweak_to_privkey, internal_key_to_p2tr_script, pubkey_to_p2wpkh_script,
+    apply_tweak_to_privkey, pubkey_to_p2wpkh_script,
 };
 use spdk_core::psbt::io::PsbtMetadata;
 use spdk_core::psbt::roles::input_finalizer::finalize_sp_outputs;
@@ -515,7 +515,7 @@ impl HardwareDevice {
                         pubkey_to_p2wpkh_script(&candidate_pubkey)
                     } else if witness_utxo.script_pubkey.is_p2tr() {
                         // For P2TR, BIP-86 internal key (regular taproot)
-                        internal_key_to_p2tr_script(&candidate_pubkey)
+                        ScriptBuf::new_p2tr(&secp, candidate_pubkey.into(), None)
                     } else {
                         continue; // Unsupported script type
                     };

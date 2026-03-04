@@ -18,12 +18,9 @@ use hex;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use silentpayments::SilentPaymentAddress;
 use spdk_core::psbt::core::{
-    aggregate_ecdh_shares, get_input_outpoint_bytes, get_input_pubkey, Bip375PsbtExt,
-    SilentPaymentPsbt,
+    aggregate_ecdh_shares, compute_sp_shared_secrets, Bip375PsbtExt, SilentPaymentPsbt,
 };
-use spdk_core::psbt::crypto::{
-    compute_shared_secrets, derive_silent_payment_output_pubkey, tweaked_key_to_p2tr_script,
-};
+use spdk_core::psbt::crypto::{derive_silent_payment_output_pubkey, tweaked_key_to_p2tr_script};
 use spdk_core::psbt::PsbtInput;
 
 /// Which attack variant the firmware is simulating.
@@ -106,23 +103,11 @@ pub fn finalize_sp_outputs_malicious(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let aggregated_shares = aggregate_ecdh_shares(psbt)?;
 
-    // Build shared input data (outpoints + pubkeys) for BIP-352 input_hash
-    let mut outpoints: Vec<Vec<u8>> = Vec::new();
-    let mut input_pubkeys: Vec<PublicKey> = Vec::new();
-    for input_idx in 0..psbt.num_inputs() {
-        outpoints.push(get_input_outpoint_bytes(psbt, input_idx)?);
-        if let Ok(pubkey) = get_input_pubkey(psbt, input_idx) {
-            input_pubkeys.push(pubkey);
-        }
-    }
-
     // Finalize output 0 (change) honestly using the hw wallet scan key
     let change_script = derive_honest_output(
         secp,
         hw_scan_key,
         &aggregated_shares,
-        &outpoints,
-        &input_pubkeys,
         psbt,
         0,
     )?;
@@ -136,8 +121,7 @@ pub fn finalize_sp_outputs_malicious(
         &attacker_scan_key,
         &attacker_spend_key,
         &aggregated_shares,
-        &outpoints,
-        &input_pubkeys,
+        psbt,
     )?;
     psbt.outputs[1].script_pubkey = malicious_script.clone();
 
@@ -203,32 +187,13 @@ pub fn substitute_spend_key(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let aggregated_shares = aggregate_ecdh_shares(psbt)?;
 
-    // Build input data for BIP-352 shared-secret derivation
-    let mut outpoints: Vec<Vec<u8>> = Vec::new();
-    let mut input_pubkeys: Vec<PublicKey> = Vec::new();
-    for input_idx in 0..psbt.num_inputs() {
-        outpoints.push(get_input_outpoint_bytes(psbt, input_idx)?);
-        if let Ok(pubkey) = get_input_pubkey(psbt, input_idx) {
-            input_pubkeys.push(pubkey);
-        }
-    }
-
     // Read the HONEST scan key for output 1 from the PSBT (unchanged by this attack)
     let (recipient_scan_key, _old_spend_key) = psbt
         .get_output_sp_info(1)
         .ok_or("Output 1 has no SP info")?;
 
     // Derive shared secret using the HONEST scan key's ECDH share
-    let agg = aggregated_shares
-        .get(&recipient_scan_key)
-        .ok_or("No ECDH shares found for recipient scan key")?;
-
-    let shared_secrets = compute_shared_secrets(
-        secp,
-        &[(recipient_scan_key, agg.aggregated_share)],
-        &outpoints,
-        &input_pubkeys,
-    )?;
+    let shared_secrets = compute_sp_shared_secrets(secp, psbt, &aggregated_shares)?;
     let shared_secret = shared_secrets
         .get(&recipient_scan_key)
         .ok_or("Shared secret missing for recipient scan key")?;
@@ -319,21 +284,10 @@ fn derive_honest_output(
     secp: &Secp256k1<secp256k1::All>,
     scan_key: &PublicKey,
     aggregated_shares: &spdk_core::psbt::core::AggregatedShares,
-    outpoints: &[Vec<u8>],
-    input_pubkeys: &[PublicKey],
     psbt: &SilentPaymentPsbt,
     output_idx: usize,
 ) -> Result<bitcoin::ScriptBuf, Box<dyn std::error::Error>> {
-    let agg = aggregated_shares
-        .get(scan_key)
-        .ok_or("No ECDH shares found for hw scan key (change output)")?;
-
-    let shared_secrets = compute_shared_secrets(
-        secp,
-        &[(*scan_key, agg.aggregated_share)],
-        outpoints,
-        input_pubkeys,
-    )?;
+    let shared_secrets = compute_sp_shared_secrets(secp, psbt, aggregated_shares)?;
     let shared_secret = shared_secrets
         .get(scan_key)
         .ok_or("Shared secret missing for hw scan key")?;
@@ -356,19 +310,9 @@ fn derive_malicious_output(
     attacker_scan_key: &PublicKey,
     attacker_spend_key: &PublicKey,
     aggregated_shares: &spdk_core::psbt::core::AggregatedShares,
-    outpoints: &[Vec<u8>],
-    input_pubkeys: &[PublicKey],
+    psbt: &SilentPaymentPsbt,
 ) -> Result<bitcoin::ScriptBuf, Box<dyn std::error::Error>> {
-    let agg = aggregated_shares
-        .get(attacker_scan_key)
-        .ok_or("No ECDH shares found for attacker scan key")?;
-
-    let shared_secrets = compute_shared_secrets(
-        secp,
-        &[(*attacker_scan_key, agg.aggregated_share)],
-        outpoints,
-        input_pubkeys,
-    )?;
+    let shared_secrets = compute_sp_shared_secrets(secp, psbt, aggregated_shares)?;
     let shared_secret = shared_secrets
         .get(attacker_scan_key)
         .ok_or("Shared secret missing for attacker scan key")?;
