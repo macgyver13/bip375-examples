@@ -89,6 +89,29 @@ maturin build --release
 pytest tests [-v]
 ```
 
+## Deployment
+
+```bash
+cd rust
+pushd crates/spdk-uniffi
+
+# Build arm64 wheel (native on Apple Silicon)
+maturin build --release
+
+# Build macOS x86_64 wheel (cross-compile)
+maturin build --release --target x86_64-apple-darwin
+
+# Build Linux x86_64 wheel (cross-compile, requires zig linker)
+# using zig as linker (recommended for cross-compile from macOS)
+# pip install ziglang
+maturin build --release --target x86_64-unknown-linux-gnu --zig
+
+popd
+cp target/wheels/*.whl ~/src/bip375-test-generator/wheels/
+
+
+```
+
 ### Contributions
 
 ```bash

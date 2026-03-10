@@ -47,7 +47,7 @@ def extract_input_pubkey(input_fields: List[PSBTField], inputs: List[UTXO] = Non
 
     Priority order (per BIP174 best practices):
     1. PSBT_IN_BIP32_DERIVATION (preferred - standard way, hardware wallet compatible)
-    2. PSBT_IN_TAP_INTERNAL_KEY (for Taproot inputs)
+    2. PSBT_IN_TAP_INTERNAL_KEY (for Taproot inputs) - FIXME: should be PSBT_IN_TAP_BIP32_DERIVATION
     3. PSBT_IN_PARTIAL_SIG (public key is the key field)
     4. Derive from private key (fallback for reference implementation)
 
