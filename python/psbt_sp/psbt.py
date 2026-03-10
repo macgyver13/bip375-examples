@@ -1275,6 +1275,35 @@ class SilentPaymentPSBT:
 
         return psbt
 
+    @classmethod
+    def from_hex(cls, psbt_hex: str) -> "SilentPaymentPSBT":
+        """
+        Create SilentPaymentPSBT from hex-encoded PSBT string
+
+        Args:
+            psbt_hex: Hex-encoded PSBT string
+
+        Returns:
+            SilentPaymentPSBT instance
+
+        Raises:
+            ValueError: If PSBT data is invalid
+
+        Note:
+            This is a factory method that decodes and parses the PSBT in one step.
+        """
+        from .serialization import parse_psbt_bytes
+
+        psbt_data = bytes.fromhex(psbt_hex)
+        global_fields, input_maps, output_maps = parse_psbt_bytes(psbt_data)
+
+        psbt = cls()
+        psbt.global_fields = global_fields
+        psbt.input_maps = input_maps
+        psbt.output_maps = output_maps
+
+        return psbt
+
     # endregion
 
     # ============================================================================
