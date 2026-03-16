@@ -97,10 +97,10 @@ impl From<spdk_core::psbt::crypto::CryptoError> for Bip375Error {
     }
 }
 
-// Conversion from spdk-core I/O errors
-impl From<spdk_core::psbt::io::IoError> for Bip375Error {
-    fn from(err: spdk_core::psbt::io::IoError) -> Self {
-        use spdk_core::psbt::io::IoError;
+// Conversion from bip375-helpers I/O errors
+impl From<bip375_helpers::io::IoError> for Bip375Error {
+    fn from(err: bip375_helpers::io::IoError) -> Self {
+        use bip375_helpers::io::IoError;
         match err {
             IoError::Io(_) => Bip375Error::IoError,
             IoError::Json(_) => Bip375Error::SerializationError,

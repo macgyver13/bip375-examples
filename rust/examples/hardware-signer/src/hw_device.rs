@@ -17,7 +17,7 @@ use secp256k1::{Parity, PublicKey, Secp256k1};
 use spdk_core::psbt::crypto::{
     apply_tweak_to_privkey, pubkey_to_p2wpkh_script,
 };
-use spdk_core::psbt::io::PsbtMetadata;
+use bip375_helpers::io::PsbtMetadata;
 use spdk_core::psbt::roles::input_finalizer::finalize_sp_outputs;
 use spdk_core::psbt::roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, SilentPaymentPsbt};
