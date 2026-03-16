@@ -8,7 +8,7 @@ mod test_vector_helper;
 
 use bip375_helpers::display::{adapter, psbt_analyzer, psbt_io};
 use slint::Model;
-use spdk_core::psbt::io::file_io::load_psbt;
+use bip375_helpers::io::load_psbt;
 use spdk_core::psbt::SilentPaymentPsbt;
 use std::cell::RefCell;
 use std::collections::HashSet;

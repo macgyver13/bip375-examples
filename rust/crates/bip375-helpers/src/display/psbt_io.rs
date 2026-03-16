@@ -3,7 +3,7 @@
 //! Provides functions for importing PSBTs from various formats (base64, files)
 //! and exporting them for sharing or storage.
 
-use spdk_core::psbt::io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
+use crate::io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
 use spdk_core::psbt::SilentPaymentPsbt;
 
 use std::cell::RefCell;
