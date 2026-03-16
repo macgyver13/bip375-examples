@@ -194,7 +194,7 @@ pub struct PsbtMetadata {
 }
 
 impl PsbtMetadata {
-    pub fn from_core(meta: &psbt::io::metadata::PsbtMetadata) -> Self {
+    pub fn from_core(meta: &bip375_helpers::io::PsbtMetadata) -> Self {
         Self {
             creator: meta.creator.clone(),
             stage: meta.stage.clone(),
@@ -204,8 +204,8 @@ impl PsbtMetadata {
         }
     }
 
-    pub fn to_core(&self) -> psbt::io::metadata::PsbtMetadata {
-        psbt::io::metadata::PsbtMetadata {
+    pub fn to_core(&self) -> bip375_helpers::io::PsbtMetadata {
+        bip375_helpers::io::PsbtMetadata {
             creator: self.creator.clone(),
             stage: self.stage.clone(),
             description: self.description.clone(),
@@ -266,7 +266,7 @@ impl SilentPaymentPsbt {
     }
 
     pub fn load(path: String) -> Result<Self, Bip375Error> {
-        let (psbt, _metadata) = psbt::io::load_psbt(std::path::Path::new(&path))?;
+        let (psbt, _metadata) = bip375_helpers::io::load_psbt(std::path::Path::new(&path))?;
         Ok(Self::from_core(psbt))
     }
 
@@ -295,7 +295,7 @@ impl SilentPaymentPsbt {
     pub fn save(&self, path: String, metadata: Option<PsbtMetadata>) -> Result<(), Bip375Error> {
         self.with_inner(|p| {
             let meta = metadata.map(|m| m.to_core());
-            psbt::io::save_psbt(p, meta, std::path::Path::new(&path))
+            bip375_helpers::io::save_psbt(p, meta, std::path::Path::new(&path))
         })?;
         Ok(())
     }

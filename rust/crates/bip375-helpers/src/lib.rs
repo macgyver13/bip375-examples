@@ -11,6 +11,7 @@
 pub mod display;
 pub mod gui;
 pub mod hrn_ext;
+pub mod io;
 pub mod transaction;
 pub mod wallet;
 

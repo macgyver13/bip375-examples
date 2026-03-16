@@ -9,6 +9,7 @@ name = "spdk_psbt"
 
 [dependencies]
 # Bitcoin
+bip375-helpers.workspace = true
 bitcoin.workspace = true
 secp256k1.workspace = true
 silentpayments.workspace = true

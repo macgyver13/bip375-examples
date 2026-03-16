@@ -6,7 +6,7 @@ use bip375_helpers::wallet::{MultiPartyConfig, PartyConfig, SimpleWallet};
 use bitcoin::Transaction;
 use secp256k1::{Secp256k1, SecretKey};
 use spdk_core::psbt::crypto::script_type_string;
-use spdk_core::psbt::io::PsbtMetadata;
+use bip375_helpers::io::PsbtMetadata;
 use spdk_core::psbt::roles::{
     constructor::{add_inputs, add_outputs},
     creator::create_psbt,

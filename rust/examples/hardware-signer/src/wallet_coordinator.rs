@@ -20,7 +20,8 @@ use spdk_core::psbt::roles::{
     input_witness_finalizer::finalize_input_witnesses,
     validation::{validate_psbt, ValidationLevel},
 };
-use spdk_core::psbt::{io::PsbtMetadata, Bip375PsbtExt, PsbtOutput};
+use bip375_helpers::io::PsbtMetadata;
+use spdk_core::psbt::{Bip375PsbtExt, PsbtOutput};
 use std::collections::HashSet;
 
 pub struct WalletCoordinator;
