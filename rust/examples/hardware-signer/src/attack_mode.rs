@@ -115,13 +115,7 @@ pub fn finalize_sp_outputs_malicious(
     let aggregated_shares = aggregate_ecdh_shares(psbt)?;
 
     // Finalize output 0 (change) honestly using the hw wallet scan key
-    let change_script = derive_honest_output(
-        secp,
-        hw_scan_key,
-        &aggregated_shares,
-        psbt,
-        0,
-    )?;
+    let change_script = derive_honest_output(secp, hw_scan_key, &aggregated_shares, psbt, 0)?;
     psbt.outputs[0].script_pubkey = change_script;
 
     // Finalize output 1 (recipient) maliciously using the attacker's keys
