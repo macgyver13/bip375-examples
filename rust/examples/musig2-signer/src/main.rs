@@ -33,6 +33,13 @@ fn main() -> anyhow::Result<()> {
 // CLI path — uses the same workflow functions
 // =========================================================================
 
+fn random_nonce_seed() -> [u8; 32] {
+    use rand::RngCore;
+    let mut seed = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut seed);
+    seed
+}
+
 fn run_cli() -> anyhow::Result<()> {
     use anyhow::bail;
     use secp256k1::Secp256k1;
@@ -64,7 +71,9 @@ fn run_cli() -> anyhow::Result<()> {
     println!("BIP-373 participant pubkeys registered\n");
 
     // -----------------------------------------------------------------------
-    println!("--- 3. Distributed ECDH (proposed BIP-375 extension) ---");
+    // Round 1: Each party contributes ECDH share + nonce in a single pass.
+    // BIP-327 allows nonce preprocessing (generating before the message is known).
+    println!("--- 3. Round 1: Contribute (ECDH + Nonce) ---");
     println!("NOTE: PSBT_IN_SP_PARTIAL_ECDH_SHARE (0x21) is a proposed new field.");
 
     let parties = [
@@ -72,13 +81,24 @@ fn run_cli() -> anyhow::Result<()> {
         ("Bob", &keys.bob_sk, &keys.bob_pk),
         ("Charlie", &keys.charlie_sk, &keys.charlie_pk),
     ];
-    for (name, sk, pk) in &parties {
-        workflow::add_ecdh_share(&secp, &mut psbt, name, sk, pk, &keys.scan_pk)?;
-        println!("[{name}] partial ECDH computed, DLEQ proof: OK");
-    }
-    println!();
+    let alice_sec_nonce = workflow::contribute(
+        &secp, &mut psbt, "Alice", &keys.alice_sk, &keys.alice_pk,
+        &keys.scan_pk, &keys.agg_pk, &keys.key_agg_ctx, random_nonce_seed(),
+    )?;
+    println!("[Alice] ECDH share + nonce contributed");
+    let bob_sec_nonce = workflow::contribute(
+        &secp, &mut psbt, "Bob", &keys.bob_sk, &keys.bob_pk,
+        &keys.scan_pk, &keys.agg_pk, &keys.key_agg_ctx, random_nonce_seed(),
+    )?;
+    println!("[Bob] ECDH share + nonce contributed");
+    let charlie_sec_nonce = workflow::contribute(
+        &secp, &mut psbt, "Charlie", &keys.charlie_sk, &keys.charlie_pk,
+        &keys.scan_pk, &keys.agg_pk, &keys.key_agg_ctx, random_nonce_seed(),
+    )?;
+    println!("[Charlie] ECDH share + nonce contributed\n");
 
     // -----------------------------------------------------------------------
+    // Coordinator: aggregate ECDH shares and derive SP output
     println!("--- 4. Silent Payment Output Derivation ---");
     workflow::derive_sp_output(&secp, &mut psbt)?;
     let output_script = psbt.outputs[0].script_pubkey.clone();
@@ -92,6 +112,7 @@ fn run_cli() -> anyhow::Result<()> {
     println!("SP output is P2TR: OK\n");
 
     // -----------------------------------------------------------------------
+    // Round 2 preamble: each signer verifies output before signing
     println!("--- 5. Each Signer Verifies Output Before Signing ---");
     let partial_shares = psbt.get_input_partial_ecdh_shares(0);
     assert_eq!(partial_shares.len(), 3, "Expected 3 partial shares");
@@ -134,42 +155,12 @@ fn run_cli() -> anyhow::Result<()> {
     }
     println!();
 
-    // -----------------------------------------------------------------------
-    println!("--- 6. Nonce Exchange (BIP-373) ---");
     let message = workflow::compute_sighash(&psbt)?;
     println!("Taproot sighash: {}", hex::encode(message));
 
-    let alice_sec_nonce = workflow::add_nonce(
-        &mut psbt,
-        "Alice",
-        &keys.alice_sk,
-        &keys.alice_pk,
-        &keys.agg_pk,
-        &keys.key_agg_ctx,
-        [0xa1_u8; 32],
-    )?;
-    let bob_sec_nonce = workflow::add_nonce(
-        &mut psbt,
-        "Bob",
-        &keys.bob_sk,
-        &keys.bob_pk,
-        &keys.agg_pk,
-        &keys.key_agg_ctx,
-        [0xb1_u8; 32],
-    )?;
-    let charlie_sec_nonce = workflow::add_nonce(
-        &mut psbt,
-        "Charlie",
-        &keys.charlie_sk,
-        &keys.charlie_pk,
-        &keys.agg_pk,
-        &keys.key_agg_ctx,
-        [0xc1_u8; 32],
-    )?;
-    println!("Nonce exchange: OK (3 nonces in PSBT)\n");
-
     // -----------------------------------------------------------------------
-    println!("--- 7. Partial Signing (BIP-373) ---");
+    // Round 2: Each party produces a partial MuSig2 signature
+    println!("--- 6. Round 2: Partial Signing (BIP-373) ---");
     workflow::partial_sign(
         &mut psbt,
         "Alice",
@@ -205,23 +196,27 @@ fn run_cli() -> anyhow::Result<()> {
     println!("[Charlie] Partial signature added\n");
 
     // -----------------------------------------------------------------------
-    println!("--- 8. Signature Aggregation ---");
+    println!("--- 7. Signature Aggregation ---");
     let tx = workflow::aggregate_and_extract(&secp, &mut psbt, &keys.key_agg_ctx, &message)?;
 
-    let tap_sig = psbt.inputs[0]
-        .tap_key_sig
-        .expect("tap_key_sig must be present");
+    // Extract Schnorr signature from the finalized witness (tap_key_sig is cleared
+    // by finalize_input_witnesses per BIP-174).
+    let witness = &tx.input[0].witness;
+    let sig_bytes = witness
+        .iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("witness empty after finalization"))?;
+    let schnorr_sig = secp256k1::schnorr::Signature::from_slice(sig_bytes)?;
     println!(
         "Aggregated Schnorr signature: {}",
-        hex::encode(tap_sig.signature.as_ref())
+        hex::encode(sig_bytes)
     );
 
     // -----------------------------------------------------------------------
-    println!("--- 9. Extraction + Verification ---");
+    println!("--- 8. Extraction + Verification ---");
     println!("txid: {}", tx.compute_txid());
     println!("inputs: {}, outputs: {}", tx.input.len(), tx.output.len());
 
-    let schnorr_sig = secp256k1::schnorr::Signature::from_slice(tap_sig.signature.as_ref())?;
     let msg = secp256k1::Message::from_digest(message);
     secp.verify_schnorr(&schnorr_sig, &msg, &keys.agg_xonly)?;
     println!("MuSig2 Schnorr signature verified: OK");

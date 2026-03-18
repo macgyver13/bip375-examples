@@ -8,10 +8,8 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkflowState {
     Init,
-    EcdhInProgress(usize),  // number of parties that have contributed
-    OutputDerived,          // finalize_inputs ran; SP output script set
-    NonceInProgress(usize), // number of parties that have added a nonce
-    NonceComplete,          // all 3 nonces present
+    ContributeInProgress(usize), // parties that have contributed (ECDH + nonce)
+    OutputDerived,                // all 3 contributed; SP output derived, sighash computed
     SigningInProgress(usize),
     PartialSigningComplete,
     Extracted,
@@ -21,10 +19,8 @@ impl WorkflowState {
     pub fn as_str(&self) -> String {
         match self {
             WorkflowState::Init => "Init".to_string(),
-            WorkflowState::EcdhInProgress(n) => format!("EcdhInProgress({})", n),
+            WorkflowState::ContributeInProgress(n) => format!("ContributeInProgress({})", n),
             WorkflowState::OutputDerived => "OutputDerived".to_string(),
-            WorkflowState::NonceInProgress(n) => format!("NonceInProgress({})", n),
-            WorkflowState::NonceComplete => "NonceComplete".to_string(),
             WorkflowState::SigningInProgress(n) => format!("SigningInProgress({})", n),
             WorkflowState::PartialSigningComplete => "PartialSigningComplete".to_string(),
             WorkflowState::Extracted => "Extracted".to_string(),
@@ -37,8 +33,7 @@ pub struct AppState {
     pub psbt: Option<SilentPaymentPsbt>,
     /// SecNonce per party — consumed once by partial_sign
     pub sec_nonces: HashMap<String, SecNonce>,
-    pub parties_ecdh_done: HashSet<String>,
-    pub parties_nonce_done: HashSet<String>,
+    pub parties_contributed: HashSet<String>,
     pub parties_signed: HashSet<String>,
     /// Fields added by the last operation (for green highlighting)
     pub highlighted_fields: HashSet<FieldIdentifier>,
@@ -55,8 +50,7 @@ impl Default for AppState {
             workflow_state: WorkflowState::Init,
             psbt: None,
             sec_nonces: HashMap::new(),
-            parties_ecdh_done: HashSet::new(),
-            parties_nonce_done: HashSet::new(),
+            parties_contributed: HashSet::new(),
             parties_signed: HashSet::new(),
             highlighted_fields: HashSet::new(),
             transaction_summary: None,
@@ -72,19 +66,11 @@ impl AppState {
         ["Alice", "Bob", "Charlie"]
     }
 
-    /// Parties that have not yet contributed to the current ECDH phase.
-    pub fn pending_ecdh_parties(&self) -> Vec<&'static str> {
+    /// Parties that have not yet contributed (ECDH + nonce).
+    pub fn pending_contribute_parties(&self) -> Vec<&'static str> {
         Self::all_parties()
             .into_iter()
-            .filter(|&p| !self.parties_ecdh_done.contains(p))
-            .collect()
-    }
-
-    /// Parties that have not yet added a nonce.
-    pub fn pending_nonce_parties(&self) -> Vec<&'static str> {
-        Self::all_parties()
-            .into_iter()
-            .filter(|&p| !self.parties_nonce_done.contains(p))
+            .filter(|&p| !self.parties_contributed.contains(p))
             .collect()
     }
 

@@ -21,8 +21,7 @@ export struct TransactionSummary {
 }
 
 export struct PhaseProgress {
-    ecdh-done: int,
-    nonce-done: int,
+    contribute-done: int,
     signed-done: int,
 }
 
@@ -116,7 +115,7 @@ export component AppWindow inherits Window {
 
     // Phase progress counters
     in-out property <PhaseProgress> phase-progress: {
-        ecdh-done: 0, nonce-done: 0, signed-done: 0,
+        contribute-done: 0, signed-done: 0,
     };
 
     // Aggregated schnorr sig hex (shown after extraction)
@@ -124,26 +123,20 @@ export component AppWindow inherits Window {
 
     // Callbacks
     callback create-psbt();
-    callback add-ecdh(string);
-    callback add-nonce(string);
+    callback contribute(string);
     callback partial-sign(string);
     callback extract();
     callback export-psbt();
     callback reset();
 
     // Derived state helpers
-    pure function is-ecdh-phase() -> bool {
-        workflow-state == "EcdhInProgress(0)" ||
-        workflow-state == "EcdhInProgress(1)" ||
-        workflow-state == "EcdhInProgress(2)"
-    }
-    pure function is-nonce-phase() -> bool {
-        workflow-state == "OutputDerived" ||
-        workflow-state == "NonceInProgress(1)" ||
-        workflow-state == "NonceInProgress(2)"
+    pure function is-contribute-phase() -> bool {
+        workflow-state == "ContributeInProgress(0)" ||
+        workflow-state == "ContributeInProgress(1)" ||
+        workflow-state == "ContributeInProgress(2)"
     }
     pure function is-signing-phase() -> bool {
-        workflow-state == "NonceComplete" ||
+        workflow-state == "OutputDerived" ||
         workflow-state == "SigningInProgress(1)" ||
         workflow-state == "SigningInProgress(2)"
     }
@@ -169,13 +162,10 @@ export component AppWindow inherits Window {
                 Text {
                     text:
                         workflow-state == "Init" ? "⚪ Ready" :
-                        workflow-state == "EcdhInProgress(0)" ? "🔵 ECDH (0/3)" :
-                        workflow-state == "EcdhInProgress(1)" ? "🔵 ECDH (1/3)" :
-                        workflow-state == "EcdhInProgress(2)" ? "🟡 ECDH (2/3)" :
-                        workflow-state == "OutputDerived" ? "🟢 SP Output Computed" :
-                        workflow-state == "NonceInProgress(1)" ? "🔵 Nonce (1/3)" :
-                        workflow-state == "NonceInProgress(2)" ? "🟡 Nonce (2/3)" :
-                        workflow-state == "NonceComplete" ? "🟢 Nonces Ready" :
+                        workflow-state == "ContributeInProgress(0)" ? "🔵 Contribute (0/3)" :
+                        workflow-state == "ContributeInProgress(1)" ? "🔵 Contribute (1/3)" :
+                        workflow-state == "ContributeInProgress(2)" ? "🟡 Contribute (2/3)" :
+                        workflow-state == "OutputDerived" ? "🟢 SP Output Derived" :
                         workflow-state == "SigningInProgress(1)" ? "🔵 Signed (1/3)" :
                         workflow-state == "SigningInProgress(2)" ? "🟡 Signed (2/3)" :
                         workflow-state == "PartialSigningComplete" ? "🟢 Partial Signing Complete" :
@@ -219,13 +209,10 @@ export component AppWindow inherits Window {
                         Text {
                             text:
                                 workflow-state == "Init" ? "● Ready" :
-                                workflow-state == "EcdhInProgress(0)" ? "● ECDH (0/3)" :
-                                workflow-state == "EcdhInProgress(1)" ? "● ECDH (1/3)" :
-                                workflow-state == "EcdhInProgress(2)" ? "● ECDH (2/3)" :
+                                workflow-state == "ContributeInProgress(0)" ? "● Contribute (0/3)" :
+                                workflow-state == "ContributeInProgress(1)" ? "● Contribute (1/3)" :
+                                workflow-state == "ContributeInProgress(2)" ? "● Contribute (2/3)" :
                                 workflow-state == "OutputDerived" ? "● Output Derived" :
-                                workflow-state == "NonceInProgress(1)" ? "● Nonce (1/3)" :
-                                workflow-state == "NonceInProgress(2)" ? "● Nonce (2/3)" :
-                                workflow-state == "NonceComplete" ? "● Nonces Ready" :
                                 workflow-state == "SigningInProgress(1)" ? "● Signed (1/3)" :
                                 workflow-state == "SigningInProgress(2)" ? "● Signed (2/3)" :
                                 workflow-state == "PartialSigningComplete" ? "● Partial Signing Complete" :
@@ -233,12 +220,9 @@ export component AppWindow inherits Window {
                                 "● Ready";
                             color:
                                 workflow-state == "Init" ? #808080 :
-                                (workflow-state == "EcdhInProgress(0)" || workflow-state == "EcdhInProgress(1)") ? #3399e6 :
-                                workflow-state == "EcdhInProgress(2)" ? #e6b300 :
+                                (workflow-state == "ContributeInProgress(0)" || workflow-state == "ContributeInProgress(1)") ? #3399e6 :
+                                workflow-state == "ContributeInProgress(2)" ? #e6b300 :
                                 workflow-state == "OutputDerived" ? #33cc33 :
-                                workflow-state == "NonceInProgress(1)" ? #3399e6 :
-                                workflow-state == "NonceInProgress(2)" ? #e6b300 :
-                                workflow-state == "NonceComplete" ? #33cc33 :
                                 workflow-state == "SigningInProgress(1)" ? #3399e6 :
                                 workflow-state == "SigningInProgress(2)" ? #e6b300 :
                                 workflow-state == "PartialSigningComplete" ? #9966e6 :
@@ -279,25 +263,19 @@ export component AppWindow inherits Window {
                         }
 
                         MenuButton {
-                            text: "2. Add ECDH Share\n(Partial sk_i·scan_key + DLEQ)";
-                            enabled: selected-party != "" && has-pending-parties && root.is-ecdh-phase();
-                            clicked => { root.add-ecdh(selected-party); }
+                            text: "2. Contribute\n(ECDH share + DLEQ + Nonce)";
+                            enabled: selected-party != "" && has-pending-parties && root.is-contribute-phase();
+                            clicked => { root.contribute(selected-party); }
                         }
 
                         MenuButton {
-                            text: "3. Add Nonce\n(BIP-373 PSBT_IN_MUSIG2_PUB_NONCE)";
-                            enabled: selected-party != "" && has-pending-parties && root.is-nonce-phase();
-                            clicked => { root.add-nonce(selected-party); }
-                        }
-
-                        MenuButton {
-                            text: "4. Partial Sign\n(BIP-373 PSBT_IN_MUSIG2_PARTIAL_SIG)";
+                            text: "3. Partial Sign\n(BIP-373 PSBT_IN_MUSIG2_PARTIAL_SIG)";
                             enabled: selected-party != "" && has-pending-parties && root.is-signing-phase();
                             clicked => { root.partial-sign(selected-party); }
                         }
 
                         MenuButton {
-                            text: "5. Aggregate & Extract\n(Schnorr sig + Transaction)";
+                            text: "4. Aggregate & Extract\n(Schnorr sig + Transaction)";
                             enabled: workflow-state == "PartialSigningComplete";
                             clicked => { root.extract(); }
                         }
@@ -455,16 +433,9 @@ export component AppWindow inherits Window {
                     spacing: 20px;
 
                     Text {
-                        text: "ECDH " + phase-progress.ecdh-done + "/3";
-                        color: phase-progress.ecdh-done >= 3 ? #33cc33 : #e6b300;
-                        font-size: 12px;
-                        font-weight: 700;
-                    }
-
-                    Text {
-                        text: "Nonce " + phase-progress.nonce-done + "/3";
-                        color: phase-progress.nonce-done >= 3 ? #33cc33 :
-                               phase-progress.nonce-done > 0 ? #e6b300 : #808080;
+                        text: "Contribute " + phase-progress.contribute-done + "/3";
+                        color: phase-progress.contribute-done >= 3 ? #33cc33 :
+                               phase-progress.contribute-done > 0 ? #e6b300 : #808080;
                         font-size: 12px;
                         font-weight: 700;
                     }
