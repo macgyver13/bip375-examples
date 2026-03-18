@@ -38,8 +38,8 @@ bitcoin = "0.32.6"
 musig2 = { version = "0.3.1", features = ["secp256k1"] }
 secp256k1 = { version = "0.29", features = ["rand", "global-context", "serde"] }
 sha2 = "0.10"
-silentpayments = { git = "https://github.com/macgyver13/spdk.git", branch = "bip375-silentpayments-crate" }
-spdk-core = { git = "https://github.com/macgyver13/spdk.git", branch = "bip375-silentpayments-crate" }
+silentpayments = { git = "https://github.com/macgyver13/spdk.git", branch = "musig2-2rounds" }
+spdk-core = { git = "https://github.com/macgyver13/spdk.git", branch = "musig2-2rounds" }
 
 # Serialization
 base64 = "0.21"

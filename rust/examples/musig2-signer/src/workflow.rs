@@ -18,8 +18,9 @@
      crypto::{compute_ecdh_share, dleq_generate_proof, dleq_verify_proof},
      roles::{
          add_input_tap_bip32_derivation, add_inputs, add_musig2_partial_sig, add_musig2_pub_nonce,
-         add_outputs, aggregate_musig2_keys, aggregate_musig2_sigs, create_psbt,
-        extract_transaction, finalize_input_witnesses, finalize_sp_outputs, Bip32Derivation,
+         add_output_tap_bip32_derivation, add_outputs, aggregate_musig2_keys,
+         aggregate_musig2_sigs, create_psbt, extract_transaction, finalize_input_witnesses,
+         finalize_sp_outputs, Bip32Derivation,
      },
  };
  
@@ -51,13 +52,25 @@
      let charlie_pk = PublicKey::from_secret_key(secp, &charlie_sk);
  
      let participants = vec![alice_pk, bob_pk, charlie_pk];
-     let (key_agg_ctx, agg_xonly) = aggregate_musig2_keys(&participants)
+     let (key_agg_ctx, _untweaked_xonly) = aggregate_musig2_keys(&participants)
          .map_err(|e| anyhow::anyhow!("Key aggregation failed: {e}"))?;
- 
+
+     // Apply BIP-341 taproot tweak (no script tree => unspendable taproot tweak).
+     // This updates gacc/tacc in the KeyAggContext so signing math is correct.
+     let key_agg_ctx = key_agg_ctx
+         .with_unspendable_taproot_tweak()
+         .map_err(|e| anyhow::anyhow!("Taproot tweak failed: {e}"))?;
+
+     // Extract the tweaked x-only key (secp256k1 0.31) and convert to 0.29
+     let tweaked_xonly_031: musig2::secp256k1::XOnlyPublicKey = key_agg_ctx.aggregated_pubkey();
+     let agg_xonly =
+         bitcoin::key::XOnlyPublicKey::from_slice(&tweaked_xonly_031.serialize())?;
+
      let p2tr_script = ScriptBuf::new_p2tr_tweaked(
          bitcoin::key::TweakedPublicKey::dangerous_assume_tweaked(agg_xonly),
      );
- 
+
+     // Construct compressed pubkey from the tweaked x-only key (assume even Y)
      let mut agg_pk_bytes = [0u8; 33];
      agg_pk_bytes[0] = 0x02;
      agg_pk_bytes[1..].copy_from_slice(&agg_xonly.serialize());
@@ -122,7 +135,17 @@
          &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
      )
      .map_err(|e| anyhow::anyhow!("set participant pubkeys: {e}"))?;
- 
+
+     // BIP-373: add PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS + PSBT_OUT_TAP_BIP32_DERIVATION
+     // on change output (output[1]) to aid in change detection.
+     psbt.set_output_musig2_participant_pubkeys(
+         1,
+         &keys.agg_pk,
+         &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
+     )
+     .map_err(|e| anyhow::anyhow!("set output participant pubkeys: {e}"))?;
+     add_output_tap_bip32_derivation(&mut psbt, 1, &keys.agg_xonly, vec![], &dummy_derivation)?;
+
      Ok(psbt)
  }
  
@@ -165,7 +188,25 @@
  
      Ok(())
  }
- 
+
+/// Combined Round 1: add partial ECDH share + nonce in a single pass.
+///
+/// BIP-327 allows nonce preprocessing (generating before the message is known).
+/// Returns the `SecNonce` that must be consumed exactly once in `partial_sign`.
+pub fn contribute(
+    secp: &Secp256k1<secp256k1::All>,
+    psbt: &mut SilentPaymentPsbt,
+    party_name: &str,
+    party_sk: &SecretKey,
+    party_pk: &PublicKey,
+    scan_pk: &PublicKey,
+    agg_pk: &PublicKey,
+    key_agg_ctx: &musig2::KeyAggContext,
+    nonce_seed: [u8; 32],
+) -> Result<SecNonce> {
+    add_ecdh_share(secp, psbt, party_name, party_sk, party_pk, scan_pk)?;
+    add_nonce(psbt, party_name, party_sk, party_pk, agg_pk, key_agg_ctx, nonce_seed)
+}
 
 /// Derive the SP output script from the aggregated ECDH shares.
  pub fn derive_sp_output(

@@ -19,6 +19,7 @@ bip375-helpers.workspace = true
 bitcoin.workspace = true
 hex.workspace = true
 musig2.workspace = true
+rand = { version = "0.8", features = ["std", "std_rng"] }
 secp256k1.workspace = true
 silentpayments.workspace = true
 spdk-core.workspace = true

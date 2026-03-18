@@ -11,17 +11,12 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
 
     // Determine which parties are pending for the active phase and populate dropdown.
     let pending: Vec<slint::SharedString> = match &state.workflow_state {
-        WorkflowState::EcdhInProgress(_) => state
-            .pending_ecdh_parties()
+        WorkflowState::ContributeInProgress(_) => state
+            .pending_contribute_parties()
             .iter()
             .map(|&p| slint::SharedString::from(p))
             .collect(),
-        WorkflowState::OutputDerived | WorkflowState::NonceInProgress(_) => state
-            .pending_nonce_parties()
-            .iter()
-            .map(|&p| slint::SharedString::from(p))
-            .collect(),
-        WorkflowState::NonceComplete | WorkflowState::SigningInProgress(_) => state
+        WorkflowState::OutputDerived | WorkflowState::SigningInProgress(_) => state
             .pending_signing_parties()
             .iter()
             .map(|&p| slint::SharedString::from(p))
@@ -76,8 +71,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
 
     // Phase progress counters.
     window.set_phase_progress(PhaseProgress {
-        ecdh_done: state.parties_ecdh_done.len() as i32,
-        nonce_done: state.parties_nonce_done.len() as i32,
+        contribute_done: state.parties_contributed.len() as i32,
         signed_done: state.parties_signed.len() as i32,
     });
 
@@ -142,9 +136,7 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
 
     window.on_create_psbt(callback!(Orchestrator::execute_create_psbt));
 
-    window.on_add_ecdh(callback!(Orchestrator::execute_add_ecdh, party));
-
-    window.on_add_nonce(callback!(Orchestrator::execute_add_nonce, party));
+    window.on_contribute(callback!(Orchestrator::execute_contribute, party));
 
     window.on_partial_sign(callback!(Orchestrator::execute_partial_sign, party));
 
