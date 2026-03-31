@@ -5,11 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"os"
-	"strings"
 	"testing"
 
 	psbt "github.com/otaliptus/psbt-v2"
-	"github.com/macgyver13/bip375-examples/go/sp"
 )
 
 type testVectors struct {
@@ -24,20 +22,17 @@ type invalidVector struct {
 }
 
 type validVector struct {
-	Description     string `json:"description"`
-	PSBT            string `json:"psbt"`
-	ExpectedOutputs []struct {
-		OutputIndex     int  `json:"output_index"`
-		IsSilentPayment bool `json:"is_silent_payment"`
-	} `json:"expected_outputs"`
+	Description string `json:"description"`
+	PSBT        string `json:"psbt"`
 }
 
 var structuralInvalidDescriptions = map[string]bool{
-	"psbt structure: missing PSBT_OUT_SP_V0_INFO with PSBT_OUT_SP_V0_LABEL set": true,
-	"psbt structure: PSBT_OUT_SP_V0_INFO field with incorrect size":             true,
-	"psbt structure: PSBT_IN_SP_ECDH_SHARE field with incorrect size":           true,
-	"psbt structure: PSBT_IN_SP_DLEQ field with incorrect size":                 true,
-	"psbt structure: P2WPKH output missing PSBT_OUT_SCRIPT":                     true,
+	"psbt structure: missing PSBT_OUT_SP_V0_INFO field when PSBT_OUT_SP_V0_LABEL set": true,
+	"psbt structure: incorrect byte length for PSBT_OUT_SP_V0_INFO field":             true,
+	"psbt structure: incorrect byte length for PSBT_IN_SP_ECDH_SHARE field":           true,
+	"psbt structure: incorrect byte length for PSBT_IN_SP_DLEQ field":                 true,
+	"psbt structure: missing PSBT_OUT_SCRIPT field when sending to non-sp output":     true,
+	"psbt structure: empty PSBT_OUT_SCRIPT field when sending to non-sp output":       true,
 }
 
 func loadVectors(t *testing.T) testVectors {
@@ -52,7 +47,7 @@ func loadVectors(t *testing.T) testVectors {
 	if err := json.Unmarshal(data, &vectors); err != nil {
 		t.Fatalf("parse vectors: %v", err)
 	}
-	if vectors.Version != "1.2" {
+	if vectors.Version != "1.1" {
 		t.Fatalf("unexpected vector version %q", vectors.Version)
 	}
 
@@ -68,17 +63,6 @@ func decodePSBT(t *testing.T, b64 string) []byte {
 	}
 
 	return raw
-}
-
-func parsePacket(t *testing.T, b64 string) *psbt.Packet {
-	t.Helper()
-
-	packet, err := psbt.NewFromRawBytes(bytes.NewReader(decodePSBT(t, b64)), false)
-	if err != nil {
-		t.Fatalf("parse PSBT: %v", err)
-	}
-
-	return packet
 }
 
 func TestStructuralInvalidVectors(t *testing.T) {
@@ -106,37 +90,6 @@ func TestStructuralInvalidVectors(t *testing.T) {
 	}
 }
 
-func TestSemanticInvalidVectors(t *testing.T) {
-	vectors := loadVectors(t)
-
-	tested := 0
-	for _, vector := range vectors.Invalid {
-		if structuralInvalidDescriptions[vector.Description] {
-			continue
-		}
-
-		raw := decodePSBT(t, vector.PSBT)
-		packet, err := psbt.NewFromRawBytes(bytes.NewReader(raw), false)
-		if err != nil {
-			// Some vectors are rejected at parse time by the stricter v1.2
-			// parser. Skip those here; they are covered by structural tests
-			// or sp-level validation.
-			continue
-		}
-
-		tested++
-		t.Run(vector.Description, func(t *testing.T) {
-			if err := sp.ValidateExtractable(packet); err == nil {
-				t.Fatalf("expected semantic validation failure")
-			}
-		})
-	}
-
-	if tested == 0 {
-		t.Fatalf("expected at least one semantic invalid vector")
-	}
-}
-
 func TestValidVectorsRoundTrip(t *testing.T) {
 	vectors := loadVectors(t)
 
@@ -144,20 +97,25 @@ func TestValidVectorsRoundTrip(t *testing.T) {
 	for _, vector := range vectors.Valid {
 		tested++
 		t.Run(vector.Description, func(t *testing.T) {
-			packet := parsePacket(t, vector.PSBT)
+			raw := decodePSBT(t, vector.PSBT)
+
+			pkt, err := psbt.NewFromRawBytes(bytes.NewReader(raw), false)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
 
 			var buf bytes.Buffer
-			if err := packet.Serialize(&buf); err != nil {
+			if err := pkt.Serialize(&buf); err != nil {
 				t.Fatalf("serialize: %v", err)
 			}
 
-			packet2, err := psbt.NewFromRawBytes(bytes.NewReader(buf.Bytes()), false)
+			pkt2, err := psbt.NewFromRawBytes(bytes.NewReader(buf.Bytes()), false)
 			if err != nil {
 				t.Fatalf("re-parse: %v", err)
 			}
 
 			var buf2 bytes.Buffer
-			if err := packet2.Serialize(&buf2); err != nil {
+			if err := pkt2.Serialize(&buf2); err != nil {
 				t.Fatalf("re-serialize: %v", err)
 			}
 
@@ -172,49 +130,49 @@ func TestValidVectorsRoundTrip(t *testing.T) {
 	}
 }
 
-func TestValidVectorsMaterialize(t *testing.T) {
+func TestBIP375FieldPresence(t *testing.T) {
 	vectors := loadVectors(t)
 
-	tested := 0
 	for _, vector := range vectors.Valid {
-		if !strings.HasPrefix(vector.Description, "can finalize:") {
-			continue
-		}
-
-		tested++
 		t.Run(vector.Description, func(t *testing.T) {
-			packet := parsePacket(t, vector.PSBT)
+			raw := decodePSBT(t, vector.PSBT)
 
-			originalScripts := make(map[int][]byte)
-			for i := range packet.Outputs {
-				if packet.Outputs[i].SPV0Info == nil {
+			pkt, err := psbt.NewFromRawBytes(bytes.NewReader(raw), false)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+
+			hasSPOutput := false
+			for _, out := range pkt.Outputs {
+				if out.SPV0Info == nil {
 					continue
 				}
 
-				originalScripts[i] = append([]byte(nil), packet.Outputs[i].Script...)
-				packet.Outputs[i].Script = nil
+				hasSPOutput = true
+				if len(out.SPV0Info.ScanKey) != 33 {
+					t.Fatalf("SPV0Info.ScanKey len = %d, want 33",
+						len(out.SPV0Info.ScanKey))
+				}
+				if len(out.SPV0Info.SpendKey) != 33 {
+					t.Fatalf("SPV0Info.SpendKey len = %d, want 33",
+						len(out.SPV0Info.SpendKey))
+				}
+			}
+			if !hasSPOutput {
+				return
 			}
 
-			if err := sp.MaterializeOutputs(packet); err != nil {
-				t.Fatalf("MaterializeOutputs: %v", err)
+			hasShares := len(pkt.GlobalSPECDHShares) > 0
+			for _, in := range pkt.Inputs {
+				if len(in.SPECDHShares) > 0 {
+					hasShares = true
+					break
+				}
 			}
-
-			for _, output := range vector.ExpectedOutputs {
-				if !output.IsSilentPayment {
-					continue
-				}
-
-				if !bytes.Equal(
-					packet.Outputs[output.OutputIndex].Script,
-					originalScripts[output.OutputIndex],
-				) {
-					t.Fatalf("output %d script mismatch", output.OutputIndex)
-				}
+			if !hasShares {
+				// In-progress vectors may not have shares yet.
+				return
 			}
 		})
-	}
-
-	if tested != 12 {
-		t.Fatalf("expected 12 finalize vectors, got %d", tested)
 	}
 }

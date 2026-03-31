@@ -56,7 +56,7 @@ func loadVectors(t *testing.T) bip375Vectors {
 		t.Fatal("runtime.Caller failed")
 	}
 
-	path := filepath.Join(filepath.Dir(file), "..", "..", "bip375_test_vectors.json")
+	path := filepath.Join(filepath.Dir(file), "..", "testdata", "bip375_test_vectors.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read vectors: %v", err)
