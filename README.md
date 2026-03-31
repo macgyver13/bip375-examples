@@ -12,9 +12,10 @@ New to BIP375? Start here:
 
 ## Repository Overview
 
-- PSBTv2 Libraries (Python and Rust)
+- PSBTv2 Libraries (Python, Rust, and Go)
 - Examples demonstrating BIP375 workflows
 - Rust Overview [README.md](rust/README.md)
+- Go Overview [README.md](go/README.md)
 
 ## Libraries
 
@@ -26,6 +27,8 @@ New to BIP375? Start here:
   - **`secp256k1_374.py`** - secp256k1 implementation
 - Rust
   - **`crates/`** - Crates to support PSBTv2 for Silent Payments
+- Go
+  - **`go/sp/`** - BIP-352/BIP-375 silent payment workflow on top of [`psbt-v2`](https://github.com/otaliptus/psbt-v2) and [`dleq374`](https://github.com/otaliptus/dleq374)
 
 ## **Examples**
 

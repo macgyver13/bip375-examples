@@ -1,4 +1,4 @@
-module github.com/macgyver13/bip375-examples/go
+module github.com/otaliptus/bip375-examples/go
 
 go 1.22
 
