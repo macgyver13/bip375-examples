@@ -1,0 +1,18 @@
+[package]
+name = "sidecar-multisig"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sidecar-multisig"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+bitcoin.workspace = true
+hex.workspace = true
+rand = { version = "0.8", features = ["std", "std_rng"] }
+secp256k1.workspace = true
+silentpayments.workspace = true
+spdk-core.workspace = true

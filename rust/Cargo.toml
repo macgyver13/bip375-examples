@@ -23,6 +23,7 @@ members = [
     "examples/hardware-signer",
     "examples/multi-signer",
     "examples/musig2-signer",
+    "examples/sidecar-multisig",
     "tools/psbt-viewer",
 ]
 
