@@ -340,7 +340,7 @@ impl HardwareDevice {
                         if path_vec[3] == 0x00000000 {
                             // scan branch (0)
                             // SECURITY CHECK 3: Verify pubkey matches wallet's scan key
-                            if pubkey.serialize() == hw_scan_key.serialize() {
+                            if pubkey.inner.serialize() == hw_scan_key.serialize() {
                                 scan_deriv_valid = true;
                                 println!("     ✓ Output {}: Scan key derivation verified (path index {})",
                                          output_idx, path_vec[4]);
@@ -354,7 +354,7 @@ impl HardwareDevice {
                         } else if path_vec[3] == 0x00000001 {
                             // spend branch (1)
                             // SECURITY CHECK 4: Verify pubkey matches wallet's spend key
-                            if pubkey.serialize() == hw_spend_key.serialize() {
+                            if pubkey.inner.serialize() == hw_spend_key.serialize() {
                                 spend_deriv_valid = true;
                                 println!("     ✓ Output {}: Spend key derivation verified (path index {})",
                                          output_idx, path_vec[4]);

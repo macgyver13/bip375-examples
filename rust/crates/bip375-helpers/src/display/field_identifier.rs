@@ -9,17 +9,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum FieldIdentifier {
     /// Global field (no index)
-    Global { key_type: u8, key_data: Vec<u8> },
+    Global { key_type: u64, key_data: Vec<u8> },
     /// Input field (with input index)
     Input {
         index: usize,
-        key_type: u8,
+        key_type: u64,
         key_data: Vec<u8>,
     },
     /// Output field (with output index)
     Output {
         index: usize,
-        key_type: u8,
+        key_type: u64,
         key_data: Vec<u8>,
     },
 }

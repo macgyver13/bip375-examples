@@ -34,7 +34,7 @@ pub enum FieldCategory {
 ///
 /// Maps PSBT field type constants to their human-readable names.
 /// Supports standard PSBT v2 fields as well as BIP-375 and BIP-353 extensions.
-pub fn key_type_name(category: FieldCategory, key_type: u8) -> &'static str {
+pub fn key_type_name(category: FieldCategory, key_type: u64) -> &'static str {
     match category {
         FieldCategory::Global => match key_type {
             0x01 => "PSBT_GLOBAL_XPUB",
@@ -103,7 +103,7 @@ pub fn key_type_name(category: FieldCategory, key_type: u8) -> &'static str {
 }
 
 /// Get human-readable field name based on category and type
-pub fn format_field_name(category: FieldCategory, key_type: u8) -> &'static str {
+pub fn format_field_name(category: FieldCategory, key_type: u64) -> &'static str {
     key_type_name(category, key_type)
 }
 
@@ -111,7 +111,7 @@ pub fn format_field_name(category: FieldCategory, key_type: u8) -> &'static str 
 ///
 /// Provides specialized formatting for certain field types (e.g., DNSSEC proofs),
 /// otherwise falls back to generic hex preview.
-pub fn format_field_value(category: FieldCategory, key_type: u8, data: &[u8]) -> String {
+pub fn format_field_value(category: FieldCategory, key_type: u64, data: &[u8]) -> String {
     // Special formatting for DNSSEC proof fields
     if category == FieldCategory::Output && key_type == PSBT_OUT_DNSSEC_PROOF {
         return format_dnssec_proof(data);
