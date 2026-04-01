@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "spdk_psbt"
-version = "0.1.0"
+version = "1.2.1"
 description = "Python bindings for BIP-375 (Silent Payments with PSBTs) implementation in Rust"
 readme = "README.md"
 requires-python = ">=3.8"

@@ -3,7 +3,7 @@
 use crate::errors::Bip375Error;
 use secp256k1::{PublicKey, SecretKey};
 use silentpayments::bitcoin_hashes::Hash as SpHash;
-use silentpayments::utils::hash::{InputsHash, LabelHash, SharedSecretHash};
+use silentpayments::utils::hash::{InputsHash, SharedSecretHash};
 use spdk_core::psbt::crypto;
 
 // ============================================================================
@@ -61,11 +61,7 @@ pub fn bip352_apply_label_to_spend_key(
     let secp = secp256k1::Secp256k1::new();
     let spend_pk = PublicKey::from_slice(&spend_key).map_err(|_| Bip375Error::InvalidKey)?;
     let scan_sk = SecretKey::from_slice(&scan_privkey).map_err(|_| Bip375Error::InvalidKey)?;
-
-    let tweak = LabelHash::from_b_scan_and_m(scan_sk, label).to_scalar();
-    let tweak_sk = SecretKey::from_slice(&tweak.to_be_bytes()).map_err(|_| Bip375Error::CryptoError)?;
-    let tweak_point = PublicKey::from_secret_key(&secp, &tweak_sk);
-    let labeled_pk = spend_pk.combine(&tweak_point).map_err(|_| Bip375Error::CryptoError)?;
+    let labeled_pk = crypto::bip352::apply_label_to_spend_pubkey(&secp, &spend_pk, &scan_sk, label)?;
     Ok(labeled_pk.serialize().to_vec())
 }
 

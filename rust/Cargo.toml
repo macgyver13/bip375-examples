@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 base64.workspace = true
+bip375-helpers.workspace = true
 hex.workspace = true
 secp256k1.workspace = true
 serde.workspace = true

@@ -108,24 +108,24 @@ def main():
         if share.dleq_proof:
             print(f"  - DLEQ proof: {len(share.dleq_proof)} bytes")
 
-    print("\nSigning inputs")
-    print("-" * 50)
-
-    psbt.sign_inputs(inputs)
-    print("✓ All inputs signed")
-
-    print("\nFinalizing PSBT")
-    print("-" * 50)
-
     # Finalize (compute output scripts from silent payment addresses)
+    print("\nComputing Silent Payment outputs")
+    print("-" * 50)
     psbt.finalize_sp_outputs()
     print("✓ PSBT finalized (output scripts computed)")
-
+    
     # Check output script was computed
     output_script = psbt.get_output_script(0)
     if output_script:
         print(f"  - Output 0 script: {output_script.hex()[:32]}...")
 
+    print("\nSigning inputs")
+    print("-" * 50)
+    psbt.sign_inputs(inputs)
+    print("✓ All inputs signed")
+
+    print("\nFinalizing PSBT")
+    print("-" * 50)
     psbt.finalize_input_witnesses()
 
     print("\nExtracting transaction")

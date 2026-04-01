@@ -39,6 +39,11 @@ fmt:
 view:
   cargo r -p psbt-viewer
 
+[group('viewer')]
+view-deploy:
+  cargo build -r -p psbt-viewer
+  cargo bundle -r -p psbt-viewer
+
 [group('hardware')]
 hardware:
   cargo r -p hardware-signer --bin hardware-signer --features=gui
