@@ -117,7 +117,7 @@ fn extract_output_fields(
 
 fn create_display_field(
     identifier: FieldIdentifier,
-    key_type: u8,
+    key_type: u64,
     key_data: &[u8],
     value_data: &[u8],
     highlighted: &HashSet<FieldIdentifier>,

@@ -230,8 +230,6 @@ impl PsbtMetadata {
 pub struct AggregatedShare {
     pub scan_key: Vec<u8>,
     pub aggregated_point: Vec<u8>,
-    pub is_global: bool,
-    pub num_inputs: usize,
 }
 
 impl AggregatedShare {
@@ -239,8 +237,6 @@ impl AggregatedShare {
         Self {
             scan_key: share.scan_key.serialize().to_vec(),
             aggregated_point: share.aggregated_share.serialize().to_vec(),
-            is_global: share.is_global,
-            num_inputs: share.num_inputs,
         }
     }
 }
@@ -499,7 +495,7 @@ impl Clone for SilentPaymentPsbt {
 /// The serialized output is identical to typed fields with the same key type.
 pub fn add_raw_global_field(
     psbt: Arc<SilentPaymentPsbt>,
-    type_value: u8,
+    type_value: u64,
     key_data: Vec<u8>,
     value: Vec<u8>,
 ) -> Result<(), Bip375Error> {
@@ -523,7 +519,7 @@ pub fn add_raw_global_field(
 pub fn add_raw_input_field(
     psbt: Arc<SilentPaymentPsbt>,
     input_index: u32,
-    type_value: u8,
+    type_value: u64,
     key_data: Vec<u8>,
     value: Vec<u8>,
 ) -> Result<(), Bip375Error> {
@@ -564,7 +560,7 @@ pub fn add_raw_input_field(
 pub fn remove_raw_input_fields_by_type(
     psbt: Arc<SilentPaymentPsbt>,
     input_index: u32,
-    type_value: u8,
+    type_value: u64,
 ) -> Result<(), Bip375Error> {
     psbt.with_inner(|p| {
         let idx = input_index as usize;
@@ -587,7 +583,7 @@ pub fn remove_raw_input_fields_by_type(
 pub fn add_raw_output_field(
     psbt: Arc<SilentPaymentPsbt>,
     output_index: u32,
-    type_value: u8,
+    type_value: u64,
     key_data: Vec<u8>,
     value: Vec<u8>,
 ) -> Result<(), Bip375Error> {

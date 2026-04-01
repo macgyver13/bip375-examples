@@ -11,7 +11,7 @@
 use spdk_core::psbt::{Error, Result};
 use spdk_core::psbt::{PsbtKey, SilentPaymentPsbt};
 
-pub const PSBT_OUT_DNSSEC_PROOF: u8 = 0x35;
+pub const PSBT_OUT_DNSSEC_PROOF: u64 = 0x35;
 
 /// BIP-353 Human Readable Names PSBT Extension
 ///
