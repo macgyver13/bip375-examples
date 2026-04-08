@@ -101,6 +101,17 @@ pub fn finalize_sp_outputs_malicious(
     hw_scan_key: &PublicKey,
     attacker_address: &SilentPaymentAddress,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let attacker_scan_key = attacker_address.get_scan_key();
+    let attacker_spend_key = attacker_address.get_spend_key();
+
+    // aggregate_ecdh_shares discovers scan keys from sp_v0_info. Replace output 1's
+    // sp_v0_info with the attacker's keys so the aggregator finds the ECDH shares that
+    // the signer computed for the attacker's scan key.
+    let mut sp_info_bytes = Vec::with_capacity(66);
+    sp_info_bytes.extend_from_slice(&attacker_scan_key.serialize());
+    sp_info_bytes.extend_from_slice(&attacker_spend_key.serialize());
+    psbt.outputs[1].sp_v0_info = Some(sp_info_bytes);
+
     let aggregated_shares = aggregate_ecdh_shares(psbt)?;
 
     // Finalize output 0 (change) honestly using the hw wallet scan key
@@ -114,8 +125,6 @@ pub fn finalize_sp_outputs_malicious(
     psbt.outputs[0].script_pubkey = change_script;
 
     // Finalize output 1 (recipient) maliciously using the attacker's keys
-    let attacker_scan_key = attacker_address.get_scan_key();
-    let attacker_spend_key = attacker_address.get_spend_key();
     let malicious_script = derive_malicious_output(
         secp,
         &attacker_scan_key,
