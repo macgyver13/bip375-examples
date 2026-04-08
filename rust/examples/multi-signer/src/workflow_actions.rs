@@ -14,7 +14,7 @@ use spdk_core::psbt::roles::{
     input_finalizer::finalize_sp_outputs,
     input_witness_finalizer::finalize_input_witnesses,
     signer::{add_ecdh_shares_partial, sign_inputs},
-    updater::{add_input_bip32_derivation, Bip32Derivation},
+    updater::update_input_derivation,
     validation::{self, ValidationLevel},
 };
 use spdk_core::psbt::{PsbtInput, SilentPaymentPsbt};
@@ -45,8 +45,7 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
         let fingerprint = wallet.master_fingerprint();
         for i in 0..party.controlled_input_indices.len() {
             let (_, pubkey) = wallet.input_key_pair(i as u32);
-            let derivation = Bip32Derivation::new(fingerprint, vec![0]);
-            add_input_bip32_derivation(&mut psbt, input_offset, &pubkey, &derivation)
+            update_input_derivation(&mut psbt, input_offset, &pubkey, fingerprint, &[0])
                 .map_err(|e| format!("Failed to add BIP32 derivation: {}", e))?;
             input_offset += 1;
         }

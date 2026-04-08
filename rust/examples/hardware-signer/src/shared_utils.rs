@@ -573,10 +573,7 @@ impl Default for TweakDatabase {
 // BIP32 Derivation Utilities
 // =============================================================================
 
-use spdk_core::psbt::roles::updater::{
-    add_input_bip32_derivation, add_input_sp_spend_bip32_derivation,
-    add_input_tap_bip32_derivation, add_output_bip32_derivation,
-};
+use spdk_core::psbt::roles::updater::{add_output_bip32_derivation, update_input_derivation};
 use spdk_core::psbt::SilentPaymentPsbt;
 
 /// Add BIP32 derivation info for transaction inputs
@@ -601,55 +598,28 @@ pub fn add_input_bip32_derivations(
     let master_fingerprint = wallet.master_fingerprint();
 
     for (input_idx, &utxo_id) in selected_utxo_ids.iter().enumerate() {
-        // Check if this is a Silent Payment input (has PSBT_IN_SP_TWEAK)
-        // SP inputs use PSBT_IN_SP_SPEND_BIP32_DERIVATION (BIP-376) instead of standard derivation
-        if psbt.get_input_sp_tweak(input_idx).is_some() {
-            // Silent Payment input - use PSBT_IN_SP_SPEND_BIP32_DERIVATION (0x1f)
-            let (_privkey, spend_pubkey) = wallet.spend_key_pair();
-
-            let derivation = spdk_core::psbt::roles::updater::Bip32Derivation {
-                master_fingerprint,
-                path: wallet.get_sp_spend_derivation_path(),
-            };
-
-            add_input_sp_spend_bip32_derivation(psbt, input_idx, &spend_pubkey, &derivation)
-                .map_err(|e| format!("Failed to add SP spend derivation: {}", e))?;
-
-            count += 1;
+        let (pubkey, path) = if psbt.get_input_sp_tweak(input_idx).is_some() {
+            // SP input: pass the spend pubkey (not the tweaked locking key)
+            let (_, pk) = wallet.spend_key_pair();
+            (pk, wallet.get_sp_spend_derivation_path())
         } else {
-            // Regular input - check script type to determine derivation method
-            let (_privkey, pubkey) = wallet.input_key_pair(utxo_id as u32);
-
-            // Check if this is a P2TR input
-            if let Some(witness_utxo) = &psbt.inputs[input_idx].witness_utxo {
-                if witness_utxo.script_pubkey.is_p2tr() {
-                    // P2TR input - use PSBT_IN_TAP_BIP32_DERIVATION with BIP86 path
-                    let derivation = spdk_core::psbt::roles::updater::Bip32Derivation {
-                        master_fingerprint,
-                        path: wallet.get_p2tr_derivation_path(utxo_id as u32),
-                    };
-                    let (xonly, _parity) = pubkey.x_only_public_key();
-                    add_input_tap_bip32_derivation(psbt, input_idx, &xonly, vec![], &derivation)
-                        .map_err(|e| format!("Failed to add tap input derivation: {}", e))?;
-                } else if witness_utxo.script_pubkey.is_p2wpkh() {
-                    // P2WPKH - use PSBT_IN_BIP32_DERIVATION with BIP84 path
-                    let derivation = spdk_core::psbt::roles::updater::Bip32Derivation {
-                        master_fingerprint,
-                        path: wallet.get_p2wpkh_derivation_path(utxo_id as u32),
-                    };
-                    add_input_bip32_derivation(psbt, input_idx, &pubkey, &derivation)
-                        .map_err(|e| format!("Failed to add input derivation: {}", e))?;
-                } else {
-                    // Other script types - skip BIP32 derivation
-                    continue;
-                }
-            } else {
-                // No witness_utxo - skip BIP32 derivation
+            let (_, pk) = wallet.input_key_pair(utxo_id as u32);
+            let Some(witness_utxo) = psbt.inputs[input_idx].witness_utxo.as_ref() else {
                 continue;
-            }
+            };
+            let path = if witness_utxo.script_pubkey.is_p2tr() {
+                wallet.get_p2tr_derivation_path(utxo_id as u32)
+            } else if witness_utxo.script_pubkey.is_p2wpkh() {
+                wallet.get_p2wpkh_derivation_path(utxo_id as u32)
+            } else {
+                continue;
+            };
+            (pk, path)
+        };
 
-            count += 1;
-        }
+        update_input_derivation(psbt, input_idx, &pubkey, master_fingerprint, &path)
+            .map_err(|e| format!("Failed to add input derivation: {}", e))?;
+        count += 1;
     }
 
     Ok(count)

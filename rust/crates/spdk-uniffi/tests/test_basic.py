@@ -29,7 +29,10 @@ def sample_psbt(test_keys):
             amount=100000,
             script_pubkey=bytes.fromhex("0014") + bytes(20),
             private_key=test_keys["privkey"],
+            public_key=test_keys["pubkey"],
             sequence=0xfffffffd,
+            master_fingerprint=None,
+            derivation_path=None,
         )
     ]
 
@@ -152,7 +155,10 @@ class TestRoles:
                 amount=100000,
                 script_pubkey=bytes.fromhex("0014") + bytes(20),
                 private_key=test_keys["privkey"],
+                public_key=test_keys["pubkey"],
                 sequence=0xfffffffd,
+                master_fingerprint=None,
+                derivation_path=None,
             )
         ]
 

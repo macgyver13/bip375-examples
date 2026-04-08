@@ -72,6 +72,8 @@ impl From<spdk_core::psbt::Error> for Bip375Error {
             spdk_core::psbt::Error::Secp256k1(_) => Bip375Error::CryptoError,
             spdk_core::psbt::Error::Hex(_) => Bip375Error::InvalidData,
             spdk_core::psbt::Error::Io(_) => Bip375Error::IoError,
+            spdk_core::psbt::Error::MissingWitnessUtxo(_) => Bip375Error::InvalidData,
+            spdk_core::psbt::Error::UnsupportedScriptType(_) => Bip375Error::InvalidData,
             spdk_core::psbt::Error::Other(_) => Bip375Error::PsbtError,
         }
     }

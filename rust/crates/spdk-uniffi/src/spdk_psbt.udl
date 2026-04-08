@@ -81,6 +81,9 @@ dictionary Utxo {
   bytes script_pubkey;
   bytes? private_key;
   u32? sequence;
+  bytes? public_key;
+  bytes? master_fingerprint;
+  sequence<u32>? derivation_path;
 };
 
 [Enum]
@@ -135,6 +138,9 @@ interface SilentPaymentPsbt {
 
   [Throws=Bip375Error]
   void add_inputs(sequence<Utxo> inputs);
+
+  [Throws=Bip375Error]
+  void update_inputs(sequence<Utxo> inputs);
 
   [Throws=Bip375Error]
   void add_outputs(sequence<PsbtOutput> outputs);

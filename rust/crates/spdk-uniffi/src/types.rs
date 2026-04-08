@@ -132,6 +132,14 @@ pub struct Utxo {
     pub script_pubkey: Vec<u8>,
     pub private_key: Option<Vec<u8>>,
     pub sequence: Option<u32>,
+    /// Explicit public key, used when private_key is unavailable (e.g. coordinator
+    /// in a hardware-signer flow). Takes priority over deriving from private_key
+    /// in the Updater role.
+    pub public_key: Option<Vec<u8>>,
+    /// Master fingerprint for BIP32 derivation (4 bytes). Used by `update_inputs`.
+    pub master_fingerprint: Option<Vec<u8>>,
+    /// BIP32 derivation path (e.g. [0x8000002C, 0x80000000, ...]). Used by `update_inputs`.
+    pub derivation_path: Option<Vec<u32>>,
 }
 
 impl Utxo {
@@ -401,6 +409,55 @@ impl SilentPaymentPsbt {
         let psbt_inputs = psbt_inputs?;
 
         self.with_inner(|p| psbt::roles::constructor::add_inputs(p, &psbt_inputs))?;
+
+        Ok(())
+    }
+
+    /// Updater role: populate BIP32 derivation fields from key material in each Utxo.
+    ///
+    /// Must be called after `add_inputs`. Uses `public_key` if present, otherwise
+    /// derives from `private_key`. Uses `master_fingerprint` and `derivation_path`
+    /// when present; falls back to zero fingerprint and empty path otherwise.
+    pub fn update_inputs(&self, inputs: Vec<Utxo>) -> Result<(), Bip375Error> {
+        use secp256k1::{PublicKey, Secp256k1, SecretKey};
+
+        let secp = Secp256k1::new();
+
+        // Resolve (pubkey, fingerprint, path) per input before entering the
+        // PSBT lock. Inputs lacking any key material are silently skipped.
+        let mut resolved: Vec<(usize, PublicKey, [u8; 4], Vec<u32>)> =
+            Vec::with_capacity(inputs.len());
+        for (idx, u) in inputs.iter().enumerate() {
+            let pubkey = if let Some(pk_bytes) = &u.public_key {
+                PublicKey::from_slice(pk_bytes).map_err(|_| Bip375Error::InvalidKey)?
+            } else if let Some(sk_bytes) = &u.private_key {
+                let sk = SecretKey::from_slice(sk_bytes).map_err(|_| Bip375Error::InvalidKey)?;
+                PublicKey::from_secret_key(&secp, &sk)
+            } else {
+                continue;
+            };
+
+            let fingerprint: [u8; 4] = u
+                .master_fingerprint
+                .as_deref()
+                .and_then(|b| <[u8; 4]>::try_from(b).ok())
+                .unwrap_or([0u8; 4]);
+            let path = u.derivation_path.clone().unwrap_or_default();
+
+            resolved.push((idx, pubkey, fingerprint, path));
+        }
+
+        self.with_inner(|p| -> Result<(), core::Error> {
+            for (idx, pubkey, fingerprint, path) in &resolved {
+                if *idx >= p.inputs.len() {
+                    break;
+                }
+                psbt::roles::updater::update_input_derivation(
+                    p, *idx, pubkey, *fingerprint, path,
+                )?;
+            }
+            Ok(())
+        })?;
 
         Ok(())
     }

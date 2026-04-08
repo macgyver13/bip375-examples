@@ -10,9 +10,6 @@ This example shows:
 5. Saving/loading PSBTs with metadata
 """
 
-import time
-import spdk_psbt
-
 # Import the role functions directly from spdk_psbt
 from spdk_psbt import (
     bip352_compute_ecdh_share,
@@ -48,6 +45,9 @@ def main():
             script_pubkey=bytes.fromhex("0014") + bytes(20),  # P2WPKH placeholder
             private_key=privkey,
             sequence=0xfffffffd,
+            public_key=pubkey,
+            master_fingerprint=None,
+            derivation_path=None,
         )
     ]
 
@@ -91,6 +91,8 @@ def main():
     print("\nAdding ECDH shares to PSBT")
     print("-" * 50)
 
+    # Update PSBT with inputs
+    psbt.update_inputs(inputs)
     # Add ECDH shares for all inputs (with DLEQ proofs)
     scan_keys = [scan_key]
     psbt.add_ecdh_shares_full(inputs, scan_keys)
