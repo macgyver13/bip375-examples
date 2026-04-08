@@ -2,6 +2,8 @@
 .json
 .vscode
 .claude
+CLAUDE.md
+.wolf
 __pycache__
 rust/target
 output/
