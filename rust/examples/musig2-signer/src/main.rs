@@ -66,7 +66,7 @@ fn run_cli() -> anyhow::Result<()> {
 
     // -----------------------------------------------------------------------
     println!("--- 2. PSBT Construction ---");
-    let mut psbt = workflow::construct_psbt(&keys)?;
+    let mut psbt = workflow::construct_psbt(&keys, &[(keys.sp_address.clone(), bitcoin::Amount::from_sat(90_000))])?;
     println!("PSBT created: 1 input, 2 outputs");
     println!("BIP-373 participant pubkeys registered\n");
 

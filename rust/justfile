@@ -66,10 +66,22 @@ hardware-attack:
 
 [group('musig2')]
 musig2:
-    cargo r -p musig2-signer
+  cargo r -p musig2-signer
+
+coldcard_path := home_directory() / "src/coldcard-firmware/testing/data"
+[group('musig2')]
+payroll:
+  cargo r -p musig2-signer --bin payroll "{{coldcard_path}}"
+
+finalize:
+  cargo r -p musig2-signer --bin finalize "{{coldcard_path}}/r2-alice.psbt"
+
+musig2-verify:
+  cargo r -p musig2-signer --bin scan-recipient "{{coldcard_path}}/musig2-sp-final.psbt"
 
 [group('uniffi')]
-uniffi: uniffi-setup uniffi-test uniffi-example
+uniffi:
+  uniffi-setup uniffi-test uniffi-example
 
 [group('uniffi')]
 uniffi-setup:

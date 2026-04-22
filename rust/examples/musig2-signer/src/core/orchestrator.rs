@@ -19,7 +19,11 @@ impl Orchestrator {
     pub fn execute_create_psbt(state: &mut AppState) -> Result<(), String> {
         let secp = Secp256k1::new();
         let keys = crate::workflow::setup_keys(&secp).map_err(|e| e.to_string())?;
-        let psbt = crate::workflow::construct_psbt(&keys).map_err(|e| e.to_string())?;
+        let psbt = crate::workflow::construct_psbt(
+            &keys,
+            &[(keys.sp_address.clone(), bitcoin::Amount::from_sat(90_000))],
+        )
+        .map_err(|e| e.to_string())?;
 
         state.highlighted_fields = psbt_analyzer::compute_field_diff(None, &psbt);
         state.transaction_summary = Some(psbt_analyzer::compute_transaction_summary(&psbt));

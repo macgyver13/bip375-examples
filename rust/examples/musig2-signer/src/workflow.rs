@@ -99,16 +99,24 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
     })
 }
 
-/// Create the PSBT with 1 MuSig2 P2TR input and 2 outputs (SP + change).
-pub fn construct_psbt(keys: &KeySetup) -> Result<SilentPaymentPsbt> {
-    let input_txid = Txid::all_zeros();
-    let input_vout = 0u32;
-    let input_amount = Amount::from_sat(100_000);
+/// Create the PSBT with 1 MuSig2 P2TR input and N+1 outputs (N SP recipients + change).
+///
+/// `recipients` is a slice of (SP address, payment amount) pairs. A change output
+/// returning to the same MuSig2 script is appended automatically (9 000 sats).
+pub fn construct_psbt(
+    keys: &KeySetup,
+    recipients: &[(SilentPaymentAddress, Amount)],
+) -> Result<SilentPaymentPsbt> {
+    let total_payment: u64 = recipients.iter().map(|(_, a)| a.to_sat()).sum();
+    let change_amount = Amount::from_sat(9_000);
+    let fee = Amount::from_sat(1_000);
+    let input_amount = Amount::from_sat(total_payment) + change_amount + fee;
 
-    let mut psbt = create_psbt(1, 2);
+    let num_outputs = recipients.len() + 1; // +1 for change
+    let mut psbt = create_psbt(1, num_outputs);
 
     let psbt_inputs = vec![PsbtInput::new(
-        OutPoint::new(input_txid, input_vout),
+        OutPoint::new(Txid::all_zeros(), 0),
         TxOut {
             value: input_amount,
             script_pubkey: keys.p2tr_script.clone(),
@@ -117,10 +125,11 @@ pub fn construct_psbt(keys: &KeySetup) -> Result<SilentPaymentPsbt> {
         None,
     )];
 
-    let psbt_outputs = vec![
-        PsbtOutput::silent_payment(Amount::from_sat(90_000), keys.sp_address.clone(), None),
-        PsbtOutput::regular(Amount::from_sat(9_000), keys.p2tr_script.clone()),
-    ];
+    let mut psbt_outputs: Vec<PsbtOutput> = recipients
+        .iter()
+        .map(|(addr, amount)| PsbtOutput::silent_payment(*amount, addr.clone(), None))
+        .collect();
+    psbt_outputs.push(PsbtOutput::regular(change_amount, keys.p2tr_script.clone()));
 
     add_inputs(&mut psbt, &psbt_inputs)?;
     add_outputs(&mut psbt, &psbt_outputs)?;
@@ -136,14 +145,21 @@ pub fn construct_psbt(keys: &KeySetup) -> Result<SilentPaymentPsbt> {
     .map_err(|e| anyhow::anyhow!("set participant pubkeys: {e}"))?;
 
     // BIP-373: add PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS + PSBT_OUT_TAP_BIP32_DERIVATION
-    // on change output (output[1]) to aid in change detection.
+    // on the change output (last output) to aid in change detection.
+    let change_idx = num_outputs - 1;
     psbt.set_output_musig2_participant_pubkeys(
-        1,
+        change_idx,
         &keys.agg_pk,
         &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
     )
     .map_err(|e| anyhow::anyhow!("set output participant pubkeys: {e}"))?;
-    add_output_tap_bip32_derivation(&mut psbt, 1, &keys.agg_xonly, vec![], &dummy_derivation)?;
+    add_output_tap_bip32_derivation(
+        &mut psbt,
+        change_idx,
+        &keys.agg_xonly,
+        vec![],
+        &dummy_derivation,
+    )?;
 
     Ok(psbt)
 }
