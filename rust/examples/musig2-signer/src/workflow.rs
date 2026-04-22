@@ -17,10 +17,9 @@ use spdk_core::psbt::{
     core::{Bip375PsbtExt, PartialEcdhShareData, PsbtInput, PsbtOutput, SilentPaymentPsbt},
     crypto::{compute_ecdh_share, dleq_generate_proof, dleq_verify_proof},
     roles::{
-        add_input_tap_bip32_derivation, add_inputs, add_musig2_partial_sig, add_musig2_pub_nonce,
-        add_output_tap_bip32_derivation, add_outputs, aggregate_musig2_keys, aggregate_musig2_sigs,
-        create_psbt, extract_transaction, finalize_input_witnesses, finalize_sp_outputs,
-        Bip32Derivation,
+        add_inputs, add_musig2_partial_sig, add_musig2_pub_nonce, add_outputs,
+        aggregate_musig2_keys, aggregate_musig2_sigs, create_psbt, extract_transaction,
+        finalize_input_witnesses, finalize_sp_outputs,
     },
 };
 
@@ -32,6 +31,12 @@ pub struct KeySetup {
     pub alice_pk: PublicKey,
     pub bob_pk: PublicKey,
     pub charlie_pk: PublicKey,
+    /// Pre-tweak aggregate pubkey — used as PSBT_IN/OUT_MUSIG2_PARTICIPANT_PUBKEYS keydata
+    /// per BIP-373: "computed as specified in BIP-327 with no tweaks applied".
+    pub untweaked_agg_pk: PublicKey,
+    /// Pre-tweak aggregate xonly — used in TAP_BIP32_DERIVATION entries.
+    pub untweaked_agg_xonly: bitcoin::key::XOnlyPublicKey,
+    /// Post-tweak (taproot) aggregate pubkey — used for the P2TR scriptPubKey.
     pub agg_pk: PublicKey,
     pub agg_xonly: bitcoin::key::XOnlyPublicKey,
     pub key_agg_ctx: musig2::KeyAggContext,
@@ -43,7 +48,22 @@ pub struct KeySetup {
 
 /// Generate deterministic demo key material and aggregate the MuSig2 key.
 pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
-    let alice_sk = SecretKey::from_slice(&[0xaa_u8; 32])?;
+    // Alice's key is derived from the Coldcard simulator's fixed master xprv at
+    // m/48'/1'/0'/2'/0/0, matching the PSBT_IN_TAP_BIP32_DERIVATION entry written
+    // by gen_fixtures.rs. Source: Coldcard firmware testing/constants.py:9.
+    const ALICE_SIMULATOR_XPRV: &str = "xprv9s21ZrQH143K3i4kfV4tE2qAvhys9WDCpHJXKz2biqWkZwLKma1dzWaqin8CxCKPF3tX2fVRD9tBggJtxvdAxTpKfz8zRUoJZa3S7MtMgwy";
+    let alice_sk = {
+        use bitcoin::bip32::{DerivationPath, Xpriv};
+        use std::str::FromStr;
+        let master = Xpriv::from_str(ALICE_SIMULATOR_XPRV)
+            .map_err(|e| anyhow::anyhow!("Alice xprv parse: {e}"))?;
+        let path = DerivationPath::from_str("m/48'/1'/0'/2'/0/0")
+            .map_err(|e| anyhow::anyhow!("Alice path parse: {e}"))?;
+        master
+            .derive_priv(secp, &path)
+            .map_err(|e| anyhow::anyhow!("Alice key derivation: {e}"))?
+            .private_key
+    };
     let bob_sk = SecretKey::from_slice(&[0xbb_u8; 32])?;
     let charlie_sk = SecretKey::from_slice(&[0xcc_u8; 32])?;
 
@@ -51,9 +71,21 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
     let bob_pk = PublicKey::from_secret_key(secp, &bob_sk);
     let charlie_pk = PublicKey::from_secret_key(secp, &charlie_sk);
 
-    let participants = vec![alice_pk, bob_pk, charlie_pk];
-    let (key_agg_ctx, _untweaked_xonly) = aggregate_musig2_keys(&participants)
+    // BIP-327 KeySort: sort by 33-byte compressed representation before aggregating
+    // so the aggregate matches libsecp256k1's internal sort in the Coldcard simulator.
+    let mut participants = vec![alice_pk, bob_pk, charlie_pk];
+    participants.sort_by(|a, b| a.serialize().cmp(&b.serialize()));
+    let (key_agg_ctx, untweaked_xonly_031) = aggregate_musig2_keys(&participants)
         .map_err(|e| anyhow::anyhow!("Key aggregation failed: {e}"))?;
+
+    // Capture the pre-tweak aggregate pubkey for PSBT_IN/OUT_MUSIG2_PARTICIPANT_PUBKEYS.
+    // BIP-373 requires this field to use the key "with no tweaks applied".
+    let untweaked_xonly =
+        bitcoin::key::XOnlyPublicKey::from_slice(&untweaked_xonly_031.serialize())?;
+    let mut untweaked_pk_bytes = [0u8; 33];
+    untweaked_pk_bytes[0] = 0x02;
+    untweaked_pk_bytes[1..].copy_from_slice(&untweaked_xonly.serialize());
+    let untweaked_agg_pk = PublicKey::from_slice(&untweaked_pk_bytes)?;
 
     // Apply BIP-341 taproot tweak (no script tree => unspendable taproot tweak).
     // This updates gacc/tacc in the KeyAggContext so signing math is correct.
@@ -69,11 +101,11 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
         bitcoin::key::TweakedPublicKey::dangerous_assume_tweaked(agg_xonly),
     );
 
-    // Construct compressed pubkey from the tweaked x-only key (assume even Y)
-    let mut agg_pk_bytes = [0u8; 33];
-    agg_pk_bytes[0] = 0x02;
-    agg_pk_bytes[1..].copy_from_slice(&agg_xonly.serialize());
-    let agg_pk = PublicKey::from_slice(&agg_pk_bytes)?;
+    // BIP-373 keypath PUB_NONCE/PARTIAL_SIG identifier is the taproot output key Q
+    // with its ACTUAL Y parity (matches bitcoind src/script/sign.cpp:322,
+    // GetCPubKeys().at(tweaked->second ? 1 : 0)). Forcing 0x02 breaks odd-Y aggregates.
+    let tweaked_full: musig2::secp256k1::PublicKey = key_agg_ctx.aggregated_pubkey();
+    let agg_pk = PublicKey::from_slice(&tweaked_full.serialize())?;
 
     let scan_sk = SecretKey::from_slice(&[0x11_u8; 32])?;
     let spend_sk = SecretKey::from_slice(&[0x22_u8; 32])?;
@@ -89,6 +121,8 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
         alice_pk,
         bob_pk,
         charlie_pk,
+        untweaked_agg_pk,
+        untweaked_agg_xonly: untweaked_xonly,
         agg_pk,
         agg_xonly,
         key_agg_ctx,
@@ -134,32 +168,29 @@ pub fn construct_psbt(
     add_inputs(&mut psbt, &psbt_inputs)?;
     add_outputs(&mut psbt, &psbt_outputs)?;
 
-    let dummy_derivation = Bip32Derivation::new([0u8; 4], vec![]);
-    add_input_tap_bip32_derivation(&mut psbt, 0, &keys.agg_xonly, vec![], &dummy_derivation)?;
+    // spdk-core's constructor sets tap_internal_key from the scriptPubKey (the tweaked
+    // output key Q). Per BIP-341/BIP-371, PSBT_IN_TAP_INTERNAL_KEY must hold the
+    // untweaked aggregate P; the simulator applies the taproot tweak itself when
+    // verifying the output key.
+    psbt.inputs[0].tap_internal_key = Some(keys.untweaked_agg_xonly);
 
     psbt.set_input_musig2_participant_pubkeys(
         0,
-        &keys.agg_pk,
+        &keys.untweaked_agg_pk,
         &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
     )
     .map_err(|e| anyhow::anyhow!("set participant pubkeys: {e}"))?;
 
-    // BIP-373: add PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS + PSBT_OUT_TAP_BIP32_DERIVATION
-    // on the change output (last output) to aid in change detection.
+    // BIP-373: add PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS on the change output (last
+    // output) to aid in change detection. Per-participant TAP_BIP32_DERIVATION on
+    // the change output is the caller's responsibility (see gen_fixtures.rs).
     let change_idx = num_outputs - 1;
     psbt.set_output_musig2_participant_pubkeys(
         change_idx,
-        &keys.agg_pk,
+        &keys.untweaked_agg_pk,
         &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
     )
     .map_err(|e| anyhow::anyhow!("set output participant pubkeys: {e}"))?;
-    add_output_tap_bip32_derivation(
-        &mut psbt,
-        change_idx,
-        &keys.agg_xonly,
-        vec![],
-        &dummy_derivation,
-    )?;
 
     Ok(psbt)
 }

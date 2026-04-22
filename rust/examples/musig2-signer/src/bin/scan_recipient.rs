@@ -14,7 +14,7 @@ use musig2_signer::recipients::{recipient_keys, RECIPIENT_SEEDS};
 use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use silentpayments::receiving::{Label, Receiver};
 use silentpayments::utils::receiving::{calculate_ecdh_shared_secret, calculate_tweak_data};
-use silentpayments::Network;
+use silentpayments::{Network, SpVersion};
 use spdk_core::psbt::core::{Bip375PsbtExt, SilentPaymentPsbt};
 use spdk_core::psbt::crypto::is_input_eligible;
 use spdk_core::psbt::{get_input_pubkey, get_input_txid, get_input_vout};
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
         let scan_pk = PublicKey::from_secret_key(&secp, &scan_sk);
         let spend_pk = PublicKey::from_secret_key(&secp, &spend_sk);
 
-        let receiver = Receiver::new(0, scan_pk, spend_pk, Label::new(scan_sk, 0), Network::Mainnet)
+        let receiver = Receiver::new(SpVersion::ZERO, scan_pk, spend_pk, Label::new(scan_sk, 0), Network::Mainnet)
             .map_err(|e| anyhow::anyhow!("Receiver::new: {e}"))?;
 
         let ecdh = calculate_ecdh_shared_secret(&tweak_data, &scan_sk);
