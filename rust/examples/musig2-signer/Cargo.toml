@@ -28,8 +28,10 @@ path = "src/bin/scan_recipient.rs"
 [dependencies]
 anyhow.workspace = true
 bip375-helpers.workspace = true
+bip39 = "2.0"
 bitcoin.workspace = true
 hex.workspace = true
+hmac = "0.12"
 musig2.workspace = true
 rand = { version = "0.8", features = ["std", "std_rng"] }
 secp256k1.workspace = true

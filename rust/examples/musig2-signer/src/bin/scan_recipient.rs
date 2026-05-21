@@ -1,12 +1,12 @@
 //! Recipient-side Silent Payment validator.
 //!
-//! Given a signed round-trip PSBT (e.g. `musig2-sp-round2-final.psbt`), runs the real
+//! Given a signed round-trip PSBT (e.g. `musig2-sp-final.psbt`), runs the real
 //! BIP-352 receiver scanning algorithm for every known-seed recipient and confirms each
 //! one detects its on-chain output. Uses ONLY recipient scan keys — no sender or aggregate
 //! secrets — exactly as a production wallet scanning the chain would.
 //!
 //! Usage:
-//!   cargo run -p musig2-signer --bin scan-recipient <path_to_signed.psbt>
+//!   cargo run -p musig2-signer --bin scan-recipient <path_to_musig2-sp-final.psbt>
 
 use anyhow::{bail, Context, Result};
 use hex;
@@ -24,7 +24,7 @@ use std::path::PathBuf;
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: cargo run -p musig2-signer --bin scan-recipient <path_to_signed.psbt>");
+        eprintln!("Usage: cargo run -p musig2-signer --bin scan-recipient <path_to_musig2-sp-final.psbt>");
         std::process::exit(1);
     }
     let psbt_path = PathBuf::from(&args[1]);

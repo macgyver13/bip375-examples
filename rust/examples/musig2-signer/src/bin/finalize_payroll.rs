@@ -1,14 +1,14 @@
 //! Finalize Simulator PSBT
-//! 
-//! Takes the musig2-sp-round2-out.psbt from the Coldcard simulator (which contains
+//!
+//! Takes the r2-alice.psbt from the Coldcard simulator (which contains
 //! Alice's partial signature and the finalized SP output scripts) and:
 //!   1. Re-derives Bob's and Charlie's secret nonces from their deterministic test seeds
 //!   2. Computes the final sighash
 //!   3. Adds Bob's and Charlie's partial signatures
 //!   4. Aggregates all signatures and extracts the final transaction
-//! 
+//!
 //! Usage:
-//!   cargo run -p musig2-signer --bin finalize_simulator path/to/musig2-sp-round2-out.psbt
+//!   cargo run -p musig2-signer --bin finalize path/to/r2-alice.psbt
 
 use anyhow::{bail, Context, Result};
 use hex;
@@ -38,7 +38,7 @@ fn test_nonce_seed(party: &str) -> [u8; 32] {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: cargo run -p musig2-signer --bin finalize_simulator <path_to_musig2-sp-round2-out.psbt>");
+        eprintln!("Usage: cargo run -p musig2-signer --bin finalize <path_to_r2-alice.psbt>");
         std::process::exit(1);
     }
     let psbt_path = PathBuf::from(&args[1]);
@@ -49,15 +49,15 @@ fn main() -> Result<()> {
     // 1. Read the Round 2 PSBT outputted by the simulator
     let psbt_bytes = fs::read(&psbt_path).context("Failed to read PSBT file")?;
     let mut psbt = SilentPaymentPsbt::deserialize(&psbt_bytes).context("Failed to parse PSBT")?;
-    
+
     println!("Loaded PSBT from {}", psbt_path.display());
 
     // 2. Re-derive Bob and Charlie's secret nonces
-    // We do this by feeding their deterministic seeds into workflow::add_nonce 
+    // We do this by feeding their deterministic seeds into workflow::add_nonce
     // using a throwaway valid PSBT, extracting exactly the same SecNonce they used in round 1.
     let recipients = vec![(keys.sp_address.clone(), bitcoin::Amount::from_sat(1000))];
     let mut dummy_psbt = workflow::construct_psbt(&keys, &recipients)?;
-    
+
     let bob_sec_nonce = workflow::add_nonce(
         &mut dummy_psbt,
         "Bob",
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
         &keys.key_agg_ctx,
         test_nonce_seed("Bob"),
     )?;
-    
+
     let charlie_sec_nonce = workflow::add_nonce(
         &mut dummy_psbt,
         "Charlie",
@@ -112,9 +112,9 @@ fn main() -> Result<()> {
     println!("hex:  {}", tx_hex);
 
     let out_dir = psbt_path.parent().unwrap_or(std::path::Path::new("."));
-    let final_psbt_path = out_dir.join("musig2-sp-round2-final.psbt");
+    let final_psbt_path = out_dir.join("musig2-sp-final.psbt");
     let final_tx_path = out_dir.join("musig2-sp-final-tx.hex");
-    
+
     fs::write(&final_psbt_path, psbt.serialize())?;
     fs::write(&final_tx_path, &tx_hex)?;
 

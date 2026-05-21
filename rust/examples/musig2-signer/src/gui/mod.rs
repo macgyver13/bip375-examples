@@ -56,6 +56,12 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         )));
     } else {
         window.set_has_psbt(false);
+        window.set_global_fields(slint::ModelRc::new(slint::VecModel::from(vec![])));
+        window.set_input_fields(slint::ModelRc::new(slint::VecModel::from(vec![])));
+        window.set_output_fields(slint::ModelRc::new(slint::VecModel::from(vec![])));
+        window.set_tx_summary(TransactionSummary {
+            total_input: 0, total_output: 0, fee: 0, num_inputs: 0, num_outputs: 0,
+        });
     }
 
     // Transaction summary.
@@ -77,7 +83,7 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
 
     // Aggregated Schnorr sig.
     if let Some(sig_hex) = &state.schnorr_sig_hex {
-        window.set_schnorr_sig(sig_hex.as_str().into());
+        window.set_schnorr_sig(sig_hex.into());
     } else {
         window.set_schnorr_sig(slint::SharedString::from(""));
     }
@@ -142,19 +148,7 @@ pub fn run_gui() -> Result<(), slint::PlatformError> {
 
     window.on_partial_sign(callback!(Orchestrator::execute_partial_sign, party));
 
-    window.on_extract({
-        let w = window_weak.clone();
-        let s = state_rc.clone();
-        move || {
-            let mut state = s.borrow_mut();
-            if let Err(e) = Orchestrator::execute_extract(&mut state) {
-                eprintln!("Error: {e}");
-            }
-            if let Some(win) = w.upgrade() {
-                sync_state_to_ui(&win, &state);
-            }
-        }
-    });
+    window.on_extract(callback!(Orchestrator::execute_extract));
 
     window.on_reset({
         let w = window_weak.clone();

@@ -18,7 +18,7 @@ use spdk_core::psbt::{
     crypto::{compute_ecdh_share, dleq_generate_proof, dleq_verify_proof},
     roles::{
         add_inputs, add_musig2_partial_sig, add_musig2_pub_nonce, add_outputs,
-        aggregate_musig2_keys, aggregate_musig2_sigs, create_psbt, extract_transaction,
+        aggregate_musig2_sigs, create_psbt, extract_transaction,
         finalize_input_witnesses, finalize_sp_outputs,
     },
 };
@@ -48,52 +48,112 @@ pub struct KeySetup {
 
 /// Generate deterministic demo key material and aggregate the MuSig2 key.
 pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
-    // Alice's key is derived from the Coldcard simulator's fixed master xprv at
-    // m/48'/1'/0'/2'/0/0, matching the PSBT_IN_TAP_BIP32_DERIVATION entry written
-    // by gen_fixtures.rs. Source: Coldcard firmware testing/constants.py:9.
-    const ALICE_SIMULATOR_XPRV: &str = "xprv9s21ZrQH143K3i4kfV4tE2qAvhys9WDCpHJXKz2biqWkZwLKma1dzWaqin8CxCKPF3tX2fVRD9tBggJtxvdAxTpKfz8zRUoJZa3S7MtMgwy";
+    use bip39::Mnemonic;
+    use bitcoin::bip32::{DerivationPath, Xpriv};
+    use hmac::{Hmac, Mac};
+    use sha2::Sha512;
+    use std::str::FromStr;
+
+    type HmacSha512 = Hmac<Sha512>;
+
+    let mnemonic_str = "wife shiver author away frog air rough vanish fantasy frozen noodle athlete pioneer citizen symptom firm much faith extend rare axis garment kiwi clarify";
+    let mnemonic = Mnemonic::parse(mnemonic_str)
+        .map_err(|e| anyhow::anyhow!("Mnemonic parse: {e}"))?;
+
+    let path = DerivationPath::from_str("m/48'/1'/0'/2'")
+        .map_err(|e| anyhow::anyhow!("Path parse: {e}"))?;
+
     let alice_sk = {
-        use bitcoin::bip32::{DerivationPath, Xpriv};
-        use std::str::FromStr;
-        let master = Xpriv::from_str(ALICE_SIMULATOR_XPRV)
-            .map_err(|e| anyhow::anyhow!("Alice xprv parse: {e}"))?;
-        let path = DerivationPath::from_str("m/48'/1'/0'/2'/0/0")
-            .map_err(|e| anyhow::anyhow!("Alice path parse: {e}"))?;
-        master
-            .derive_priv(secp, &path)
-            .map_err(|e| anyhow::anyhow!("Alice key derivation: {e}"))?
-            .private_key
+        let seed = mnemonic.to_seed("");
+        let master = Xpriv::new_master(bitcoin::Network::Testnet, &seed)?;
+        master.derive_priv(secp, &path)?.private_key
     };
-    let bob_sk = SecretKey::from_slice(&[0xbb_u8; 32])?;
-    let charlie_sk = SecretKey::from_slice(&[0xcc_u8; 32])?;
+    let bob_sk = {
+        let seed = mnemonic.to_seed("Me");
+        let master = Xpriv::new_master(bitcoin::Network::Testnet, &seed)?;
+        master.derive_priv(secp, &path)?.private_key
+    };
+    let charlie_sk = {
+        let seed = mnemonic.to_seed("Myself");
+        let master = Xpriv::new_master(bitcoin::Network::Testnet, &seed)?;
+        master.derive_priv(secp, &path)?.private_key
+    };
 
     let alice_pk = PublicKey::from_secret_key(secp, &alice_sk);
     let bob_pk = PublicKey::from_secret_key(secp, &bob_sk);
     let charlie_pk = PublicKey::from_secret_key(secp, &charlie_sk);
 
     // BIP-327 KeySort: sort by 33-byte compressed representation before aggregating
-    // so the aggregate matches libsecp256k1's internal sort in the Coldcard simulator.
     let mut participants = vec![alice_pk, bob_pk, charlie_pk];
     participants.sort_by(|a, b| a.serialize().cmp(&b.serialize()));
-    let (key_agg_ctx, untweaked_xonly_031) = aggregate_musig2_keys(&participants)
-        .map_err(|e| anyhow::anyhow!("Key aggregation failed: {e}"))?;
 
-    // Capture the pre-tweak aggregate pubkey for PSBT_IN/OUT_MUSIG2_PARTICIPANT_PUBKEYS.
-    // BIP-373 requires this field to use the key "with no tweaks applied".
-    let untweaked_xonly =
-        bitcoin::key::XOnlyPublicKey::from_slice(&untweaked_xonly_031.serialize())?;
-    let mut untweaked_pk_bytes = [0u8; 33];
-    untweaked_pk_bytes[0] = 0x02;
-    untweaked_pk_bytes[1..].copy_from_slice(&untweaked_xonly.serialize());
-    let untweaked_agg_pk = PublicKey::from_slice(&untweaked_pk_bytes)?;
+    let musig_participants: Vec<musig2::secp256k1::PublicKey> = participants
+        .iter()
+        .map(|pk| musig2::secp256k1::PublicKey::from_slice(&pk.serialize()).unwrap())
+        .collect();
+
+    let key_agg_ctx = musig2::KeyAggContext::new(musig_participants)
+        .map_err(|e| anyhow::anyhow!("Key Aggregation: {e}"))?;
+
+    let p_base: musig2::secp256k1::PublicKey = key_agg_ctx.aggregated_pubkey();
+    let p_base_bitcoin = PublicKey::from_slice(&p_base.serialize())?;
+
+    // Pre-tweak aggregate pubkey of MuSig2 aggregate session
+    let untweaked_agg_pk = p_base_bitcoin;
+
+    // BIP-328 synthetic xpub chaincode (SHA256 of "MuSig2MuSig2MuSig2")
+    let mut current_chaincode = hex::decode("868087ca02a6f974c4598924c36b57762d32cb45717167e300622c7167e38965")
+        .map_err(|e| anyhow::anyhow!("Chaincode decode: {e}"))?;
+    let mut current_pk = p_base_bitcoin;
+
+    let derivation_indices = [0u32, 0u32];
+    let mut tweaks = Vec::new();
+
+    for index in derivation_indices {
+        let mut data = Vec::new();
+        data.extend_from_slice(&current_pk.serialize());
+        data.extend_from_slice(&index.to_be_bytes());
+
+        let mut mac = HmacSha512::new_from_slice(&current_chaincode)
+            .map_err(|e| anyhow::anyhow!("HMAC init: {e}"))?;
+        mac.update(&data);
+        let result = mac.finalize().into_bytes();
+
+        let il = &result[0..32];
+        let ir = &result[32..64];
+
+        let scalar = secp256k1::Scalar::from_be_bytes(il.try_into()?)
+            .map_err(|e| anyhow::anyhow!("Scalar from BE: {e}"))?;
+        tweaks.push(il.to_vec());
+
+        current_pk = current_pk.add_exp_tweak(secp, &scalar)
+            .map_err(|e| anyhow::anyhow!("Add exp tweak: {e}"))?;
+        current_chaincode = ir.to_vec();
+    }
+
+    // Tweak the KeyAggContext with derived plain tweaks
+    let mut key_agg_ctx = key_agg_ctx;
+    for tweak in &tweaks {
+        let tweak_arr: [u8; 32] = tweak.as_slice().try_into()?;
+        let musig_scalar = musig2::secp256k1::Scalar::from_be_bytes(tweak_arr)
+            .map_err(|e| anyhow::anyhow!("MuSig Scalar from BE: {e}"))?;
+        key_agg_ctx = key_agg_ctx.with_plain_tweak(musig_scalar)
+            .map_err(|e| anyhow::anyhow!("With plain tweak: {e}"))?;
+    }
+
+    let tweaked_agg_pk_031: musig2::secp256k1::PublicKey = key_agg_ctx.aggregated_pubkey();
+    let tweaked_agg_pk_bitcoin = PublicKey::from_slice(&tweaked_agg_pk_031.serialize())?;
+    assert_eq!(current_pk, tweaked_agg_pk_bitcoin);
+
+    // untweaked_agg_xonly is the x-only of the derived child key (/0/0) before taproot tweak
+    let (untweaked_agg_xonly, _) = current_pk.x_only_public_key();
 
     // Apply BIP-341 taproot tweak (no script tree => unspendable taproot tweak).
-    // This updates gacc/tacc in the KeyAggContext so signing math is correct.
     let key_agg_ctx = key_agg_ctx
         .with_unspendable_taproot_tweak()
         .map_err(|e| anyhow::anyhow!("Taproot tweak failed: {e}"))?;
 
-    // Extract the tweaked x-only key (secp256k1 0.31) and convert to 0.29
+    // Extract the tweaked x-only key and convert to 0.29
     let tweaked_xonly_031: musig2::secp256k1::XOnlyPublicKey = key_agg_ctx.aggregated_pubkey();
     let agg_xonly = bitcoin::key::XOnlyPublicKey::from_slice(&tweaked_xonly_031.serialize())?;
 
@@ -101,9 +161,7 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
         bitcoin::key::TweakedPublicKey::dangerous_assume_tweaked(agg_xonly),
     );
 
-    // BIP-373 keypath PUB_NONCE/PARTIAL_SIG identifier is the taproot output key Q
-    // with its ACTUAL Y parity (matches bitcoind src/script/sign.cpp:322,
-    // GetCPubKeys().at(tweaked->second ? 1 : 0)). Forcing 0x02 breaks odd-Y aggregates.
+    // Tweaked aggregate pubkey with its actual Y parity (used in BIP-373 metadata)
     let tweaked_full: musig2::secp256k1::PublicKey = key_agg_ctx.aggregated_pubkey();
     let agg_pk = PublicKey::from_slice(&tweaked_full.serialize())?;
 
@@ -122,7 +180,7 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
         bob_pk,
         charlie_pk,
         untweaked_agg_pk,
-        untweaked_agg_xonly: untweaked_xonly,
+        untweaked_agg_xonly,
         agg_pk,
         agg_xonly,
         key_agg_ctx,
@@ -131,6 +189,33 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
         scan_sk,
         sp_address,
     })
+}
+
+/// A reusable actor that holds key material for a specific party.
+pub struct Participant<'a> {
+    pub name: &'a str,
+    pub sk: &'a SecretKey,
+    pub pk: &'a PublicKey,
+    pub agg_pk: &'a PublicKey,
+    pub key_agg_ctx: &'a musig2::KeyAggContext,
+}
+
+impl<'a> Participant<'a> {
+    /// Round 1: ECDH share + Nonce
+    pub fn contribute(
+        &self,
+        secp: &Secp256k1<secp256k1::All>,
+        psbt: &mut SilentPaymentPsbt,
+        scan_pk: &PublicKey,
+        nonce_seed: [u8; 32],
+    ) -> Result<SecNonce> {
+        contribute(secp, psbt, self.name, self.sk, self.pk, scan_pk, self.agg_pk, self.key_agg_ctx, nonce_seed)
+    }
+
+    /// Round 2: Partial Signature
+    pub fn sign(&self, psbt: &mut SilentPaymentPsbt, sec_nonce: SecNonce, message: &[u8; 32]) -> Result<()> {
+        partial_sign(psbt, self.name, self.sk, self.pk, self.agg_pk, sec_nonce, self.key_agg_ctx, message)
+    }
 }
 
 /// Create the PSBT with 1 MuSig2 P2TR input and N+1 outputs (N SP recipients + change).

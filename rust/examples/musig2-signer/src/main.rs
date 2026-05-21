@@ -3,11 +3,9 @@
 //! Run with no arguments for the GUI (default), or `--cli` for the
 //! original command-line demonstration.
 
-pub mod core;
-pub mod workflow;
-
+use musig2_signer::workflow;
 #[cfg(feature = "gui")]
-pub mod gui;
+use musig2_signer::gui;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();

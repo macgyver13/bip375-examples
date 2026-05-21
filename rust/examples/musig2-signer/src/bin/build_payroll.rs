@@ -1,11 +1,10 @@
 //! MuSig2 + Silent Payments Fixture Generator
 //!
 //! Produces two PSBTs and a descriptor for Coldcard simulator integration tests.
-//! Reuses the workflow helpers from `workflow.rs`. Alice's key is derived from the
-//! Coldcard simulator's fixed master xprv (see workflow.rs). Bob and Charlie use raw
-//! demo keys ([0xbb;32] / [0xcc;32]) with no BIP32 origin metadata.
-//! Alice's xfp (0F056943) is wired into `PSBT_IN_TAP_BIP32_DERIVATION` with the
-//! full path m/48'/1'/0'/2'/0/0 so the simulator can locate her key on round 1.
+//! Reuses the workflow helpers from `workflow.rs`. Alice, Bob, and Charlie use the
+//! Coldcard simulator's fixed mnemonic with BIP39 passphrases "", "Me", and "Myself".
+//! Their account fingerprints and m/48'/1'/0'/2' origins are wired into the PSBT so
+//! three independent simulator instances can locate their keys in both signing rounds.
 //!
 //! Usage:
 //!   cargo run -p musig2-signer --bin payroll [OUTPUT_DIR]
@@ -172,7 +171,6 @@ fn main() -> Result<()> {
     let change_idx = psbt.outputs.len() - 1;
     add_output_tap_bip32_derivation(&mut psbt, change_idx, &keys.untweaked_agg_xonly, vec![], &agg_derivation)?;
 
-
     // ── Round 1 PSBT: pre-contribution ───────────────────────────────────────
     let round1_bytes = psbt.serialize();
     let round1_path = out_dir.join("musig2-sp-round1-in.psbt");
@@ -217,15 +215,15 @@ fn main() -> Result<()> {
         workflow::add_ecdh_share(&secp, &mut psbt, "Alice", &keys.alice_sk, &keys.alice_pk, sk)?;
     }
 
-    // Coordinator: aggregate per-party ECDH shares and derive SP output scripts.
-    workflow::derive_sp_output(&secp, &mut psbt)?;
-
     // ── Descriptor ───────────────────────────────────────────────────────────
     let desc = build_descriptor();
     let desc_path = out_dir.join("desc-musig-sp-demo.txt");
     std::fs::write(&desc_path, &desc)?;
     println!("Wrote {}", desc_path.display());
     println!("  {desc}");
+
+    // Coordinator: aggregate per-party ECDH shares and derive SP output scripts.
+    workflow::derive_sp_output(&secp, &mut psbt)?;
 
     // Print computed SP output scripts for visual verification.
     println!("\nSP output scripts ({} recipients):", recipients.len());
