@@ -3,11 +3,10 @@
 //! Provides virtual wallet, UTXO management, and transaction configuration
 //! utilities for building BIP-375 demonstration applications.
 
-use spdk_core::psbt::crypto::{
-    apply_tweak_to_privkey, pubkey_to_p2wpkh_script,
-    script_type_string, tweaked_key_to_p2tr_script,
-};
 use bitcoin::key::TapTweak;
+use spdk_core::psbt::crypto::{
+    apply_tweak_to_privkey, pubkey_to_p2wpkh_script, script_type_string, tweaked_key_to_p2tr_script,
+};
 use spdk_core::psbt::PsbtInput;
 
 use bip39::{Language, Mnemonic};

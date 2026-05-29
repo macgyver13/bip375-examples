@@ -9,15 +9,13 @@
 
 use crate::attack_mode::{self, AttackVariant};
 use crate::shared_utils::*;
+use bip375_helpers::io::PsbtMetadata;
 use bip375_helpers::PSBT_OUT_DNSSEC_PROOF;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bitcoin::taproot::TapTweakHash;
 use bitcoin::{OutPoint, ScriptBuf, Sequence};
 use secp256k1::{Parity, PublicKey, Secp256k1};
-use spdk_core::psbt::crypto::{
-    apply_tweak_to_privkey, pubkey_to_p2wpkh_script,
-};
-use bip375_helpers::io::PsbtMetadata;
+use spdk_core::psbt::crypto::{apply_tweak_to_privkey, pubkey_to_p2wpkh_script};
 use spdk_core::psbt::roles::input_finalizer::finalize_sp_outputs;
 use spdk_core::psbt::roles::signer::{add_ecdh_shares_partial, sign_inputs};
 use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, SilentPaymentPsbt};
@@ -522,26 +520,26 @@ impl HardwareDevice {
 
                     // If the candidate script matches the UTXO's scriptPubKey, we found the right key
                     if candidate_script == witness_utxo.script_pubkey {
-                         // BIP-352: for P2TR inputs, use the tweaked taproot output private key for ECDH, not the internal key.
-                         let privkey = if witness_utxo.script_pubkey.is_p2tr() {
-                             let (xonly, _) = candidate_pubkey.x_only_public_key();
-                             let tweak = TapTweakHash::from_key_and_tweak(xonly, None)
-                                 .to_scalar()
-                                 .to_be_bytes();
+                        // BIP-352: for P2TR inputs, use the tweaked taproot output private key for ECDH, not the internal key.
+                        let privkey = if witness_utxo.script_pubkey.is_p2tr() {
+                            let (xonly, _) = candidate_pubkey.x_only_public_key();
+                            let tweak = TapTweakHash::from_key_and_tweak(xonly, None)
+                                .to_scalar()
+                                .to_be_bytes();
                             let tweaked_sk = apply_tweak_to_privkey(&candidate_privkey, &tweak)
                                 .map_err(|e| format!("BIP-341 tweak failed: {}", e))?;
-                             let (_, parity) =
+                            let (_, parity) =
                                 PublicKey::from_secret_key(&secp, &tweaked_sk).x_only_public_key();
-                             if parity == Parity::Odd {
-                                 tweaked_sk.negate()
-                             } else {
-                                 tweaked_sk
-                             }
-                         } else {
-                             candidate_privkey
-                         };
-                         inputs[input_idx].private_key = Some(privkey);
-                         
+                            if parity == Parity::Odd {
+                                tweaked_sk.negate()
+                            } else {
+                                tweaked_sk
+                            }
+                        } else {
+                            candidate_privkey
+                        };
+                        inputs[input_idx].private_key = Some(privkey);
+
                         found_key = true;
                         break;
                     }
@@ -650,7 +648,6 @@ impl HardwareDevice {
                 println!("   Output 1 set directly to attacker P2TR address");
             }
         }
-
 
         if attack.is_active() {
             println!("   Attack attempt complete — coordinator should reject this!");

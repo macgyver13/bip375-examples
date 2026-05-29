@@ -61,7 +61,8 @@ pub fn bip352_apply_label_to_spend_key(
     let secp = secp256k1::Secp256k1::new();
     let spend_pk = PublicKey::from_slice(&spend_key).map_err(|_| Bip375Error::InvalidKey)?;
     let scan_sk = SecretKey::from_slice(&scan_privkey).map_err(|_| Bip375Error::InvalidKey)?;
-    let labeled_pk = crypto::bip352::apply_label_to_spend_pubkey(&secp, &spend_pk, &scan_sk, label)?;
+    let labeled_pk =
+        crypto::bip352::apply_label_to_spend_pubkey(&secp, &spend_pk, &scan_sk, label)?;
     Ok(labeled_pk.serialize().to_vec())
 }
 
