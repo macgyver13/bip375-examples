@@ -9,7 +9,7 @@ mod test_vector_helper;
 use bip375_helpers::display::{adapter, psbt_analyzer, psbt_io};
 use bip375_helpers::io::load_psbt;
 use slint::Model;
-use spdk_core::psbt::SilentPaymentPsbt;
+use psbt::Psbt;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -19,7 +19,7 @@ slint::include_modules!();
 
 /// Convert PSBT fields to Slint-compatible format
 fn convert_fields_to_slint(
-    psbt: &SilentPaymentPsbt,
+    psbt: &Psbt,
 ) -> (Vec<PsbtField>, Vec<PsbtField>, Vec<PsbtField>) {
     // Extract all fields using the shared display adapter (no highlighting needed)
     let (global_fields, input_fields, output_fields) =
@@ -46,8 +46,8 @@ fn convert_fields_to_slint(
 /// Update the UI with PSBT data
 fn display_psbt(
     window: &AppWindow,
-    psbt: &SilentPaymentPsbt,
-    current_psbt: &Rc<RefCell<Option<SilentPaymentPsbt>>>,
+    psbt: &Psbt,
+    current_psbt: &Rc<RefCell<Option<Psbt>>>,
 ) {
     // Store the current PSBT for export
     *current_psbt.borrow_mut() = Some(psbt.clone());
@@ -112,7 +112,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let window = AppWindow::new()?;
 
     // Shared state for current PSBT
-    let current_psbt: Rc<RefCell<Option<SilentPaymentPsbt>>> = Rc::new(RefCell::new(None));
+    let current_psbt: Rc<RefCell<Option<Psbt>>> = Rc::new(RefCell::new(None)); 
     let all_test_vectors: Rc<RefCell<Vec<TestVector>>> = Rc::new(RefCell::new(Vec::new()));
 
     // Auto-load test vectors on startup

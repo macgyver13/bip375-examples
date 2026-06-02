@@ -6,7 +6,7 @@
 use super::app_state::*;
 use crate::{hw_device::HardwareDevice, wallet_coordinator::WalletCoordinator};
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
-use spdk_core::psbt::SilentPaymentPsbt;
+use psbt::Psbt;
 use std::collections::HashSet;
 
 /// Orchestrates workflow steps and captures PSBT changes
@@ -135,8 +135,8 @@ impl WorkflowOrchestrator {
 
     /// Compute which fields are new by diffing PSBTs
     fn compute_new_fields(
-        before: Option<&SilentPaymentPsbt>,
-        after: &SilentPaymentPsbt,
+        before: Option<&Psbt>,
+        after: &Psbt,
     ) -> HashSet<FieldIdentifier> {
         psbt_analyzer::compute_field_diff(before, after)
     }

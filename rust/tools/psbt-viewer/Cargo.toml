@@ -5,9 +5,9 @@ edition.workspace = true
 
 [dependencies]
 bip375-helpers.workspace = true
+psbt.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-spdk-core.workspace = true
 slint = "1.8"
 rfd = "0.15"
 

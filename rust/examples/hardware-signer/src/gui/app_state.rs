@@ -3,7 +3,7 @@
 //! This module defines the single source of truth for the GUI application state.
 
 use bip375_helpers::wallet::TransactionConfig;
-use spdk_core::psbt::SilentPaymentPsbt;
+use psbt::Psbt;
 use std::collections::HashSet;
 
 use crate::attack_mode::AttackVariant;
@@ -18,7 +18,7 @@ pub struct AppState {
     pub workflow_state: WorkflowState,
 
     /// Current PSBT (may be None if not created yet)
-    pub current_psbt: Option<SilentPaymentPsbt>,
+    pub current_psbt: Option<Psbt>,
 
     /// Which fields were added in the last operation
     pub highlighted_fields: HashSet<FieldIdentifier>,

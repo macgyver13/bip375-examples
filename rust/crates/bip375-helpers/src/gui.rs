@@ -2,7 +2,7 @@
 //!
 //! Shared GUI functionality for BIP-375 applications
 
-use spdk_core::psbt::SilentPaymentPsbt;
+use psbt::Psbt;
 
 // Re-export the export function from psbt_io for convenience
 pub use crate::display::psbt_io::export_psbt_with_dialog;
@@ -15,7 +15,7 @@ pub use crate::display::psbt_io::export_psbt_with_dialog;
 ///
 /// # Arguments
 /// * `psbt_opt` - Optional PSBT to export
-pub fn export_psbt_callback(psbt_opt: Option<&SilentPaymentPsbt>) {
+pub fn export_psbt_callback(psbt_opt: Option<&Psbt>) {
     match psbt_opt {
         Some(psbt) => {
             if let Err(e) = export_psbt_with_dialog(psbt) {

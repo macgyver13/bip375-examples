@@ -3,12 +3,12 @@
 //! Provides virtual wallet, UTXO management, and transaction configuration
 //! utilities for building BIP-375 demonstration applications.
 
-use spdk_core::psbt::crypto::{
+use crate::crypto::{
     apply_tweak_to_privkey, pubkey_to_p2wpkh_script,
     script_type_string, tweaked_key_to_p2tr_script,
 };
 use bitcoin::key::TapTweak;
-use spdk_core::psbt::PsbtInput;
+use psbt_v2::v2::Input;
 
 use bip39::{Language, Mnemonic};
 use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
@@ -67,17 +67,19 @@ impl Utxo {
         }
     }
 
-    /// Convert to PsbtInput for use with bip375-roles
-    pub fn to_psbt_input(&self) -> PsbtInput {
-        PsbtInput::new(
-            self.outpoint(),
-            TxOut {
-                value: self.amount,
-                script_pubkey: self.script_pubkey.clone(),
-            },
-            self.sequence,
-            self.private_key,
-        )
+    /// Convert to a native PSBT v2 `Input` (witness_utxo + sequence populated).
+    ///
+    /// The private key is intentionally not stored on the input — the new signer
+    /// API takes signing keys as parameters, so callers carry the key separately
+    /// (see `Utxo::private_key`).
+    pub fn to_psbt_input(&self) -> Input {
+        let mut input = Input::new(&self.outpoint());
+        input.sequence = Some(self.sequence);
+        input.witness_utxo = Some(TxOut {
+            value: self.amount,
+            script_pubkey: self.script_pubkey.clone(),
+        });
+        input
     }
 }
 

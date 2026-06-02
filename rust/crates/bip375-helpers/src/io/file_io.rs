@@ -2,28 +2,28 @@
 
 use super::error::{IoError, Result};
 use super::metadata::{PsbtFile, PsbtMetadata};
-use spdk_core::psbt::SilentPaymentPsbt;
+use psbt::Psbt;
 use std::fs;
 use std::path::Path;
 
 /// Save a PSBT to a file (binary format)
-pub fn save_psbt_binary<P: AsRef<Path>>(psbt: &SilentPaymentPsbt, path: P) -> Result<()> {
+pub fn save_psbt_binary<P: AsRef<Path>>(psbt: &Psbt, path: P) -> Result<()> {
     let bytes = psbt.serialize();
     fs::write(path, bytes)?;
     Ok(())
 }
 
 /// Load a PSBT from a file (binary format)
-pub fn load_psbt_binary<P: AsRef<Path>>(path: P) -> Result<SilentPaymentPsbt> {
+pub fn load_psbt_binary<P: AsRef<Path>>(path: P) -> Result<Psbt> {
     let bytes = fs::read(path)?;
-    let psbt = SilentPaymentPsbt::deserialize(&bytes)
+    let psbt = Psbt::deserialize(&bytes)
         .map_err(|e| IoError::Other(format!("PSBT deserialization error: {:?}", e)))?;
     Ok(psbt)
 }
 
 /// Save a PSBT to a JSON file with metadata
 pub fn save_psbt_with_metadata<P: AsRef<Path>>(
-    psbt: &SilentPaymentPsbt,
+    psbt: &Psbt,
     metadata: Option<PsbtMetadata>,
     path: P,
 ) -> Result<()> {
@@ -49,13 +49,13 @@ pub fn save_psbt_with_metadata<P: AsRef<Path>>(
 /// Load a PSBT from a JSON file (with or without metadata)
 pub fn load_psbt_with_metadata<P: AsRef<Path>>(
     path: P,
-) -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>)> {
+) -> Result<(Psbt, Option<PsbtMetadata>)> {
     let json = fs::read_to_string(path)?;
     let psbt_file: PsbtFile = serde_json::from_str(&json)?;
 
     // Decode base64 PSBT
     let psbt_bytes = base64_decode(&psbt_file.psbt)?;
-    let psbt = SilentPaymentPsbt::deserialize(&psbt_bytes)
+    let psbt = Psbt::deserialize(&psbt_bytes)
         .map_err(|e| IoError::Other(format!("PSBT deserialization error: {:?}", e)))?;
 
     Ok((psbt, psbt_file.metadata))
@@ -66,7 +66,7 @@ pub fn load_psbt_with_metadata<P: AsRef<Path>>(
 /// - `.psbt` -> binary format
 /// - `.json` -> JSON format with metadata
 pub fn save_psbt<P: AsRef<Path>>(
-    psbt: &SilentPaymentPsbt,
+    psbt: &Psbt,
     metadata: Option<PsbtMetadata>,
     path: P,
 ) -> Result<()> {
@@ -85,7 +85,7 @@ pub fn save_psbt<P: AsRef<Path>>(
 /// Load a PSBT from a file (auto-detect format)
 ///
 /// Tries to parse as JSON first, falls back to binary format.
-pub fn load_psbt<P: AsRef<Path>>(path: P) -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>)> {
+pub fn load_psbt<P: AsRef<Path>>(path: P) -> Result<(Psbt, Option<PsbtMetadata>)> {
     let path_ref = path.as_ref();
 
     // Try JSON first
@@ -123,12 +123,11 @@ fn base64_decode(data: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spdk_core::psbt::roles::creator::create_psbt;
-    use spdk_core::psbt::Bip375PsbtExt;
+    use psbt::roles::ConstructorPsbtExt;
     use tempfile::TempDir;
 
-    fn create_test_psbt() -> SilentPaymentPsbt {
-        create_psbt(0, 0)
+    fn create_test_psbt() -> Psbt {
+        Psbt::create_new_transaction(vec![]).expect("empty psbt")
     }
 
     #[test]
@@ -140,8 +139,8 @@ mod tests {
         save_psbt_binary(&psbt, &path).unwrap();
 
         let loaded = load_psbt_binary(&path).unwrap();
-        assert_eq!(psbt.num_inputs(), loaded.num_inputs());
-        assert_eq!(psbt.num_outputs(), loaded.num_outputs());
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
+        assert_eq!(psbt.outputs.len(), loaded.outputs.len());
     }
 
     #[test]
@@ -156,7 +155,7 @@ mod tests {
         save_psbt_with_metadata(&psbt, Some(metadata.clone()), &path).unwrap();
 
         let (loaded, loaded_metadata) = load_psbt_with_metadata(&path).unwrap();
-        assert_eq!(psbt.num_inputs(), loaded.num_inputs());
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
         assert!(loaded_metadata.is_some());
         assert_eq!(loaded_metadata.unwrap().creator, metadata.creator);
     }
@@ -170,13 +169,13 @@ mod tests {
         let psbt = create_test_psbt();
         save_psbt(&psbt, None, &json_path).unwrap();
         let (loaded, _) = load_psbt(&json_path).unwrap();
-        assert_eq!(psbt.num_inputs(), loaded.num_inputs());
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
 
         // Test binary format
         let binary_path = temp_dir.path().join("test.psbt");
         save_psbt(&psbt, None, &binary_path).unwrap();
         let (loaded, _) = load_psbt(&binary_path).unwrap();
-        assert_eq!(psbt.num_inputs(), loaded.num_inputs());
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
     }
 
     #[test]
