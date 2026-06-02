@@ -8,10 +8,60 @@
 //! - Hardware device: Air-gapped device that signs transactions
 //! - File-based transfer: Simulates QR codes or USB transfer
 
+use bip375_helpers::crypto::script_type_string;
 use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
+use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
+use bitcoin::{Amount, CompressedPublicKey, ScriptBuf, TxOut};
+use psbt::roles::Bip375UpdaterExt;
+use psbt::Psbt;
+use psbt_v2::v2::{Input, Output};
+use secp256k1::PublicKey;
 use silentpayments::{Network, SilentPaymentAddress, SpVersion};
-use spdk_core::psbt::crypto::script_type_string;
-use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, PsbtOutput};
+
+/// Read scan keys (compressed secp pubkeys) from every SP output's `sp_v0_info`.
+///
+/// Local replacement for the old `Bip375PsbtExt::get_output_scan_keys()`.
+pub fn output_scan_keys(psbt: &Psbt) -> Vec<PublicKey> {
+    psbt.outputs
+        .iter()
+        .filter_map(|o| o.sp_v0_info.as_ref())
+        .filter_map(|b| PublicKey::from_slice(&b[..33]).ok())
+        .collect()
+}
+
+/// Read `(scan_key, spend_key)` from a single output's `sp_v0_info`, if present.
+///
+/// Local replacement for the old `Bip375PsbtExt::get_output_sp_info()`.
+pub fn output_sp_info(output: &Output) -> Option<(PublicKey, PublicKey)> {
+    let b = output.sp_v0_info.as_ref()?;
+    let scan = PublicKey::from_slice(&b[..33]).ok()?;
+    let spend = PublicKey::from_slice(&b[33..]).ok()?;
+    Some((scan, spend))
+}
+
+/// Build the 66-byte `PSBT_OUT_SP_V0_INFO` payload (scan_key || spend_key).
+fn sp_v0_info_bytes(address: &SilentPaymentAddress) -> [u8; 66] {
+    let mut bytes = [0u8; 66];
+    bytes[..33].copy_from_slice(&address.get_scan_key().serialize());
+    bytes[33..].copy_from_slice(&address.get_spend_key().serialize());
+    bytes
+}
+
+/// Convert a raw `Vec<u32>` derivation path (with hardened bits set) to `DerivationPath`.
+fn to_derivation_path(raw: Vec<u32>) -> DerivationPath {
+    DerivationPath::from(raw.into_iter().map(ChildNumber::from).collect::<Vec<_>>())
+}
+
+/// Build a native silent-payment `Output` carrying `sp_v0_info` (+ optional label).
+fn sp_output(amount: u64, address: &SilentPaymentAddress, label: Option<u32>) -> Output {
+    let mut o = Output::new(TxOut {
+        value: Amount::from_sat(amount),
+        script_pubkey: ScriptBuf::new(),
+    });
+    o.sp_v0_info = Some(sp_v0_info_bytes(address));
+    o.sp_v0_label = label;
+    o
+}
 
 /// Wallet seeds for deterministic key generation
 pub const HW_WALLET_SEED: &str = "hardware_wallet_coldcard_demo";
@@ -61,7 +111,7 @@ pub fn get_virtual_wallet(mnemonic: Option<&str>) -> Result<VirtualWallet, Strin
 pub fn create_transaction_inputs(
     config: &TransactionConfig,
     wallet: &VirtualWallet,
-) -> Vec<PsbtInput> {
+) -> Vec<Input> {
     wallet
         .select_by_ids(&config.selected_utxo_ids)
         .into_iter()
@@ -89,8 +139,7 @@ pub fn create_transaction_inputs(
 pub fn create_transaction_outputs(
     config: &TransactionConfig,
     hw_wallet: &SimpleWallet,
-) -> Vec<PsbtOutput> {
-    use bitcoin::Amount;
+) -> Vec<Output> {
     let (scan_key, spend_key) = hw_wallet.scan_spend_keys();
 
     // Change output: Silent payment back to hardware wallet with label=0 (reserved for change per BIP 352)
@@ -98,18 +147,10 @@ pub fn create_transaction_outputs(
 
     let mut outputs = Vec::new();
     if config.change_amount > 0 {
-        outputs.push(PsbtOutput::silent_payment(
-            Amount::from_sat(config.change_amount),
-            change_address,
-            Some(0), // label=0 reserved for change
-        ));
+        outputs.push(sp_output(config.change_amount, &change_address, Some(0)));
     }
     if config.recipient_amount > 0 {
-        outputs.push(PsbtOutput::silent_payment(
-            Amount::from_sat(config.recipient_amount),
-            get_recipient_address(),
-            None, // no label for recipient
-        ));
+        outputs.push(sp_output(config.recipient_amount, &get_recipient_address(), None));
     }
 
     outputs
@@ -137,76 +178,58 @@ pub fn display_transaction_summary_with_dnssec(
 
     println!("  Inputs:");
     for (i, input) in inputs.iter().enumerate() {
-        println!("   Input {}: {} sats", i, input.witness_utxo.value.to_sat());
-        println!("      TXID: {}", format_txid_short(&input.outpoint.txid));
-        println!("      VOUT: {}", input.outpoint.vout);
-        println!(
-            "      Type: {}",
-            script_type_string(&input.witness_utxo.script_pubkey)
-        );
+        let utxo = input.witness_utxo.as_ref().expect("witness_utxo required");
+        println!("   Input {}: {} sats", i, utxo.value.to_sat());
+        println!("      TXID: {}", format_txid_short(&input.previous_txid));
+        println!("      VOUT: {}", input.spent_output_index);
+        println!("      Type: {}", script_type_string(&utxo.script_pubkey));
     }
 
-    let total_input: u64 = inputs.iter().map(|i| i.witness_utxo.value.to_sat()).sum();
+    let total_input: u64 = inputs
+        .iter()
+        .map(|i| i.witness_utxo.as_ref().map_or(0, |u| u.value.to_sat()))
+        .sum();
     println!("   Total Input: {} sats\n", total_input);
 
     println!("  Outputs:");
     for (i, output) in outputs.iter().enumerate() {
-        match output {
-            PsbtOutput::SilentPayment {
-                amount,
-                address,
-                label,
-            } => {
-                let label_info = match label {
-                    Some(0) => " (Change - label 0)",
-                    Some(n) => &format!(" (label {})", n),
-                    None => "",
-                };
-                println!("   Output {}{}: {} sats", i, label_info, amount.to_sat());
-                println!(
-                    "      Scan Key:  {}",
-                    hex::encode(address.get_scan_key().serialize())
-                );
-                println!(
-                    "      Spend Key: {}",
-                    hex::encode(address.get_spend_key().serialize())
-                );
+        if let Some((scan, spend)) = output_sp_info(output) {
+            let label_info = match output.sp_v0_label {
+                Some(0) => " (Change - label 0)".to_string(),
+                Some(n) => format!(" (label {})", n),
+                None => String::new(),
+            };
+            println!("   Output {}{}: {} sats", i, label_info, output.amount.to_sat());
+            println!("      Scan Key:  {}", hex::encode(scan.serialize()));
+            println!("      Spend Key: {}", hex::encode(spend.serialize()));
 
-                // Display DNSSEC proof inline if available for this output
-                if let Some(ref proofs) = dnssec_proofs {
-                    if let Some((dns_name, proof_hex)) = proofs.get(&i) {
-                        println!("      Contact: {}", dns_name);
-                        let proof_display = if proof_hex.len() > 70 {
-                            format!(
-                                "{}...{} ({} bytes)",
-                                &proof_hex[..30],
-                                &proof_hex[proof_hex.len() - 30..],
-                                proof_hex.len() / 2
-                            ) // hex string is 2 chars per byte
-                        } else {
-                            proof_hex.clone()
-                        };
-                        println!("      DNS Proof: {}", proof_display);
-                    }
+            // Display DNSSEC proof inline if available for this output
+            if let Some(ref proofs) = dnssec_proofs {
+                if let Some((dns_name, proof_hex)) = proofs.get(&i) {
+                    println!("      Contact: {}", dns_name);
+                    let proof_display = if proof_hex.len() > 70 {
+                        format!(
+                            "{}...{} ({} bytes)",
+                            &proof_hex[..30],
+                            &proof_hex[proof_hex.len() - 30..],
+                            proof_hex.len() / 2
+                        ) // hex string is 2 chars per byte
+                    } else {
+                        proof_hex.clone()
+                    };
+                    println!("      DNS Proof: {}", proof_display);
                 }
             }
-            PsbtOutput::Regular(txout) => {
-                println!("   Output {}: {} sats", i, txout.value.to_sat());
-                println!(
-                    "      Script: {}",
-                    hex::encode(txout.script_pubkey.as_bytes())
-                );
-            }
+        } else {
+            println!("   Output {}: {} sats", i, output.amount.to_sat());
+            println!(
+                "      Script: {}",
+                hex::encode(output.script_pubkey.as_bytes())
+            );
         }
     }
 
-    let total_output: u64 = outputs
-        .iter()
-        .map(|o| match o {
-            PsbtOutput::SilentPayment { amount, .. } => amount.to_sat(),
-            PsbtOutput::Regular(txout) => txout.value.to_sat(),
-        })
-        .sum();
+    let total_output: u64 = outputs.iter().map(|o| o.amount.to_sat()).sum();
     let fee = total_input - total_output;
     println!("\n   Fee: {} sats", fee);
     println!();
@@ -573,9 +596,6 @@ impl Default for TweakDatabase {
 // BIP32 Derivation Utilities
 // =============================================================================
 
-use spdk_core::psbt::roles::updater::{add_output_bip32_derivation, update_input_derivation};
-use spdk_core::psbt::SilentPaymentPsbt;
-
 /// Add BIP32 derivation info for transaction inputs
 ///
 /// Uses the UPDATER role to add PSBT_IN_BIP32_DERIVATION fields for each input
@@ -590,36 +610,44 @@ use spdk_core::psbt::SilentPaymentPsbt;
 /// # Returns
 /// Number of derivation entries added
 pub fn add_input_bip32_derivations(
-    psbt: &mut SilentPaymentPsbt,
+    psbt: &mut Psbt,
     wallet: &SimpleWallet,
     selected_utxo_ids: &[usize],
 ) -> Result<usize, String> {
     let mut count = 0;
-    let master_fingerprint = wallet.master_fingerprint();
+    let master_fingerprint = Fingerprint::from(wallet.master_fingerprint());
 
     for (input_idx, &utxo_id) in selected_utxo_ids.iter().enumerate() {
-        let (pubkey, path) = if psbt.get_input_sp_tweak(input_idx).is_some() {
-            // SP input: pass the spend pubkey (not the tweaked locking key)
-            let (_, pk) = wallet.spend_key_pair();
-            (pk, wallet.get_sp_spend_derivation_path())
+        if psbt.inputs[input_idx].sp_tweak.is_some() {
+            // SP input (BIP-376): record the spend pubkey under PSBT_IN_SP_SPEND_BIP32_DERIVATION
+            // (not the tweaked locking key). The signer recovers the input pubkey from this field.
+            let (_, spend_pubkey) = wallet.spend_key_pair();
+            let path = to_derivation_path(wallet.get_sp_spend_derivation_path());
+            psbt.inputs[input_idx].set_sp_spend_bip32_derivation(
+                CompressedPublicKey(spend_pubkey),
+                master_fingerprint,
+                path,
+            );
+            count += 1;
         } else {
-            let (_, pk) = wallet.input_key_pair(utxo_id as u32);
+            let (_, pubkey) = wallet.input_key_pair(utxo_id as u32);
             let Some(witness_utxo) = psbt.inputs[input_idx].witness_utxo.as_ref() else {
                 continue;
             };
-            let path = if witness_utxo.script_pubkey.is_p2tr() {
+            let raw_path = if witness_utxo.script_pubkey.is_p2tr() {
                 wallet.get_p2tr_derivation_path(utxo_id as u32)
             } else if witness_utxo.script_pubkey.is_p2wpkh() {
                 wallet.get_p2wpkh_derivation_path(utxo_id as u32)
             } else {
                 continue;
             };
-            (pk, path)
-        };
-
-        update_input_derivation(psbt, input_idx, &pubkey, master_fingerprint, &path)
-            .map_err(|e| format!("Failed to add input derivation: {}", e))?;
-        count += 1;
+            psbt.inputs[input_idx].set_bip32_derivation(
+                &pubkey,
+                master_fingerprint,
+                to_derivation_path(raw_path),
+            );
+            count += 1;
+        }
     }
 
     Ok(count)
@@ -639,91 +667,47 @@ pub fn add_input_bip32_derivations(
 /// # Returns
 /// Number of derivation entries added
 pub fn add_output_bip32_derivations(
-    psbt: &mut SilentPaymentPsbt,
-    outputs: &[PsbtOutput],
+    psbt: &mut Psbt,
     wallet: &SimpleWallet,
 ) -> Result<usize, String> {
     let mut count = 0;
-    let master_fingerprint = wallet.master_fingerprint();
-
-    // For demo purposes, seed-based wallets now use BIP84 paths
-    // Note: In production, you'd only add derivations for true HD wallets
+    let master_fingerprint = Fingerprint::from(wallet.master_fingerprint());
 
     // Get wallet's own keys for ownership verification
     let (hw_scan_pubkey, hw_spend_pubkey) = wallet.scan_spend_keys();
 
-    // Process each output to determine if it's change (owned by wallet)
-    for (output_index, output) in outputs.iter().enumerate() {
-        match output {
-            PsbtOutput::SilentPayment { address, .. } => {
-                // Change detection logic: Compare scan AND spend keys
-                // Only add derivations if BOTH keys match (wallet owns this output)
-                let is_change = address.get_scan_key().serialize() == hw_scan_pubkey.serialize()
-                    && address.get_spend_key().serialize() == hw_spend_pubkey.serialize();
+    // Iterate the PSBT's (possibly shuffled) outputs directly and classify by sp_v0_info.
+    for output_index in 0..psbt.outputs.len() {
+        let Some((scan, spend)) = output_sp_info(&psbt.outputs[output_index]) else {
+            // Regular output: pubkey-based ownership detection is out of scope for this demo.
+            continue;
+        };
 
-                if !is_change {
-                    // This is a recipient output - skip (we don't own these keys)
-                    continue;
-                }
-
-                // This IS a change output - add BOTH scan and spend derivations ?
-
-                // BIP352 paths for Silent Payment change:
-                // Scan key:  m/352'/0'/0'/0/{output_index}
-                // Spend key: m/352'/0'/0'/1/{output_index}
-
-                let scan_path = vec![
-                    0x80000160, // 352' (BIP352)
-                    0x80000000, // 0' (Bitcoin mainnet)
-                    0x80000000, // 0' (account 0)
-                    0x00000000, // 0 (scan key branch)
-                    output_index as u32,
-                ];
-
-                let spend_path = vec![
-                    0x80000160, // 352' (BIP352)
-                    0x80000000, // 0' (Bitcoin mainnet)
-                    0x80000000, // 0' (account 0)
-                    0x00000001, // 1 (spend key branch)
-                    output_index as u32,
-                ];
-
-                // Add BOTH derivations (scan + spend)
-                let scan_derivation = spdk_core::psbt::roles::updater::Bip32Derivation {
-                    master_fingerprint,
-                    path: scan_path,
-                };
-                add_output_bip32_derivation(
-                    psbt,
-                    output_index,
-                    &address.get_scan_key(),
-                    &scan_derivation,
-                )
-                .map_err(|e| format!("Failed to add scan key derivation: {}", e))?;
-                count += 1;
-
-                let spend_derivation = spdk_core::psbt::roles::updater::Bip32Derivation {
-                    master_fingerprint,
-                    path: spend_path,
-                };
-                add_output_bip32_derivation(
-                    psbt,
-                    output_index,
-                    &address.get_spend_key(),
-                    &spend_derivation,
-                )
-                .map_err(|e| format!("Failed to add spend key derivation: {}", e))?;
-                count += 1;
-            }
-            PsbtOutput::Regular(_txout) => {
-                // For regular outputs (P2WPKH, P2TR), we would extract the pubkey
-                // and check ownership, then add BIP84/BIP86 derivations
-                // This is more complex - requires script parsing
-
-                // TODO: Implement for regular outputs when needed
-                // For now, this example only handles Silent Payment outputs
-            }
+        // Change detection: add derivations only when BOTH scan and spend keys are ours.
+        let is_change = scan.serialize() == hw_scan_pubkey.serialize()
+            && spend.serialize() == hw_spend_pubkey.serialize();
+        if !is_change {
+            continue;
         }
+
+        // BIP352 paths for Silent Payment change:
+        //   Scan key:  m/352'/0'/0'/0/{output_index}
+        //   Spend key: m/352'/0'/0'/1/{output_index}
+        let scan_path = to_derivation_path(vec![
+            0x80000160, 0x80000000, 0x80000000, 0x00000000, output_index as u32,
+        ]);
+        let spend_path = to_derivation_path(vec![
+            0x80000160, 0x80000000, 0x80000000, 0x00000001, output_index as u32,
+        ]);
+
+        psbt.outputs[output_index]
+            .bip32_derivations
+            .insert(bitcoin::PublicKey::new(scan), (master_fingerprint, scan_path));
+        count += 1;
+        psbt.outputs[output_index]
+            .bip32_derivations
+            .insert(bitcoin::PublicKey::new(spend), (master_fingerprint, spend_path));
+        count += 1;
     }
 
     Ok(count)
@@ -741,7 +725,7 @@ pub fn add_output_bip32_derivations(
 /// # Returns
 /// Number of xpubs added
 pub fn add_global_xpubs(
-    psbt: &mut SilentPaymentPsbt,
+    _psbt: &mut Psbt,
     mnemonic: Option<&str>,
 ) -> Result<usize, String> {
     // Only add xpubs for mnemonic-based wallets

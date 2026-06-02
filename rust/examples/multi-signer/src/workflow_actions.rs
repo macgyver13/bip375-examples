@@ -17,13 +17,13 @@ use spdk_core::psbt::roles::{
     updater::update_input_derivation,
     validation::{self, ValidationLevel},
 };
-use spdk_core::psbt::{PsbtInput, SilentPaymentPsbt};
+use spdk_core::psbt::{PsbtInput, Psbt};
 use std::collections::HashMap;
 
 use crate::shared_utils;
 
 /// Create a new PSBT with inputs and outputs (no ECDH shares, no signatures)
-pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, String> {
+pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<Psbt, String> {
     let num_inputs = config.get_total_inputs();
     let num_outputs = 2;
 
@@ -77,7 +77,7 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
 /// Per BIP 375, each Signer adds ECDH shares first. Signatures are only added
 /// after all SP output scripts have been computed.
 pub fn add_ecdh_shares_for_party(
-    psbt: &mut SilentPaymentPsbt,
+    psbt: &mut Psbt,
     party: &PartyConfig,
     config: &MultiPartyConfig,
     secp: &Secp256k1<secp256k1::All>,
@@ -120,7 +120,7 @@ pub fn add_ecdh_shares_for_party(
 /// Called automatically when all inputs have ECDH shares. This computes the
 /// PSBT_OUT_SCRIPT for each SP output and clears tx_modifiable_flags.
 pub fn compute_output_scripts(
-    psbt: &mut SilentPaymentPsbt,
+    psbt: &mut Psbt,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<(), String> {
     finalize_sp_outputs(secp, psbt).map_err(|e| format!("Failed to compute output scripts: {}", e))
@@ -131,7 +131,7 @@ pub fn compute_output_scripts(
 /// Per BIP 375: "If any output does not have PSBT_OUT_SCRIPT set, the Signer
 /// must not yet add a signature."
 pub fn sign_inputs_for_party(
-    psbt: &mut SilentPaymentPsbt,
+    psbt: &mut Psbt,
     party: &PartyConfig,
     config: &MultiPartyConfig,
     secp: &Secp256k1<secp256k1::All>,
@@ -172,7 +172,7 @@ pub fn sign_inputs_for_party(
 /// Output scripts must already be computed (via compute_output_scripts) and all
 /// inputs must be signed before calling this.
 pub fn validate_and_extract(
-    psbt: &mut SilentPaymentPsbt,
+    psbt: &mut Psbt,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Transaction, String> {
     validation::validate_psbt(secp, psbt, ValidationLevel::Full)
@@ -200,7 +200,7 @@ pub fn create_input_assignments_metadata(config: &MultiPartyConfig) -> HashMap<u
 }
 
 pub fn save_psbt_with_metadata(
-    psbt: &SilentPaymentPsbt,
+    psbt: &Psbt,
     description: impl Into<String>,
 ) -> Result<(), String> {
     let mut metadata = PsbtMetadata::with_description(description);
@@ -211,7 +211,7 @@ pub fn save_psbt_with_metadata(
     Ok(())
 }
 
-pub fn load_psbt_with_metadata() -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), String> {
+pub fn load_psbt_with_metadata() -> Result<(Psbt, Option<PsbtMetadata>), String> {
     load_psbt().map_err(|e| format!("Failed to load PSBT: {:?}", e))
 }
 

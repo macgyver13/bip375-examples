@@ -9,19 +9,74 @@
 
 use crate::attack_mode::{self, AttackVariant};
 use crate::shared_utils::*;
+use bip375_helpers::crypto::{apply_tweak_to_privkey, pubkey_to_p2wpkh_script};
+use bip375_helpers::io::PsbtMetadata;
+use bip375_helpers::sp_signer::add_input_ecdh_share;
 use bip375_helpers::PSBT_OUT_DNSSEC_PROOF;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bitcoin::taproot::TapTweakHash;
-use bitcoin::{OutPoint, ScriptBuf, Sequence};
-use secp256k1::{Parity, PublicKey, Secp256k1};
-use spdk_core::psbt::crypto::{
-    apply_tweak_to_privkey, pubkey_to_p2wpkh_script,
-};
-use bip375_helpers::io::PsbtMetadata;
-use spdk_core::psbt::roles::input_finalizer::finalize_sp_outputs;
-use spdk_core::psbt::roles::signer::{add_ecdh_shares_partial, sign_inputs};
-use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, SilentPaymentPsbt};
+use bitcoin::{CompressedPublicKey, NetworkKind, ScriptBuf};
+use psbt::roles::{Bip375UpdaterExt, SignerPsbtExt};
+use psbt::Psbt;
+use secp256k1::{Parity, PublicKey, Secp256k1, SecretKey};
+use std::collections::BTreeMap;
 use std::io::{self, Write};
+
+/// A hardware-controlled input: PSBT index, the private key used for ECDH/signing,
+/// and whether it is a silent-payment (tweaked taproot) input.
+type ControlledInput = (usize, SecretKey, bool);
+
+/// Honest SP-output finalization: derive each SP output script from the ECDH shares
+/// and write it into the PSBT. Replaces the old `finalize_sp_outputs`.
+fn finalize_sp_outputs_honest(
+    secp: &Secp256k1<secp256k1::All>,
+    psbt: &mut Psbt,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let xonly_map = psbt.compute_sp_outputs(secp)?;
+    psbt.set_sp_scriptpubkey(xonly_map)?;
+    Ok(())
+}
+
+/// Sign all hardware-controlled inputs honestly: SP (taproot) inputs via the silent
+/// payment signer, ECDSA (P2WPKH) inputs via a pubkey→privkey keystore.
+fn sign_controlled_inputs(
+    mut psbt: Psbt,
+    secp: &Secp256k1<secp256k1::All>,
+    controlled: &[ControlledInput],
+    sp_spend_key: SecretKey,
+) -> Result<Psbt, Box<dyn std::error::Error>> {
+    if controlled.iter().any(|(_, _, is_sp)| *is_sp) {
+        psbt.sign_sp_inputs(secp, sp_spend_key)
+            .map_err(|e| format!("SP input signing failed: {}", e))?;
+    }
+
+    // Non-SP inputs: P2WPKH via ECDSA (own key), non-SP P2TR via taproot key-spend.
+    let mut tr_keystore: BTreeMap<bitcoin::PublicKey, bitcoin::PrivateKey> = BTreeMap::new();
+    for (idx, privkey, is_sp) in controlled {
+        if *is_sp {
+            continue;
+        }
+        let is_p2tr = psbt.inputs[*idx]
+            .witness_utxo
+            .as_ref()
+            .map_or(false, |u| u.script_pubkey.is_p2tr());
+        if is_p2tr {
+            // privkey is the even-parity BIP-86 tweaked output key.
+            tr_keystore.insert(
+                bitcoin::PublicKey::new(privkey.public_key(secp)),
+                bitcoin::PrivateKey::new(*privkey, NetworkKind::Main),
+            );
+        } else {
+            psbt.sign_input(*idx, privkey, secp)
+                .map_err(|e| format!("ECDSA signing failed for input {}: {}", idx, e))?;
+        }
+    }
+    if !tr_keystore.is_empty() {
+        psbt.sign_taproot_key_spend_inputs(&tr_keystore, secp)
+            .map_err(|e| format!("Taproot key-spend signing failed: {}", e))?;
+    }
+    Ok(psbt)
+}
 
 pub struct HardwareDevice;
 
@@ -30,7 +85,7 @@ impl HardwareDevice {
     pub fn receive_psbt(
         auto_read: bool,
         auto_continue: bool,
-    ) -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), Box<dyn std::error::Error>> {
+    ) -> Result<(Psbt, Option<PsbtMetadata>), Box<dyn std::error::Error>> {
         print_step_header("Step 2a: Receive PSBT", "HARDWARE DEVICE (Air-gapped)");
 
         println!("  Receiving PSBT from wallet coordinator...\n");
@@ -207,10 +262,10 @@ impl HardwareDevice {
     ///
     /// Roles: SIGNER
     pub fn sign_psbt(
-        mut psbt: SilentPaymentPsbt,
+        mut psbt: Psbt,
         attack: AttackVariant,
         mnemonic: Option<&str>,
-    ) -> Result<SilentPaymentPsbt, Box<dyn std::error::Error>> {
+    ) -> Result<Psbt, Box<dyn std::error::Error>> {
         print_step_header("Step 2c: Sign Transaction", "HARDWARE DEVICE (Air-gapped)");
 
         println!("   SIGNER: Processing transaction with hardware keys...\n");
@@ -218,30 +273,8 @@ impl HardwareDevice {
         // Create wallet from mnemonic or seed
         let hw_wallet = get_hardware_wallet(mnemonic)?;
 
-        // Get hardware wallet's private keys from "secure storage"
-        // Create PsbtInput vector from PSBT (PSBT is source of truth)
-        let mut inputs: Vec<PsbtInput> = psbt
-            .inputs
-            .iter()
-            .map(|psbt_input| {
-                PsbtInput::new(
-                    OutPoint {
-                        txid: psbt_input.previous_txid,
-                        vout: psbt_input.spent_output_index,
-                    },
-                    psbt_input
-                        .witness_utxo
-                        .clone()
-                        .expect("witness_utxo required"),
-                    psbt_input
-                        .sequence
-                        .unwrap_or(Sequence::from_consensus(0xfffffffe)),
-                    None, // private_key set later for controlled inputs
-                )
-            })
-            .collect();
-
         let secp = Secp256k1::new();
+        let (spend_privkey, _) = hw_wallet.spend_key_pair();
 
         // Resolve attacker address once so it's available for both scan key substitution
         // and output finalization in attack mode.
@@ -267,9 +300,14 @@ impl HardwareDevice {
         // Extract scan keys: attacks 1 & 2 substitute the recipient's key with the attacker's;
         // honest mode reads the PSBT directly and verifies ownership via BIP32 derivations.
         let scan_keys: Vec<PublicKey> = if attack.uses_wrong_scan_key() {
-            attack_mode::prepare_scan_keys(&psbt, attacker_address_opt.as_ref().unwrap())
+            let hw_scan_key = hw_wallet.scan_spend_keys().0;
+            attack_mode::prepare_scan_keys(
+                &psbt,
+                attacker_address_opt.as_ref().unwrap(),
+                &hw_scan_key,
+            )
         } else {
-            let honest_scan_keys = psbt.get_output_scan_keys();
+            let honest_scan_keys = output_scan_keys(&psbt);
             println!(
                 "   Extracted {} scan key(s) from PSBT outputs:",
                 honest_scan_keys.len()
@@ -440,10 +478,10 @@ impl HardwareDevice {
 
         for (input_idx, input) in psbt.inputs.iter().enumerate() {
             // Check for Silent Payment spend derivation FIRST (BIP-376)
-            let sp_derivation = psbt.get_input_sp_spend_bip32_derivation(input_idx);
+            let sp_derivation = input.get_sp_spend_bip32_derivation();
             let has_sp_derivation = sp_derivation
                 .as_ref()
-                .map(|(_, fp, _)| *fp == hw_master_fingerprint)
+                .map(|(_, fp, _)| fp.to_bytes() == hw_master_fingerprint)
                 .unwrap_or(false);
 
             // Check standard BIP32 derivations
@@ -493,73 +531,66 @@ impl HardwareDevice {
             return Err("No inputs controlled by hardware wallet! Cannot sign transaction.".into());
         }
 
-        // Set private keys for hardware-controlled inputs
+        // Resolve the private key for each hardware-controlled input.
+        // SP inputs use the spend key (the PSBT tweak is applied by the signer); regular inputs
+        // use the matching derived key (taproot-tweaked output key for P2TR, raw key for P2WPKH).
+        let mut controlled: Vec<ControlledInput> = Vec::new();
         for &input_idx in &hw_controlled_inputs {
-            // Check if this is a Silent Payment input (has tweak)
-            // If so, we must use the spend private key
-            if psbt.get_input_sp_tweak(input_idx).is_some() {
-                let (spend_privkey, _) = hw_wallet.spend_key_pair();
-                inputs[input_idx].private_key = Some(spend_privkey);
-            } else {
-                // Otherwise use standard derived key
-                let witness_utxo = &inputs[input_idx].witness_utxo;
+            if psbt.inputs[input_idx].sp_tweak.is_some() {
+                controlled.push((input_idx, spend_privkey, true));
+                continue;
+            }
 
-                // Try all possible key derivation indices until we find a match
-                let mut found_key = false;
-                for try_idx in 0..10 {
-                    // Reasonable gap limit for demo wallet
-                    let (candidate_privkey, candidate_pubkey) = hw_wallet.input_key_pair(try_idx);
+            let witness_utxo = psbt.inputs[input_idx]
+                .witness_utxo
+                .clone()
+                .ok_or_else(|| format!("Input {} missing witness_utxo", input_idx))?;
 
-                    // Check if this pubkey matches the UTXO's script
-                    let candidate_script = if witness_utxo.script_pubkey.is_p2wpkh() {
-                        pubkey_to_p2wpkh_script(&candidate_pubkey)
-                    } else if witness_utxo.script_pubkey.is_p2tr() {
-                        // For P2TR, BIP-86 internal key (regular taproot)
-                        ScriptBuf::new_p2tr(&secp, candidate_pubkey.into(), None)
+            let mut found: Option<SecretKey> = None;
+            for try_idx in 0..10 {
+                let (candidate_privkey, candidate_pubkey) = hw_wallet.input_key_pair(try_idx);
+                let candidate_script = if witness_utxo.script_pubkey.is_p2wpkh() {
+                    pubkey_to_p2wpkh_script(&candidate_pubkey)
+                } else if witness_utxo.script_pubkey.is_p2tr() {
+                    ScriptBuf::new_p2tr(&secp, candidate_pubkey.into(), None)
+                } else {
+                    continue; // Unsupported script type
+                };
+
+                if candidate_script == witness_utxo.script_pubkey {
+                    // BIP-352: P2TR inputs contribute the tweaked taproot output key to ECDH.
+                    let privkey = if witness_utxo.script_pubkey.is_p2tr() {
+                        let (xonly, _) = candidate_pubkey.x_only_public_key();
+                        let tweak = TapTweakHash::from_key_and_tweak(xonly, None)
+                            .to_scalar()
+                            .to_be_bytes();
+                        let tweaked_sk = apply_tweak_to_privkey(&candidate_privkey, &tweak)
+                            .map_err(|e| format!("BIP-341 tweak failed: {}", e))?;
+                        let (_, parity) =
+                            PublicKey::from_secret_key(&secp, &tweaked_sk).x_only_public_key();
+                        if parity == Parity::Odd {
+                            tweaked_sk.negate()
+                        } else {
+                            tweaked_sk
+                        }
                     } else {
-                        continue; // Unsupported script type
+                        candidate_privkey
                     };
-
-                    // If the candidate script matches the UTXO's scriptPubKey, we found the right key
-                    if candidate_script == witness_utxo.script_pubkey {
-                         // BIP-352: for P2TR inputs, use the tweaked taproot output private key for ECDH, not the internal key.
-                         let privkey = if witness_utxo.script_pubkey.is_p2tr() {
-                             let (xonly, _) = candidate_pubkey.x_only_public_key();
-                             let tweak = TapTweakHash::from_key_and_tweak(xonly, None)
-                                 .to_scalar()
-                                 .to_be_bytes();
-                            let tweaked_sk = apply_tweak_to_privkey(&candidate_privkey, &tweak)
-                                .map_err(|e| format!("BIP-341 tweak failed: {}", e))?;
-                             let (_, parity) =
-                                PublicKey::from_secret_key(&secp, &tweaked_sk).x_only_public_key();
-                             if parity == Parity::Odd {
-                                 tweaked_sk.negate()
-                             } else {
-                                 tweaked_sk
-                             }
-                         } else {
-                             candidate_privkey
-                         };
-                         inputs[input_idx].private_key = Some(privkey);
-                         
-                        found_key = true;
-                        break;
-                    }
-                }
-
-                if !found_key {
-                    return Err(format!(
-                        "Could not find matching private key for input {} (not controlled by this hardware wallet)",
-                        input_idx
-                    ).into());
+                    found = Some(privkey);
+                    break;
                 }
             }
+
+            let privkey = found.ok_or_else(|| {
+                format!(
+                    "Could not find matching private key for input {} (not controlled by this hardware wallet)",
+                    input_idx
+                )
+            })?;
+            controlled.push((input_idx, privkey, false));
         }
 
-        println!(
-            "   Set private keys for inputs {:?}\n",
-            hw_controlled_inputs
-        );
+        println!("   Resolved signing keys for inputs {:?}\n", hw_controlled_inputs);
 
         if attack.is_active() {
             println!(
@@ -574,30 +605,49 @@ impl HardwareDevice {
             println!("   Signing inputs...\n");
         }
 
-        // Add ECDH shares and DLEQ proofs
-        add_ecdh_shares_partial(
-            &secp,
-            &mut psbt,
-            &inputs,
-            &scan_keys,
-            &hw_controlled_inputs,
-            true, // generate DLEQ proofs
-        )?;
+        // ECDH share generation (hybrid). With honest scan keys, SP inputs use the upstream
+        // multi-signer share generator and non-SP inputs use the per-input helper. The
+        // wrong-scan-key attacks instead route every controlled input through the per-input
+        // helper so the attacker's scan key can be injected explicitly.
+        if attack.uses_wrong_scan_key() {
+            for (idx, privkey, _is_sp) in &controlled {
+                for scan_key in &scan_keys {
+                    add_input_ecdh_share(&secp, &mut psbt.inputs[*idx], *idx, privkey, scan_key)
+                        .map_err(|e| format!("ECDH share generation failed: {}", e))?;
+                }
+            }
+        } else {
+            // Best effort: the upstream multi-signer covers SP inputs whose tweaked spend key it
+            // can resolve. It does not own inputs keyed off the untweaked spend pubkey declared in
+            // sp_spend_bip32_derivation, so fill any remaining (idx, scan_key) gaps per-input with
+            // the helper, which keys the share to the pubkey compute_sp_outputs expects.
+            psbt.multi_signer_generate_ecdh_shares(&secp, spend_privkey)
+                .map_err(|e| format!("Multi-signer ECDH generation failed: {}", e))?;
+            for (idx, privkey, _is_sp) in &controlled {
+                for scan_key in &scan_keys {
+                    if !psbt.inputs[*idx]
+                        .sp_ecdh_shares
+                        .contains_key(&CompressedPublicKey(*scan_key))
+                    {
+                        add_input_ecdh_share(&secp, &mut psbt.inputs[*idx], *idx, privkey, scan_key)
+                            .map_err(|e| format!("ECDH share generation failed: {}", e))?;
+                    }
+                }
+            }
+        }
 
-        // Finalize SP output scripts before signing so the sighash commits to the
-        // correct output scripts. sign_inputs() builds the transaction from the PSBT,
-        // and SP outputs must have script_pubkey set at that point.
+        // Finalize SP output scripts before signing so the sighash commits to them, then sign.
         //
         // Attack dispatch table:
-        //   None              — honest finalization + honest signing
-        //   WrongScanKey      — malicious finalization (attacker's script) + honest signing
+        //   None               — honest finalization + honest signing
+        //   WrongScanKey       — malicious finalization (attacker's script) + honest signing
         //   MitmWrongSignature — malicious finalization + sign with attacker's privkey
         //   SubstituteSpendKey — honest finalization, then overwrite sp_v0_info spend key
-        //   StripSpFields     — honest finalization, then strip all BIP-375 fields
+        //   StripSpFields      — honest finalization, then strip all BIP-375 fields
         match attack {
             AttackVariant::None => {
-                finalize_sp_outputs(&secp, &mut psbt)?;
-                sign_inputs(&secp, &mut psbt, &inputs)?;
+                finalize_sp_outputs_honest(&secp, &mut psbt)?;
+                psbt = sign_controlled_inputs(psbt, &secp, &controlled, spend_privkey)?;
             }
             AttackVariant::WrongScanKey => {
                 let hw_scan_key = scan_keys[0];
@@ -608,7 +658,7 @@ impl HardwareDevice {
                     &hw_scan_key,
                     attacker_address,
                 )?;
-                sign_inputs(&secp, &mut psbt, &inputs)?;
+                psbt = sign_controlled_inputs(psbt, &secp, &controlled, spend_privkey)?;
                 println!("\n   ECDH shares computed with MALICIOUS scan key");
                 println!("   DLEQ proofs generated for WRONG scan key");
                 println!("   Recipient output redirected to attacker address");
@@ -624,28 +674,30 @@ impl HardwareDevice {
                 )?;
                 let attacker_wallet = get_attacker_wallet();
                 let (attacker_spend_privkey, _) = attacker_wallet.spend_key_pair();
+                let hw_spend_pubkey = hw_wallet.scan_spend_keys().1;
                 attack_mode::sign_inputs_malicious(
-                    &secp,
                     &mut psbt,
-                    &inputs,
+                    &secp,
+                    &controlled,
+                    &hw_spend_pubkey,
                     &attacker_spend_privkey,
                 )?;
                 println!("\n   Signed inputs with ATTACKER private key");
                 println!("   Recipient output redirected to attacker address");
             }
             AttackVariant::SubstituteSpendKey => {
-                finalize_sp_outputs(&secp, &mut psbt)?;
+                finalize_sp_outputs_honest(&secp, &mut psbt)?;
                 let attacker_address = attacker_address_opt.as_ref().unwrap();
                 attack_mode::substitute_spend_key(&secp, &mut psbt, attacker_address)?;
-                sign_inputs(&secp, &mut psbt, &inputs)?;
+                psbt = sign_controlled_inputs(psbt, &secp, &controlled, spend_privkey)?;
                 println!("\n   Honest DLEQ proofs kept (correct scan key)");
                 println!("   sp_v0_info spend key swapped to attacker's key");
             }
             AttackVariant::StripSpFields => {
-                finalize_sp_outputs(&secp, &mut psbt)?;
+                finalize_sp_outputs_honest(&secp, &mut psbt)?;
                 let attacker_address = attacker_address_opt.as_ref().unwrap();
                 attack_mode::strip_sp_fields(&secp, &mut psbt, attacker_address)?;
-                sign_inputs(&secp, &mut psbt, &inputs)?;
+                psbt = sign_controlled_inputs(psbt, &secp, &controlled, spend_privkey)?;
                 println!("\n   All BIP-375 SP fields stripped");
                 println!("   Output 1 set directly to attacker P2TR address");
             }
@@ -665,8 +717,7 @@ impl HardwareDevice {
         let num_inputs = psbt.inputs.len();
         let mut inputs_with_ecdh = 0;
         for i in 0..num_inputs {
-            let shares = psbt.get_input_ecdh_shares(i);
-            if !shares.is_empty() {
+            if !psbt.inputs[i].sp_ecdh_shares.is_empty() {
                 inputs_with_ecdh += 1;
             }
         }
@@ -692,7 +743,7 @@ impl HardwareDevice {
 
     /// Send signed PSBT back to coordinator
     pub fn send_psbt(
-        psbt: &SilentPaymentPsbt,
+        psbt: &Psbt,
         auto_continue: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         println!("\n{}", "=".repeat(60));

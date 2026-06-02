@@ -4,7 +4,7 @@
 //! and exporting them for sharing or storage.
 
 use crate::io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
-use spdk_core::psbt::SilentPaymentPsbt;
+use psbt::Psbt;
 
 use std::cell::RefCell;
 use std::fs;
@@ -16,7 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 ///
 /// # Errors
 /// Returns an error if the base64 decoding fails or the PSBT parsing fails.
-pub fn import_from_base64(base64_str: &str) -> Result<SilentPaymentPsbt, String> {
+pub fn import_from_base64(base64_str: &str) -> Result<Psbt, String> {
     // Remove whitespace
     let cleaned = base64_str.trim().replace(['\n', '\r', ' '], "");
 
@@ -27,11 +27,11 @@ pub fn import_from_base64(base64_str: &str) -> Result<SilentPaymentPsbt, String>
         .map_err(|e| format!("Base64 decode error: {}", e))?;
 
     // Parse PSBT
-    SilentPaymentPsbt::deserialize(&bytes).map_err(|e| format!("PSBT parse error: {:?}", e))
+    Psbt::deserialize(&bytes).map_err(|e| format!("PSBT parse error: {:?}", e))
 }
 
 /// Export a PSBT to a base64-encoded string
-pub fn export_to_base64(psbt: &SilentPaymentPsbt) -> Result<String, String> {
+pub fn export_to_base64(psbt: &Psbt) -> Result<String, String> {
     let bytes = psbt.serialize();
 
     use base64::Engine;
@@ -49,7 +49,7 @@ pub fn export_to_base64(psbt: &SilentPaymentPsbt) -> Result<String, String> {
 /// # Returns
 /// * `Ok(PathBuf)` - Path where the file was saved
 /// * `Err(String)` - Error message if export failed or was cancelled
-pub fn export_psbt_with_dialog(psbt: &SilentPaymentPsbt) -> Result<PathBuf, String> {
+pub fn export_psbt_with_dialog(psbt: &Psbt) -> Result<PathBuf, String> {
     // Generate timestamp-based default filename
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -81,7 +81,7 @@ pub fn export_psbt_with_dialog(psbt: &SilentPaymentPsbt) -> Result<PathBuf, Stri
 ///
 /// # Errors
 /// Returns an error if the file cannot be read or parsed.
-pub fn load_from_file(path: &str) -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), String> {
+pub fn load_from_file(path: &str) -> Result<(Psbt, Option<PsbtMetadata>), String> {
     load_psbt_with_metadata(path).map_err(|e| format!("File load error: {}", e))
 }
 
@@ -91,7 +91,7 @@ pub fn load_from_file(path: &str) -> Result<(SilentPaymentPsbt, Option<PsbtMetad
 ///
 /// # Errors
 /// Returns an error if the file cannot be written.
-pub fn export_to_file(psbt: &SilentPaymentPsbt, path: &str) -> Result<(), String> {
+pub fn export_to_file(psbt: &Psbt, path: &str) -> Result<(), String> {
     save_psbt_with_metadata(psbt, None, path).map_err(|e| format!("File save error: {}", e))
 }
 
@@ -132,7 +132,7 @@ pub const FINAL_TX_FILE: &str = "output/final_transaction.hex";
 
 thread_local! {
     // Thread-local memory storage for PSBT (GUI mode)
-    static PSBT_MEMORY: RefCell<Option<(SilentPaymentPsbt, Option<PsbtMetadata>)>> = const { RefCell::new(None) };
+    static PSBT_MEMORY: RefCell<Option<(Psbt, Option<PsbtMetadata>)>> = const { RefCell::new(None) };
 }
 
 /// Set whether to use in-memory storage (for GUI) or file-based storage (for CLI)
@@ -147,7 +147,7 @@ thread_local! {
 
 /// Save PSBT wrapper - uses memory for GUI, files for CLI
 pub fn save_psbt(
-    psbt: &SilentPaymentPsbt,
+    psbt: &Psbt,
     metadata: Option<PsbtMetadata>,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
@@ -168,7 +168,7 @@ pub fn save_psbt(
 }
 
 /// Load PSBT wrapper - uses memory for GUI, files for CLI
-pub fn load_psbt() -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), Box<dyn std::error::Error>>
+pub fn load_psbt() -> Result<(Psbt, Option<PsbtMetadata>), Box<dyn std::error::Error>>
 {
     let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
 

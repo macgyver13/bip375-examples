@@ -1,28 +1,11 @@
-[package]
-name = "bip375-tests"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-authors.workspace = true
-repository.workspace = true
-publish = false
-
-[dependencies]
-base64.workspace = true
-bip375-helpers.workspace = true
-hex.workspace = true
-secp256k1.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-spdk-core.workspace = true
-
 [workspace]
 resolver = "2"
 members = [
     "crates/bip375-helpers",
-    "crates/spdk-uniffi",
+    #"crates/spdk-uniffi",
     "examples/hardware-signer",
-    "examples/multi-signer",
+    #"examples/multi-signer",
+    #"examples/musig2-signer",
     "tools/psbt-viewer",
 ]
 
@@ -35,10 +18,12 @@ repository = "https://github.com/bitcoin/bips"
 
 [workspace.dependencies]
 bitcoin = "0.32.6"
+psbt = { path = "/Users/ron/src/spdk/psbt" }
+# Native PSBT v2 types/signing used directly by examples (matches spdk's pin)
+psbt-v2 = { path = "/Users/ron/src/rust-psbt", features = ["musig2", "silent-payments"] }
 secp256k1 = { version = "0.29", features = ["rand", "global-context", "serde"] }
 sha2 = "0.10"
-silentpayments = { git = "https://github.com/macgyver13/spdk.git", branch = "bip375-silentpayments-crate" }
-spdk-core = { git = "https://github.com/macgyver13/spdk.git", branch = "bip375-silentpayments-crate" }
+silentpayments = { path = "/Users/ron/src/spdk/silentpayments" }
 
 # Serialization
 base64 = "0.21"
@@ -65,7 +50,3 @@ codegen-units = 1
 [workspace.lints.clippy]
 unwrap_used = { level = "deny", priority = 1 }
 expect_used = "allow"
-
-# Allow unwrap in generated code
-[package.metadata.clippy]
-allow-unwrap-in-tests = true

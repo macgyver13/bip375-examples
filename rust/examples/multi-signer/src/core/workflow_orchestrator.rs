@@ -7,7 +7,7 @@ use crate::workflow_actions;
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
 use bitcoin::consensus::encode::serialize_hex;
 use secp256k1::Secp256k1;
-use spdk_core::psbt::SilentPaymentPsbt;
+use psbt::Psbt;
 
 /// Orchestrates multi-party workflow steps
 pub struct WorkflowOrchestrator;
@@ -24,7 +24,7 @@ impl WorkflowOrchestrator {
     }
 
     /// Compute ECDH coverage from PSBT
-    pub fn compute_ecdh_coverage(psbt: &SilentPaymentPsbt) -> EcdhCoverageState {
+    pub fn compute_ecdh_coverage(psbt: &Psbt) -> EcdhCoverageState {
         let total_inputs = psbt.inputs.len();
         let mut inputs_with_ecdh = 0;
 
@@ -39,7 +39,7 @@ impl WorkflowOrchestrator {
     }
 
     /// Compute per-input states from PSBT
-    pub fn compute_input_states(psbt: &SilentPaymentPsbt) -> Vec<InputState> {
+    pub fn compute_input_states(psbt: &Psbt) -> Vec<InputState> {
         let mut states = Vec::new();
 
         for (index, input) in psbt.inputs.iter().enumerate() {
@@ -72,7 +72,7 @@ impl WorkflowOrchestrator {
     }
 
     /// Compute validation summary
-    pub fn compute_validation_summary(psbt: &SilentPaymentPsbt) -> ValidationSummary {
+    pub fn compute_validation_summary(psbt: &Psbt) -> ValidationSummary {
         let input_states = Self::compute_input_states(psbt);
 
         // Check if all inputs are signed
@@ -98,7 +98,7 @@ impl WorkflowOrchestrator {
     /// Load PSBT and update state
     pub fn load_psbt_and_update(
         state: &mut AppState,
-        before_psbt: Option<&SilentPaymentPsbt>,
+        before_psbt: Option<&Psbt>,
     ) -> Result<(), String> {
         // Load PSBT from transfer file
         let (psbt, _metadata) = load_psbt().map_err(|e| format!("Failed to load PSBT: {}", e))?;

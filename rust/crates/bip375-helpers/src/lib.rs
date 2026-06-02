@@ -8,10 +8,12 @@
 //! - **Transaction**: Transaction building, input/output management, and validation
 //! - **GUI**: Shared GUI utilities and callbacks
 
+pub mod crypto;
 pub mod display;
 pub mod gui;
 pub mod hrn_ext;
 pub mod io;
+pub mod sp_signer;
 pub mod transaction;
 pub mod wallet;
 

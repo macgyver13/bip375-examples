@@ -285,11 +285,11 @@ impl AggregatedShare {
 // Silent Payment PSBT (Main Type)
 // ============================================================================
 
-pub struct SilentPaymentPsbt {
-    inner: Arc<Mutex<psbt::SilentPaymentPsbt>>,
+pub struct Psbt {
+    inner: Arc<Mutex<psbt::Psbt>>,
 }
 
-impl SilentPaymentPsbt {
+impl Psbt {
     pub fn new() -> Self {
         // Use the creator role to create an empty PSBT
         let psbt = psbt::roles::creator::create_psbt(0, 0);
@@ -307,14 +307,14 @@ impl SilentPaymentPsbt {
     }
 
     // Internal constructor for wrapping a core PSBT
-    pub(crate) fn from_core(psbt: psbt::SilentPaymentPsbt) -> Self {
+    pub(crate) fn from_core(psbt: psbt::Psbt) -> Self {
         Self {
             inner: Arc::new(Mutex::new(psbt)),
         }
     }
 
     pub fn deserialize(data: Vec<u8>) -> Result<Self, Bip375Error> {
-        let psbt = psbt::SilentPaymentPsbt::deserialize(&data)
+        let psbt = psbt::Psbt::deserialize(&data)
             .map_err(|_| Bip375Error::SerializationError)?;
 
         Ok(Self {
@@ -562,14 +562,14 @@ impl SilentPaymentPsbt {
     // Internal access for other modules
     pub(crate) fn with_inner<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&mut psbt::SilentPaymentPsbt) -> R,
+        F: FnOnce(&mut psbt::Psbt) -> R,
     {
         let mut psbt = self.inner.lock().unwrap();
         f(&mut psbt)
     }
 }
 
-impl Clone for SilentPaymentPsbt {
+impl Clone for Psbt {
     fn clone(&self) -> Self {
         let psbt = self.inner.lock().unwrap();
         Self {
@@ -586,7 +586,7 @@ impl Clone for SilentPaymentPsbt {
 /// Writes directly to the unknowns BTreeMap, bypassing typed field validation.
 /// The serialized output is identical to typed fields with the same key type.
 pub fn add_raw_global_field(
-    psbt: Arc<SilentPaymentPsbt>,
+    psbt: Arc<Psbt>,
     type_value: u64,
     key_data: Vec<u8>,
     value: Vec<u8>,
@@ -609,7 +609,7 @@ pub fn add_raw_global_field(
 /// go into the `unknowns` BTreeMap, which is correct for Optional/BTreeMap
 /// fields since their defaults (None/empty) don't serialize.
 pub fn add_raw_input_field(
-    psbt: Arc<SilentPaymentPsbt>,
+    psbt: Arc<Psbt>,
     input_index: u32,
     type_value: u64,
     key_data: Vec<u8>,
@@ -650,7 +650,7 @@ pub fn add_raw_input_field(
 
 /// Remove all raw fields with the given type from an input map's `unknowns`.
 pub fn remove_raw_input_fields_by_type(
-    psbt: Arc<SilentPaymentPsbt>,
+    psbt: Arc<Psbt>,
     input_index: u32,
     type_value: u64,
 ) -> Result<(), Bip375Error> {
@@ -673,7 +673,7 @@ pub fn remove_raw_input_fields_by_type(
 /// duplicate keys during serialization. All other type_values go into
 /// the `unknowns` BTreeMap.
 pub fn add_raw_output_field(
-    psbt: Arc<SilentPaymentPsbt>,
+    psbt: Arc<Psbt>,
     output_index: u32,
     type_value: u64,
     key_data: Vec<u8>,

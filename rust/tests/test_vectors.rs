@@ -12,8 +12,8 @@
 
 use secp256k1::Secp256k1;
 use serde::{Deserialize, Serialize};
-use spdk_core::psbt::roles::validation::{validate_psbt, ValidationLevel};
-use spdk_core::psbt::SilentPaymentPsbt;
+use psbt::roles::validation::{validate_psbt, ValidationLevel};
+use psbt::Psbt;
 use std::fs;
 
 /// Test vector file location
@@ -108,7 +108,7 @@ fn test_invalid_vectors() {
         let psbt_bytes = base64_to_bytes(&vector.psbt);
 
         // Try to parse PSBT
-        let psbt = match SilentPaymentPsbt::deserialize(&psbt_bytes) {
+        let psbt = match Psbt::deserialize(&psbt_bytes) {
             Ok(p) => p,
             Err(e) => {
                 println!("  {:?}", e);
@@ -142,7 +142,7 @@ fn test_valid_vectors() {
         let psbt_bytes = base64_to_bytes(&vector.psbt);
 
         // Parse PSBT
-        let psbt = match SilentPaymentPsbt::deserialize(&psbt_bytes) {
+        let psbt = match Psbt::deserialize(&psbt_bytes) {
             Ok(p) => p,
             Err(e) => {
                 panic!("Failed to parse valid PSBT: {}", e);

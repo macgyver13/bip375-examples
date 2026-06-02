@@ -6,45 +6,134 @@
 use super::field_identifier::{FieldIdentifier, TransactionSummary};
 
 use crate::PSBT_OUT_DNSSEC_PROOF;
-use spdk_core::psbt::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt, SilentPaymentPsbt};
+use psbt::{Psbt};
 use std::collections::HashSet;
+
+/// Raw field extracted directly from PSBT bytes
+pub struct RawField {
+    pub key_type: u64,
+    pub key_data: Vec<u8>,
+    pub value_data: Vec<u8>,
+}
+
+/// Parse a PSBT into raw (type, key, value) tuples directly from bytes
+pub fn parse_psbt_raw_fields(psbt: &Psbt) -> Result<(Vec<RawField>, Vec<Vec<RawField>>, Vec<Vec<RawField>>), String> {
+    let bytes = psbt.serialize();
+    let mut offset = 0;
+
+    if bytes.len() < 5 || &bytes[0..5] != b"psbt\xff" {
+        return Err("Invalid PSBT magic".into());
+    }
+    offset += 5;
+
+    fn read_compact_size(bytes: &[u8], offset: &mut usize) -> Option<u64> {
+        if *offset >= bytes.len() { return None; }
+        let tag = bytes[*offset];
+        *offset += 1;
+        match tag {
+            0xfd => {
+                if *offset + 2 > bytes.len() { return None; }
+                let v = u16::from_le_bytes([bytes[*offset], bytes[*offset+1]]);
+                *offset += 2;
+                Some(v as u64)
+            }
+            0xfe => {
+                if *offset + 4 > bytes.len() { return None; }
+                let v = u32::from_le_bytes([bytes[*offset], bytes[*offset+1], bytes[*offset+2], bytes[*offset+3]]);
+                *offset += 4;
+                Some(v as u64)
+            }
+            0xff => {
+                if *offset + 8 > bytes.len() { return None; }
+                let mut buf = [0u8; 8];
+                buf.copy_from_slice(&bytes[*offset..*offset+8]);
+                let v = u64::from_le_bytes(buf);
+                *offset += 8;
+                Some(v)
+            }
+            _ => Some(tag as u64),
+        }
+    }
+
+    fn read_map(bytes: &[u8], offset: &mut usize) -> Option<Vec<RawField>> {
+        let mut fields = Vec::new();
+        loop {
+            let key_len = read_compact_size(bytes, offset)?;
+            if key_len == 0 {
+                break;
+            }
+            let key_start = *offset;
+            let key_type = read_compact_size(bytes, offset)?;
+            if key_start + (key_len as usize) > bytes.len() { return None; }
+            let key_data = bytes[*offset .. key_start + (key_len as usize)].to_vec();
+            *offset = key_start + (key_len as usize);
+
+            let val_len = read_compact_size(bytes, offset)? as usize;
+            if *offset + val_len > bytes.len() { return None; }
+            let value_data = bytes[*offset .. *offset + val_len].to_vec();
+            *offset += val_len;
+
+            fields.push(RawField {
+                key_type,
+                key_data,
+                value_data,
+            });
+        }
+        Some(fields)
+    }
+
+    let global_fields = read_map(&bytes, &mut offset).ok_or("Failed to read global map")?;
+    
+    let mut input_fields = Vec::new();
+    for _ in 0..psbt.inputs.len() {
+        input_fields.push(read_map(&bytes, &mut offset).ok_or("Failed to read input map")?);
+    }
+
+    let mut output_fields = Vec::new();
+    for _ in 0..psbt.outputs.len() {
+        output_fields.push(read_map(&bytes, &mut offset).ok_or("Failed to read output map")?);
+    }
+
+    Ok((global_fields, input_fields, output_fields))
+}
 
 /// Extract all field identifiers from a PSBT
 ///
 /// Returns a set of unique field identifiers covering all global, input, and output fields.
-pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldIdentifier> {
+pub fn extract_all_field_identifiers(psbt: &Psbt) -> HashSet<FieldIdentifier> {
     let mut fields = HashSet::new();
+    let raw_fields = match parse_psbt_raw_fields(psbt) {
+        Ok(f) => f,
+        Err(_) => return fields,
+    };
 
     // Global fields (standard + unknown)
-    for (key_type, key_data, _) in psbt.global.iter_global_fields() {
-        let identifier = FieldIdentifier::Global {
-            key_type,
-            key_data: key_data.clone(),
-        };
-        fields.insert(identifier);
+    for field in raw_fields.0 {
+        fields.insert(FieldIdentifier::Global {
+            key_type: field.key_type,
+            key_data: field.key_data,
+        });
     }
 
     // Input fields (standard + unknown)
-    for (index, input) in psbt.inputs.iter().enumerate() {
-        for (key_type, key_data, _) in input.iter_input_fields() {
-            let identifier = FieldIdentifier::Input {
+    for (index, map) in raw_fields.1.into_iter().enumerate() {
+        for field in map {
+            fields.insert(FieldIdentifier::Input {
                 index,
-                key_type,
-                key_data: key_data.clone(),
-            };
-            fields.insert(identifier);
+                key_type: field.key_type,
+                key_data: field.key_data,
+            });
         }
     }
 
     // Output fields (standard + unknown)
-    for (index, output) in psbt.outputs.iter().enumerate() {
-        for (key_type, key_data, _) in output.iter_output_fields() {
-            let identifier = FieldIdentifier::Output {
+    for (index, map) in raw_fields.2.into_iter().enumerate() {
+        for field in map {
+            fields.insert(FieldIdentifier::Output {
                 index,
-                key_type,
-                key_data: key_data.clone(),
-            };
-            fields.insert(identifier);
+                key_type: field.key_type,
+                key_data: field.key_data,
+            });
         }
     }
 
@@ -56,8 +145,8 @@ pub fn extract_all_field_identifiers(psbt: &SilentPaymentPsbt) -> HashSet<FieldI
 /// Returns the set of fields present in `after` but not in `before`.
 /// If `before` is None, all fields in `after` are considered new.
 pub fn compute_field_diff(
-    before: Option<&SilentPaymentPsbt>,
-    after: &SilentPaymentPsbt,
+    before: Option<&Psbt>,
+    after: &Psbt,
 ) -> HashSet<FieldIdentifier> {
     let before_fields = match before {
         Some(psbt) => extract_all_field_identifiers(psbt),
@@ -75,7 +164,7 @@ pub fn compute_field_diff(
 /// Extracts input amounts from witness_utxo fields and output amounts
 /// from the amount field to compute totals and fees.
 /// Also extracts DNSSEC proofs for DNS contact display.
-pub fn compute_transaction_summary(psbt: &SilentPaymentPsbt) -> TransactionSummary {
+pub fn compute_transaction_summary(psbt: &Psbt) -> TransactionSummary {
     let mut total_input = 0u64;
     let mut total_output = 0u64;
     let num_inputs = psbt.inputs.len();

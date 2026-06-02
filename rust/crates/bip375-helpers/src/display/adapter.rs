@@ -4,7 +4,8 @@
 
 use super::field_identifier::FieldIdentifier;
 use super::formatting::{self, FieldCategory};
-use spdk_core::psbt::{GlobalFieldsExt, InputFieldsExt, OutputFieldsExt, SilentPaymentPsbt};
+use psbt::Psbt;
+use crate::display::psbt_analyzer::parse_psbt_raw_fields;
 use std::collections::HashSet;
 
 /// A generic representation of a PSBT field for display
@@ -26,98 +27,51 @@ pub struct DisplayField {
 
 /// Extract all fields from a PSBT for display
 pub fn extract_display_fields(
-    psbt: &SilentPaymentPsbt,
+    psbt: &Psbt,
     highlighted_fields: &HashSet<FieldIdentifier>,
 ) -> (Vec<DisplayField>, Vec<DisplayField>, Vec<DisplayField>) {
-    let global_fields = extract_global_fields(psbt, highlighted_fields);
-    let input_fields = extract_input_fields(psbt, highlighted_fields);
-    let output_fields = extract_output_fields(psbt, highlighted_fields);
+    let raw_fields = parse_psbt_raw_fields(psbt).unwrap_or_default();
 
-    (global_fields, input_fields, output_fields)
-}
-
-fn extract_global_fields(
-    psbt: &SilentPaymentPsbt,
-    highlighted_fields: &HashSet<FieldIdentifier>,
-) -> Vec<DisplayField> {
-    let mut fields = Vec::new();
-
-    for (key_type, key_data, value_data) in psbt.global.iter_global_fields() {
+    let mut global_fields = Vec::new();
+    for field in raw_fields.0 {
         let identifier = FieldIdentifier::Global {
-            key_type,
-            key_data: key_data.clone(),
+            key_type: field.key_type,
+            key_data: field.key_data.clone(),
         };
-
-        fields.push(create_display_field(
-            identifier,
-            key_type,
-            &key_data,
-            &value_data,
-            highlighted_fields,
-            -1,
-            FieldCategory::Global,
+        global_fields.push(create_display_field(
+            identifier, field.key_type, &field.key_data, &field.value_data, highlighted_fields, -1, FieldCategory::Global
         ));
     }
 
-    fields
-}
-
-fn extract_input_fields(
-    psbt: &SilentPaymentPsbt,
-    highlighted_fields: &HashSet<FieldIdentifier>,
-) -> Vec<DisplayField> {
-    let mut fields = Vec::new();
-
-    for (idx, input) in psbt.inputs.iter().enumerate() {
-        for (key_type, key_data, value_data) in input.iter_input_fields() {
+    let mut input_fields = Vec::new();
+    for (idx, map) in raw_fields.1.into_iter().enumerate() {
+        for field in map {
             let identifier = FieldIdentifier::Input {
                 index: idx,
-                key_type,
-                key_data: key_data.clone(),
+                key_type: field.key_type,
+                key_data: field.key_data.clone(),
             };
-
-            fields.push(create_display_field(
-                identifier,
-                key_type,
-                &key_data,
-                &value_data,
-                highlighted_fields,
-                idx as i32,
-                FieldCategory::Input,
+            input_fields.push(create_display_field(
+                identifier, field.key_type, &field.key_data, &field.value_data, highlighted_fields, idx as i32, FieldCategory::Input
             ));
         }
     }
 
-    fields
-}
-
-fn extract_output_fields(
-    psbt: &SilentPaymentPsbt,
-    highlighted_fields: &HashSet<FieldIdentifier>,
-) -> Vec<DisplayField> {
-    let mut fields = Vec::new();
-
-    for (idx, output) in psbt.outputs.iter().enumerate() {
-        for (key_type, key_data, value_data) in output.iter_output_fields() {
+    let mut output_fields = Vec::new();
+    for (idx, map) in raw_fields.2.into_iter().enumerate() {
+        for field in map {
             let identifier = FieldIdentifier::Output {
                 index: idx,
-                key_type,
-                key_data: key_data.clone(),
+                key_type: field.key_type,
+                key_data: field.key_data.clone(),
             };
-
-            fields.push(create_display_field(
-                identifier,
-                key_type,
-                &key_data,
-                &value_data,
-                highlighted_fields,
-                idx as i32,
-                FieldCategory::Output,
+            output_fields.push(create_display_field(
+                identifier, field.key_type, &field.key_data, &field.value_data, highlighted_fields, idx as i32, FieldCategory::Output
             ));
         }
     }
 
-    fields
+    (global_fields, input_fields, output_fields)
 }
 
 fn create_display_field(

@@ -1,16 +1,50 @@
 pub mod assignment;
 
+use crate::crypto::pubkey_to_p2wpkh_script;
 use crate::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
-use bitcoin::Amount;
+use bitcoin::{Amount, OutPoint, ScriptBuf, TxOut};
 use silentpayments::SilentPaymentAddress;
-use spdk_core::psbt::crypto::pubkey_to_p2wpkh_script;
-use spdk_core::psbt::{PsbtInput, PsbtOutput};
+use psbt::roles::ConstructorPsbtExt;
+use psbt::Psbt;
+use psbt_v2::v2::{Input, Output};
+
+/// Assemble a PSBT from built inputs and outputs using the new Constructor role.
+///
+/// The constructor's `add_inputs` only carries outpoints, so witness_utxo and
+/// sequence from the built inputs are re-applied afterwards. (Outputs are shuffled
+/// by `create_new_transaction`, per BIP-375; SP vs change is distinguished by
+/// `sp_v0_info`, not position.)
+pub fn build_psbt(inputs: Vec<Input>, outputs: Vec<Output>) -> Result<Psbt, String> {
+    let outpoints: Vec<OutPoint> = inputs
+        .iter()
+        .map(|i| OutPoint::new(i.previous_txid, i.spent_output_index))
+        .collect();
+
+    let psbt = Psbt::create_new_transaction(outputs).map_err(|e| e.to_string())?;
+    let mut psbt = psbt.add_inputs(outpoints).map_err(|e| e.to_string())?;
+
+    for (slot, built) in psbt.inputs.iter_mut().zip(inputs.into_iter()) {
+        slot.witness_utxo = built.witness_utxo;
+        slot.sequence = built.sequence;
+    }
+
+    Ok(psbt)
+}
+
+/// Build the 66-byte `PSBT_OUT_SP_V0_INFO` payload (scan_key || spend_key)
+/// for a silent payment output.
+fn sp_v0_info_bytes(address: &SilentPaymentAddress) -> [u8; 66] {
+    let mut bytes = [0u8; 66];
+    bytes[..33].copy_from_slice(&address.get_scan_key().serialize());
+    bytes[33..].copy_from_slice(&address.get_spend_key().serialize());
+    bytes
+}
 
 pub use assignment::{assign_inputs_to_parties, validate_assignments, InputAssignment};
 
 pub fn build_inputs_from_configs(
     configs: &[(&TransactionConfig, &VirtualWallet)],
-) -> Result<Vec<PsbtInput>, String> {
+) -> Result<Vec<Input>, String> {
     let mut inputs = Vec::new();
 
     for (config, wallet) in configs {
@@ -32,7 +66,7 @@ pub fn build_inputs_from_configs(
 
 pub fn build_inputs_from_multi_party_config(
     config: &MultiPartyConfig,
-) -> Result<Vec<PsbtInput>, String> {
+) -> Result<Vec<Input>, String> {
     let mut inputs = Vec::new();
 
     for party in &config.parties {
@@ -79,34 +113,38 @@ pub fn build_outputs(
     change_amount: u64,
     recipient_address: &SilentPaymentAddress,
     change_wallet: &SimpleWallet,
-) -> Result<Vec<PsbtOutput>, String> {
+) -> Result<Vec<Output>, String> {
     let change_pubkey = change_wallet.input_key_pair(0).1;
     let change_script = pubkey_to_p2wpkh_script(&change_pubkey);
 
-    Ok(vec![
-        PsbtOutput::regular(Amount::from_sat(change_amount), change_script),
-        PsbtOutput::silent_payment(
-            Amount::from_sat(recipient_amount),
-            recipient_address.clone(),
-            None, // label
-        ),
-    ])
+    // Regular change output: script set at construction time.
+    let change_output = Output::new(TxOut {
+        value: Amount::from_sat(change_amount),
+        script_pubkey: change_script,
+    });
+
+    // Silent payment recipient output: script is computed later by the Signer,
+    // so it starts empty; PSBT_OUT_SP_V0_INFO carries the scan/spend keys.
+    let mut sp_output = Output::new(TxOut {
+        value: Amount::from_sat(recipient_amount),
+        script_pubkey: ScriptBuf::new(),
+    });
+    sp_output.sp_v0_info = Some(sp_v0_info_bytes(recipient_address));
+
+    Ok(vec![change_output, sp_output])
 }
 
 pub fn validate_transaction_balance(
-    inputs: &[PsbtInput],
-    outputs: &[PsbtOutput],
+    inputs: &[Input],
+    outputs: &[Output],
     fee: u64,
 ) -> Result<(), String> {
-    let total_input: u64 = inputs.iter().map(|i| i.witness_utxo.value.to_sat()).sum();
-
-    let total_output: u64 = outputs
+    let total_input: u64 = inputs
         .iter()
-        .map(|o| match o {
-            PsbtOutput::SilentPayment { amount, .. } => amount.to_sat(),
-            PsbtOutput::Regular(txout) => txout.value.to_sat(),
-        })
+        .map(|i| i.witness_utxo.as_ref().map_or(0, |u| u.value.to_sat()))
         .sum();
+
+    let total_output: u64 = outputs.iter().map(|o| o.amount.to_sat()).sum();
 
     if total_input != total_output + fee {
         return Err(format!(
@@ -154,8 +192,7 @@ mod tests {
 
         let recipient = SimpleWallet::new("recipient_test_seed");
         let (scan_key, spend_key) = recipient.scan_spend_keys();
-        let address =
-            SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, silentpayments::SpVersion::ZERO);
+        let address = SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, silentpayments::SpVersion::ZERO);
 
         let change_wallet = SimpleWallet::new("change_test_seed");
 
@@ -174,8 +211,7 @@ mod tests {
 
         let recipient = SimpleWallet::new("recipient_test_seed");
         let (scan_key, spend_key) = recipient.scan_spend_keys();
-        let address =
-            SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, silentpayments::SpVersion::ZERO);
+        let address = SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, silentpayments::SpVersion::ZERO);
 
         let change_wallet = SimpleWallet::new("change_test_seed");
 

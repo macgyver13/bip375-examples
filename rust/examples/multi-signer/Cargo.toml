@@ -22,7 +22,8 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 silentpayments.workspace = true
-spdk-core.workspace = true
+psbt.workspace = true
+psbt-v2.workspace = true
 
 # GUI framework
 slint = { version = "1.8", optional = true }

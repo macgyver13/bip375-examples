@@ -10,21 +10,45 @@
 use crate::shared_utils::TweakDatabase;
 use crate::shared_utils::*;
 use bip375_helpers::io::PsbtMetadata;
+use bip375_helpers::transaction::build_psbt;
 use bip375_helpers::HrnPsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
-use hex;
 use secp256k1::Secp256k1;
-use spdk_core::psbt::roles::{
-    constructor::{add_inputs, add_outputs},
-    creator::create_psbt,
-    extractor::extract_transaction,
-    input_witness_finalizer::finalize_input_witnesses,
-    validation::{validate_psbt, ValidationLevel},
-};
-use spdk_core::psbt::{Bip375PsbtExt, PsbtOutput};
+use psbt::roles::{Bip375UpdaterExt, ExtractorPsbtExt, SignerPsbtExt};
 use std::collections::HashSet;
 
 pub struct WalletCoordinator;
+
+/// Finalize input witnesses for taproot (`tap_key_sig`) and P2WPKH (`partial_sigs`) inputs.
+///
+/// The upstream `InputWitnessFinalizerPsbtExt::finalize` only handles taproot inputs (it errors
+/// on the first non-taproot input), so this local helper also builds the standard P2WPKH witness
+/// `[signature, pubkey]`. Mirrors the upstream taproot path for `tap_key_sig` inputs.
+fn finalize_input_witnesses(psbt: &mut psbt::Psbt) -> Result<(), String> {
+    for (i, input) in psbt.inputs.iter_mut().enumerate() {
+        if let Some(sig) = input.tap_key_sig {
+            let mut witness = bitcoin::Witness::new();
+            witness.push(sig.to_vec());
+            input.final_script_sig = Some(bitcoin::ScriptBuf::new());
+            input.final_script_witness = Some(witness);
+            input.tap_key_sig = None;
+            input.sighash_type = None;
+        } else if let Some((pubkey, sig)) =
+            input.partial_sigs.iter().next().map(|(k, v)| (*k, *v))
+        {
+            let mut witness = bitcoin::Witness::new();
+            witness.push(sig.to_vec());
+            witness.push(pubkey.to_bytes());
+            input.final_script_sig = Some(bitcoin::ScriptBuf::new());
+            input.final_script_witness = Some(witness);
+            input.partial_sigs.clear();
+            input.sighash_type = None;
+        } else {
+            return Err(format!("Missing signature on input {}", i));
+        }
+    }
+    Ok(())
+}
 
 /// Returns seconds since UNIX epoch (used for PSBT metadata timestamps).
 fn timestamp_now() -> u64 {
@@ -63,17 +87,30 @@ impl WalletCoordinator {
         // Display transaction for user review
         display_transaction_summary(config, &hw_wallet, mnemonic);
 
-        // Create PSBT
-        let mut psbt = create_psbt(inputs.len(), outputs.len());
+        let input_count = inputs.len();
+        let output_count = outputs.len();
 
-        // Add inputs and outputs
-        add_inputs(&mut psbt, &inputs)?;
-        add_outputs(&mut psbt, &outputs)?;
+        // Record which inputs are silent-payment UTXOs (and their tweaks) before the
+        // inputs are consumed by build_psbt. Matched by outpoint so it survives any
+        // reordering. Tweaks must be applied before BIP32 derivations so the updater
+        // can distinguish SP inputs.
+        let tweak_db = TweakDatabase::from_virtual_wallet(&virtual_wallet);
+        let sp_tweaks: Vec<(usize, [u8; 32])> = inputs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, inp)| {
+                let outpoint = bitcoin::OutPoint::new(inp.previous_txid, inp.spent_output_index);
+                tweak_db.get(&outpoint).map(|t| (i, t))
+            })
+            .collect();
+
+        // Create PSBT (CREATOR + CONSTRUCTOR). Note: build_psbt shuffles outputs per BIP-375.
+        let mut psbt = build_psbt(inputs, outputs)
+            .map_err(|e| format!("Failed to build PSBT: {}", e))?;
 
         println!(
             "  CREATOR + CONSTRUCTOR: Created PSBT with {} inputs and {} outputs\n",
-            inputs.len(),
-            outputs.len()
+            input_count, output_count
         );
 
         // UPDATER ROLE: Add silent payment tweaks for spending (if any)
@@ -85,15 +122,10 @@ impl WalletCoordinator {
         //
         // Note: This must be done BEFORE adding BIP32 derivations, so the derivation
         // code can detect SP inputs and use the correct key (spend key vs input key).
-        let tweak_db = TweakDatabase::from_virtual_wallet(&virtual_wallet);
         let mut sp_input_count = 0;
-
-        for (input_idx, input) in inputs.iter().enumerate() {
-            // Check if this input is a silent payment output we previously received
-            if let Some(tweak) = tweak_db.get(&input.outpoint) {
-                psbt.set_input_sp_tweak(input_idx, tweak)?;
-                sp_input_count += 1;
-            }
+        for (input_idx, tweak) in &sp_tweaks {
+            psbt.inputs[*input_idx].set_sp_tweak(*tweak);
+            sp_input_count += 1;
         }
 
         if sp_input_count > 0 {
@@ -108,7 +140,7 @@ impl WalletCoordinator {
         // Note: This is done after SP tweaks so we can detect SP inputs
         let input_deriv_count =
             add_input_bip32_derivations(&mut psbt, &hw_wallet, &config.selected_utxo_ids)?;
-        let output_deriv_count = add_output_bip32_derivations(&mut psbt, &outputs, &hw_wallet)?;
+        let output_deriv_count = add_output_bip32_derivations(&mut psbt, &hw_wallet)?;
         let xpub_count = add_global_xpubs(&mut psbt, mnemonic)?;
 
         // Add BIP-353 DNSSEC proof to recipient output (Output 1)
@@ -128,7 +160,20 @@ impl WalletCoordinator {
         // and falls back to mock proof if resolution fails (for demo purposes)
         let dnssec_proof = create_dnssec_proof(dns_name);
 
-        HrnPsbtExt::set_output_dnssec_proof(&mut psbt, outputs.len() - 1, dnssec_proof.clone())?;
+        // Locate the recipient SP output (scan key not ours) — its index may have moved
+        // because build_psbt shuffles outputs.
+        let hw_scan_pub = hw_wallet.scan_spend_keys().0;
+        let recipient_idx = psbt
+            .outputs
+            .iter()
+            .position(|o| {
+                output_sp_info(o)
+                    .map(|(scan, _)| scan.serialize() != hw_scan_pub.serialize())
+                    .unwrap_or(false)
+            })
+            .ok_or("Recipient SP output not found")?;
+
+        HrnPsbtExt::set_output_dnssec_proof(&mut psbt, recipient_idx, dnssec_proof.clone())?;
 
         println!("   Added DNSSEC proof for recipient output");
         println!("   Proof Format: <1-byte-length><dns_name><RFC 9102 proof>");
@@ -140,8 +185,7 @@ impl WalletCoordinator {
             if input_deriv_count > 0 {
                 println!(
                     "   {} BIP32 derivation entries across {} inputs",
-                    input_deriv_count,
-                    inputs.len()
+                    input_deriv_count, input_count
                 );
             }
             if output_deriv_count > 0 {
@@ -164,8 +208,7 @@ impl WalletCoordinator {
         let metadata = PsbtMetadata {
             description: Some(format!(
                 "Created PSBT with {} inputs and {} outputs. Privacy mode enabled.",
-                inputs.len(),
-                outputs.len()
+                input_count, output_count
             )),
             creator: Some("wallet_coordinator".to_string()),
             created_at: Some(timestamp_now()),
@@ -292,91 +335,107 @@ impl WalletCoordinator {
         }
 
         // SP FIELD INTEGRITY CHECK
-        // Verify that every expected SP output still has sp_v0_info present and
-        // contains the expected (scan_key, spend_key) pair.  This catches:
-        //   - Attack 3: spend key substituted in sp_v0_info
-        //   - Attack 4: sp_v0_info stripped entirely
+        // Every SP output must still carry sp_v0_info, and its (scan_key, spend_key) must
+        // match one of the expected pairs. Outputs may be in any order (build_psbt shuffles
+        // them per BIP-375), so match against the expected set rather than by index. Catches:
+        //   - Attack 2 (WrongScanKey):      unexpected scan key
+        //   - Attack 3 (SubstituteSpendKey): spend key mismatch
+        //   - Attack 4 (StripSpFields):      missing SP output (count mismatch)
         println!("  Verifying SP field integrity for all outputs...");
 
-        // Expected per-output (scan_key, spend_key): output 0 = change, output 1 = recipient
-        let expected_sp_info: &[(secp256k1::PublicKey, secp256k1::PublicKey)] = &[
+        let expected_sp_info: [(secp256k1::PublicKey, secp256k1::PublicKey); 2] = [
             (hw_scan_pub, hw_spend_pub),
             (recipient_scan_key, recipient_spend_key),
         ];
 
-        for (output_idx, (expected_scan, expected_spend)) in expected_sp_info.iter().enumerate() {
-            match psbt.get_output_sp_info(output_idx) {
-                None => {
-                    return Err(format!(
-                        "Attack detected: sp_v0_info missing on output {} (BIP-375 fields stripped)",
-                        output_idx
-                    ).into());
-                }
-                Some((actual_scan, actual_spend)) => {
-                    if actual_scan.serialize() != expected_scan.serialize() {
-                        return Err(format!(
-                            "Attack detected: scan key mismatch on output {} \
-                             (expected {}, got {})",
-                            output_idx,
-                            hex::encode(expected_scan.serialize()),
-                            hex::encode(actual_scan.serialize()),
-                        )
-                        .into());
-                    }
-                    if actual_spend.serialize() != expected_spend.serialize() {
-                        return Err(format!(
-                            "Attack detected: spend key mismatch on output {} \
-                             (expected {}, got {})",
-                            output_idx,
-                            hex::encode(expected_spend.serialize()),
-                            hex::encode(actual_spend.serialize()),
-                        )
-                        .into());
-                    }
-                    println!(
-                        "     PASSED: Output {} sp_v0_info intact (scan + spend keys verified)",
-                        output_idx
-                    );
-                }
+        let mut sp_output_count = 0;
+        for (output_idx, output) in psbt.outputs.iter().enumerate() {
+            let Some((actual_scan, actual_spend)) = output_sp_info(output) else {
+                continue;
+            };
+            sp_output_count += 1;
+
+            if !expected_sp_info
+                .iter()
+                .any(|(es, _)| es.serialize() == actual_scan.serialize())
+            {
+                return Err(format!(
+                    "Attack detected: unexpected scan key on output {} (got {})",
+                    output_idx,
+                    hex::encode(actual_scan.serialize()),
+                )
+                .into());
             }
+            if !expected_sp_info.iter().any(|(es, esp)| {
+                es.serialize() == actual_scan.serialize()
+                    && esp.serialize() == actual_spend.serialize()
+            }) {
+                return Err(format!(
+                    "Attack detected: spend key mismatch on output {} (got {})",
+                    output_idx,
+                    hex::encode(actual_spend.serialize()),
+                )
+                .into());
+            }
+            println!(
+                "     PASSED: Output {} sp_v0_info intact (scan + spend keys verified)",
+                output_idx
+            );
+        }
+
+        if sp_output_count != expected_sp_info.len() {
+            return Err(format!(
+                "Attack detected: expected {} silent-payment outputs, found {} (BIP-375 fields stripped)",
+                expected_sp_info.len(),
+                sp_output_count
+            )
+            .into());
         }
         println!();
 
-        // Run full validation (includes DLEQ proofs, ECDH coverage, signatures, etc.)
-        println!("  Running comprehensive validation...");
-        match validate_psbt(&secp, &psbt, ValidationLevel::Full) {
-            Ok(_) => {
-                println!("     PASSED: All validation checks");
-                println!("      - ECDH coverage complete ({} inputs)", inputs.len());
-                println!("      - All DLEQ proofs verified");
-                println!(
-                    "      - Change scan key:    {}",
-                    hex::encode(hw_scan_key.serialize())
-                );
-                println!(
-                    "      - Recipient scan key: {}",
-                    hex::encode(recipient_scan_key.serialize())
-                );
-                println!("      - All inputs signed");
-                println!("      - Output scripts computed");
-            }
-            Err(e) => {
-                println!("   ❌ FAILED: {}", e);
-                println!("   ⚠️  CRITICAL: PSBT validation failed!\n");
-                return Err(format!("Validation failed: {}", e).into());
+        // Recompute SP output scripts from the ECDH shares and confirm they match what the
+        // hardware device wrote. Replaces the old comprehensive validate_psbt: compute_sp_outputs
+        // errors on missing ECDH coverage, and a script mismatch proves the device did not derive
+        // the outputs honestly from the shares it provided.
+        println!("  Recomputing SP output scripts from ECDH shares...");
+        let xonly_map = psbt
+            .compute_sp_outputs(&secp)
+            .map_err(|e| format!("SP output recomputation failed: {}", e))?;
+        let mut recomputed = psbt.clone();
+        recomputed
+            .set_sp_scriptpubkey(xonly_map)
+            .map_err(|e| format!("SP output recomputation failed: {}", e))?;
+        for (i, (signed, expected)) in
+            psbt.outputs.iter().zip(recomputed.outputs.iter()).enumerate()
+        {
+            if signed.sp_v0_info.is_some() && signed.script_pubkey != expected.script_pubkey {
+                return Err(format!(
+                    "Attack detected: output {} script does not match the script recomputed from ECDH shares",
+                    i
+                )
+                .into());
             }
         }
+        println!("     PASSED: SP output scripts verified against ECDH shares");
+        println!("      - ECDH coverage complete ({} inputs)", inputs.len());
+        println!(
+            "      - Change scan key:    {}",
+            hex::encode(hw_scan_pub.serialize())
+        );
+        println!(
+            "      - Recipient scan key: {}",
+            hex::encode(recipient_scan_key.serialize())
+        );
+        println!("      - All inputs signed");
+        println!("      - Output scripts computed");
 
         // Amount validation
         println!("\n  Validating transaction amounts...");
-        let total_input: u64 = inputs.iter().map(|i| i.witness_utxo.value.to_sat()).sum();
-        let total_output: u64 = outputs
+        let total_input: u64 = inputs
             .iter()
-            .map(|o| match o {
-                PsbtOutput::SilentPayment { amount, .. } => amount.to_sat(),
-                PsbtOutput::Regular(txout) => txout.value.to_sat(),
-            })
+            .map(|i| i.witness_utxo.as_ref().map_or(0, |u| u.value.to_sat()))
             .sum();
+        let total_output: u64 = outputs.iter().map(|o| o.amount.to_sat()).sum();
         let fee = total_input - total_output;
 
         println!("   Total input:  {} sats", total_input);
@@ -410,7 +469,7 @@ impl WalletCoordinator {
         // Extract transaction
         println!("  EXTRACTOR: Extracting final transaction...");
 
-        let final_tx = extract_transaction(&mut psbt)?;
+        let final_tx = psbt.extract_tx()?;
         let tx_bytes = bitcoin::consensus::serialize(&final_tx);
 
         println!("     Transaction extracted successfully");

@@ -15,7 +15,7 @@ pub enum IoError {
     Json(#[from] serde_json::Error),
 
     #[error("PSBT error: {0}")]
-    Psbt(#[from] spdk_core::psbt::Error),
+    Psbt(#[from] psbt::Error),
 
     #[error("Hex decoding error: {0}")]
     Hex(#[from] hex::FromHexError),

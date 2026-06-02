@@ -8,8 +8,8 @@
 //!
 //! - **`Bip375PsbtExt` trait**: Adds BIP-375 specific methods to PSBT
 
-use spdk_core::psbt::{Error, Result};
-use spdk_core::psbt::{PsbtKey, SilentPaymentPsbt};
+use psbt::{Error, Result};
+use psbt::{PsbtKey, Psbt};
 
 pub const PSBT_OUT_DNSSEC_PROOF: u64 = 0x35;
 
@@ -22,7 +22,7 @@ pub trait HrnPsbtExt {
     fn set_output_dnssec_proof(&mut self, output_idx: usize, proof: Vec<u8>) -> Result<()>;
 }
 
-impl HrnPsbtExt for SilentPaymentPsbt {
+impl HrnPsbtExt for Psbt {
     fn set_output_dnssec_proof(&mut self, output_idx: usize, proof: Vec<u8>) -> Result<()> {
         let output = self
             .outputs
