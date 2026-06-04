@@ -100,7 +100,9 @@ fn into_slint_field(f: bip375_helpers::display::adapter::DisplayField) -> PsbtFi
         field_name: f.field_name.into(),
         key_type: f.key_type_str.into(),
         key_preview: f.key_preview.into(),
-        value_preview: f.value_preview.into(),
+        value_lead: f.value_lead.into(),
+        value_tail: f.value_tail.into(),
+        value_count: f.value_count.into(),
         is_highlighted: f.is_highlighted,
         map_index: f.map_index,
     }

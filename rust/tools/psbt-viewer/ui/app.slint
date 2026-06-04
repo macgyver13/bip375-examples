@@ -8,7 +8,9 @@ export struct PsbtField {
     field-name: string,
     key-type: string,
     key-preview: string,      // Preview of key_data (for fields with keys)
-    value-preview: string,
+    value-lead: string,       // Leading significant hex (elides right); full value for short values
+    value-tail: string,       // Trailing significant hex (elides right); empty for short values
+    value-count: string,      // Byte count label, always shown
     map-index: int,  // -1 for global fields, >= 0 for input/output index
 }
 
@@ -31,6 +33,59 @@ export struct TestVector {
 component MenuButton inherits Button {
     preferred-height: 40px;
     max-height: 40px;
+}
+
+component HexValue inherits Rectangle {
+    in property <string> lead;
+    in property <string> tail;
+    in property <string> count;
+    clip: true;
+    height: 20px;
+
+    HorizontalLayout {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        padding: 0px;
+        spacing: 4px;
+        // Left spacer: right-anchors the value when it fits, and collapses first
+        // when space is tight so the hex segments get the available width.
+        Rectangle { horizontal-stretch: 1; }
+        // Lead: the leading significant bytes. Elides on its right ("…" only when
+        // truncated), so a narrow box shows the start and a wider box reveals more.
+        Text {
+            text: lead;
+            overflow: elide;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+            min-width: 0;
+        }
+        // Tail: the trailing significant bytes (long values only). Elides on its
+        // right the same way as the lead.
+        if tail != "": Text {
+            text: tail;
+            overflow: elide;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+            min-width: 0;
+        }
+        // Byte count: never elided, so it keeps its width and stays visible while
+        // the hex segments shrink first.
+        Text {
+            text: count;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+    }
 }
 
 component PSBTFields inherits HorizontalBox{
@@ -63,6 +118,7 @@ component PSBTFields inherits HorizontalBox{
         color: #2c2c2c;
         read-only: true;
         horizontal-alignment: left;
+        min-width: 0;
         max-width: 300px;
     }
 
@@ -80,12 +136,10 @@ component PSBTFields inherits HorizontalBox{
             horizontal-alignment: right;
         }
 
-        TextInput {
-            read-only: true;
-            text: field.value-preview;
-            font-size: 12px;
-            color: #666666;
-            horizontal-alignment: right;
+        HexValue {
+            lead: field.value-lead;
+            tail: field.value-tail;
+            count: field.value-count;
         }
     }
 }
@@ -365,8 +419,9 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    ScrollView {
+                    view := ScrollView {
                         VerticalBox {
+                            width: view.visible-width;
                             spacing: 16px;
 
                             // Global fields
@@ -387,7 +442,7 @@ export component AppWindow inherits Window {
                                 }
 
                                 for field in global-fields: Rectangle {
-                                    height: 40px;
+                                    min-height: 36px;
                                     background: #f7f7f7;
 
                                     PSBTFields {
@@ -414,7 +469,7 @@ export component AppWindow inherits Window {
                                 }
 
                                 for field in input-fields: Rectangle {
-                                    height: 40px;
+                                    min-height: 36px;
                                     background: #f7f7f7;
 
                                     PSBTFields {
@@ -441,7 +496,7 @@ export component AppWindow inherits Window {
                                 }
 
                                 for field in output-fields: Rectangle {
-                                    height: 40px;
+                                    min-height: 36px;
                                     background: #f7f7f7;
 
                                     PSBTFields {
