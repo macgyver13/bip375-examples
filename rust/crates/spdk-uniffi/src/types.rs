@@ -1,7 +1,7 @@
 // Core data types for UniFFI bindings
 
 use crate::errors::Bip375Error;
-use silentpayments::Network;
+use silentpayments::SpVersion;
 use spdk_core::psbt;
 use spdk_core::psbt::core;
 use spdk_core::psbt::core::PsbtKey;
@@ -12,10 +12,39 @@ use std::sync::{Arc, Mutex};
 // Silent Payment Address
 // ============================================================================
 
+/// Silent payment network, mirroring `silentpayments::Network` for the uniffi boundary.
+#[derive(Clone, Copy)]
+pub enum Network {
+    Mainnet,
+    Testnet,
+    Regtest,
+}
+
+impl From<silentpayments::Network> for Network {
+    fn from(value: silentpayments::Network) -> Self {
+        match value {
+            silentpayments::Network::Mainnet => Network::Mainnet,
+            silentpayments::Network::Testnet => Network::Testnet,
+            silentpayments::Network::Regtest => Network::Regtest,
+        }
+    }
+}
+
+impl From<Network> for silentpayments::Network {
+    fn from(value: Network) -> Self {
+        match value {
+            Network::Mainnet => silentpayments::Network::Mainnet,
+            Network::Testnet => silentpayments::Network::Testnet,
+            Network::Regtest => silentpayments::Network::Regtest,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SilentPaymentAddress {
     pub scan_key: Vec<u8>,
     pub spend_key: Vec<u8>,
+    pub network: Option<Network>,
 }
 
 impl SilentPaymentAddress {
@@ -23,6 +52,7 @@ impl SilentPaymentAddress {
         Self {
             scan_key: addr.get_scan_key().serialize().to_vec(),
             spend_key: addr.get_spend_key().serialize().to_vec(),
+            network: Some(addr.get_network().into()),
         }
     }
 
@@ -34,10 +64,12 @@ impl SilentPaymentAddress {
         let m_pubkey =
             PublicKey::from_slice(&self.spend_key).map_err(|_| Bip375Error::InvalidKey)?;
 
-        // Note: Using Regtest network and version 0 as defaults
-        // In production, these should be configurable
-        silentpayments::SilentPaymentAddress::new(scan_pubkey, m_pubkey, Network::Mainnet, 0)
-            .map_err(|_| Bip375Error::InvalidAddress)
+        let network = self
+            .network
+            .map(Into::into)
+            .unwrap_or(silentpayments::Network::Mainnet);
+
+        Ok(silentpayments::SilentPaymentAddress::new(scan_pubkey, m_pubkey, network, SpVersion::ZERO))
     }
 }
 
@@ -331,11 +363,14 @@ impl SilentPaymentPsbt {
         }
 
         // Get the SP info (scan_key, spend_key) and construct address
+        // The PSBT SP_V0_INFO field carries only scan/spend keys, not the
+        // network, so it is not recoverable here; default (None -> Mainnet).
         Ok(psbt
             .get_output_sp_info(idx)
             .map(|(scan_key, spend_key)| SilentPaymentAddress {
                 scan_key: scan_key.serialize().to_vec(),
                 spend_key: spend_key.serialize().to_vec(),
+                network: None,
             }))
     }
 

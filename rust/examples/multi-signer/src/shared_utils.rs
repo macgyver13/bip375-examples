@@ -10,7 +10,7 @@
 use bip375_helpers::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
 use bitcoin::Amount;
 use secp256k1::SecretKey;
-use silentpayments::{Network, SilentPaymentAddress};
+use silentpayments::{Network, SilentPaymentAddress, SpVersion};
 use spdk_core::psbt::crypto::{pubkey_to_p2wpkh_script, script_type_string};
 use spdk_core::psbt::{PsbtInput, PsbtOutput};
 
@@ -19,8 +19,7 @@ pub fn get_recipient_address() -> SilentPaymentAddress {
     let wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
     let (scan_key, spend_key) = wallet.scan_spend_keys();
 
-    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
-        .expect("Failed to create recipient address")
+    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, SpVersion::ZERO)
 }
 
 /// Get a party's virtual wallet by name

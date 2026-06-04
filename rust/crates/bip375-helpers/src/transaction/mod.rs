@@ -155,8 +155,7 @@ mod tests {
         let recipient = SimpleWallet::new("recipient_test_seed");
         let (scan_key, spend_key) = recipient.scan_spend_keys();
         let address =
-            SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, 0)
-                .unwrap();
+            SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, silentpayments::SpVersion::ZERO);
 
         let change_wallet = SimpleWallet::new("change_test_seed");
 
@@ -176,8 +175,7 @@ mod tests {
         let recipient = SimpleWallet::new("recipient_test_seed");
         let (scan_key, spend_key) = recipient.scan_spend_keys();
         let address =
-            SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, 0)
-                .unwrap();
+            SilentPaymentAddress::new(scan_key, spend_key, silentpayments::Network::Regtest, silentpayments::SpVersion::ZERO);
 
         let change_wallet = SimpleWallet::new("change_test_seed");
 

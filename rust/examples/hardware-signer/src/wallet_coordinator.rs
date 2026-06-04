@@ -9,6 +9,7 @@
 
 use crate::shared_utils::TweakDatabase;
 use crate::shared_utils::*;
+use bip375_helpers::io::PsbtMetadata;
 use bip375_helpers::HrnPsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use hex;
@@ -20,7 +21,6 @@ use spdk_core::psbt::roles::{
     input_witness_finalizer::finalize_input_witnesses,
     validation::{validate_psbt, ValidationLevel},
 };
-use bip375_helpers::io::PsbtMetadata;
 use spdk_core::psbt::{Bip375PsbtExt, PsbtOutput};
 use std::collections::HashSet;
 

@@ -9,7 +9,7 @@
 //! - File-based transfer: Simulates QR codes or USB transfer
 
 use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
-use silentpayments::{Network, SilentPaymentAddress};
+use silentpayments::{Network, SilentPaymentAddress, SpVersion};
 use spdk_core::psbt::crypto::script_type_string;
 use spdk_core::psbt::{Bip375PsbtExt, PsbtInput, PsbtOutput};
 
@@ -34,16 +34,14 @@ pub fn get_hardware_wallet(mnemonic: Option<&str>) -> Result<SimpleWallet, Strin
 pub fn get_recipient_address() -> SilentPaymentAddress {
     let wallet = SimpleWallet::new(RECIPIENT_SEED);
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
-        .expect("Failed to create recipient address")
+    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, SpVersion::ZERO)
 }
 
 /// Get the attacker's address (for attack simulation)
 pub fn get_attacker_address() -> SilentPaymentAddress {
     let wallet = SimpleWallet::new(ATTACKER_SEED);
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
-        .expect("Failed to create attacker address")
+    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, SpVersion::ZERO)
 }
 
 /// Get the attacker's wallet (for attack simulation — spend private key access)
@@ -96,8 +94,7 @@ pub fn create_transaction_outputs(
     let (scan_key, spend_key) = hw_wallet.scan_spend_keys();
 
     // Change output: Silent payment back to hardware wallet with label=0 (reserved for change per BIP 352)
-    let change_address = SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, 0)
-        .expect("Failed to create change address");
+    let change_address = SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, SpVersion::ZERO);
 
     let mut outputs = Vec::new();
     if config.change_amount > 0 {

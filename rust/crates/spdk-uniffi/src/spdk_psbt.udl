@@ -62,9 +62,16 @@ enum Bip375Error {
   "PsbtError",
 };
 
+enum Network {
+  "Mainnet",
+  "Testnet",
+  "Regtest",
+};
+
 dictionary SilentPaymentAddress {
   bytes scan_key;
   bytes spend_key;
+  Network? network = null;
 };
 
 dictionary Utxo {
