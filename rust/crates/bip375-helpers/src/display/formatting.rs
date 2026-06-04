@@ -22,6 +22,25 @@
 /// New proposed field for tracking TWEAK associated with Silent Payment Input
 use crate::PSBT_OUT_DNSSEC_PROOF;
 
+/// Hex-length boundary below which a value is shown as a single segment.
+/// Values longer than this are split into two significant hex halves.
+const VALUE_SPLIT_HEX_THRESHOLD: usize = 80;
+
+/// Responsive three-part display of a field value.
+///
+/// `lead` and `tail` are the two significant hex segments; both are rendered
+/// left-aligned and elide on their right end, so a narrow box shows their
+/// leading bytes and a wider box reveals more of the middle. `tail` is empty
+/// for short values. `count` is the byte count (e.g. `"(64 bytes)"`) and is
+/// always shown — it is never elided so it stays visible while the hex
+/// segments shrink first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueParts {
+    pub lead: String,
+    pub tail: String,
+    pub count: String,
+}
+
 /// PSBT field category for disambiguating field types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldCategory {
@@ -107,24 +126,60 @@ pub fn format_field_name(category: FieldCategory, key_type: u64) -> &'static str
     key_type_name(category, key_type)
 }
 
-/// Format field value data with context-aware formatting
+/// Split field value into three responsive parts (lead, tail, count).
 ///
-/// Provides specialized formatting for certain field types (e.g., DNSSEC proofs),
-/// otherwise falls back to generic hex preview.
-pub fn format_field_value(category: FieldCategory, key_type: u64, data: &[u8]) -> String {
-    // Special formatting for DNSSEC proof fields
-    if category == FieldCategory::Output && key_type == PSBT_OUT_DNSSEC_PROOF {
-        return format_dnssec_proof(data);
+/// Short values (≤ [`VALUE_SPLIT_HEX_THRESHOLD`] hex chars) return the full hex
+/// as `lead` with an empty `tail`. Longer values are split on a byte boundary
+/// into two halves: `lead` is the leading half, `tail` the trailing half.
+/// Together they cover the whole value when fully revealed; the caller elides
+/// each on its right and always shows `count`.
+pub fn format_value_parts(data: &[u8]) -> ValueParts {
+    if data.is_empty() {
+        return ValueParts {
+            lead: "(empty)".to_string(),
+            tail: String::new(),
+            count: String::new(),
+        };
     }
 
-    // Default to generic preview
-    format_value_preview(data)
+    let hex = hex::encode(data);
+    let count = format!("({} bytes)", data.len());
+
+    if hex.len() <= VALUE_SPLIT_HEX_THRESHOLD {
+        ValueParts {
+            lead: hex,
+            tail: String::new(),
+            count,
+        }
+    } else {
+        let split = (data.len() / 2) * 2; // byte-aligned hex midpoint
+        ValueParts {
+            lead: hex[..split].to_string(),
+            tail: hex[split..].to_string(),
+            count,
+        }
+    }
+}
+
+/// Split field value into three responsive parts with context-aware formatting.
+///
+/// DNSSEC proofs are returned as a single formatted `lead` (no split, empty
+/// `tail`/`count`). All other fields use [`format_value_parts`].
+pub fn format_field_value_parts(category: FieldCategory, key_type: u64, data: &[u8]) -> ValueParts {
+    if category == FieldCategory::Output && key_type == PSBT_OUT_DNSSEC_PROOF {
+        return ValueParts {
+            lead: format_dnssec_proof(data),
+            tail: String::new(),
+            count: String::new(),
+        };
+    }
+    format_value_parts(data)
 }
 
 /// Format field value data for preview display
 ///
-/// For data longer than 80 hex characters, elides from the center showing
-/// first and last 38 characters (19 bytes each) with "..." in between.
+/// Used for key previews. For data longer than 80 hex characters, elides from
+/// the center showing first and last 38 characters with "..." in between.
 pub fn format_value_preview(data: &[u8]) -> String {
     if data.is_empty() {
         return "(empty)".to_string();
@@ -132,10 +187,9 @@ pub fn format_value_preview(data: &[u8]) -> String {
 
     let hex = hex::encode(data);
 
-    // Keep total length under 80 characters by eliding from the center
     if hex.len() > 80 {
-        let start_len = 38; // First 19 bytes
-        let end_len = 38; // Last 19 bytes
+        let start_len = 38;
+        let end_len = 38;
         format!(
             "{}...{} ({} bytes)",
             &hex[..start_len],
@@ -217,6 +271,51 @@ mod tests {
     }
 
     #[test]
+    fn test_format_value_parts_empty() {
+        let parts = format_value_parts(&[]);
+        assert_eq!(parts.lead, "(empty)");
+        assert!(parts.tail.is_empty());
+        assert!(parts.count.is_empty());
+    }
+
+    #[test]
+    fn test_format_value_parts_short() {
+        let data = vec![0x01, 0x02, 0x03];
+        let parts = format_value_parts(&data);
+        assert_eq!(parts.lead, "010203");
+        assert!(parts.tail.is_empty());
+        assert_eq!(parts.count, "(3 bytes)");
+    }
+
+    #[test]
+    fn test_format_value_parts_long() {
+        let size = 66;
+        let data = vec![0xAB; size]; // 66 bytes = 132 hex chars
+        let parts = format_value_parts(&data);
+        assert!(!parts.lead.is_empty());
+        assert!(!parts.tail.is_empty());
+        assert_eq!(parts.count, "(66 bytes)");
+        // lead + tail reconstruct the full hex on a byte boundary
+        let full_hex = hex::encode(&data);
+        assert_eq!(parts.lead.clone() + &parts.tail, full_hex);
+        assert_eq!(parts.lead.len() % 2, 0);
+    }
+
+    #[test]
+    fn test_format_field_value_parts_dnssec_single_segment() {
+        let dns_name = b"alice@bitcoin.org";
+        let proof_data = b"proofdata";
+        let mut data = vec![dns_name.len() as u8];
+        data.extend_from_slice(dns_name);
+        data.extend_from_slice(proof_data);
+
+        let parts = format_field_value_parts(FieldCategory::Output, PSBT_OUT_DNSSEC_PROOF, &data);
+        assert!(parts.lead.contains("alice@bitcoin.org"));
+        assert!(parts.tail.is_empty());
+        assert!(parts.count.is_empty());
+    }
+
+    #[test]
     fn test_format_dnssec_proof_short() {
         // Format: <length-byte><dns_name><proof_data>
         let dns_name = b"user@example.com";
@@ -246,15 +345,4 @@ mod tests {
         assert!(result.contains("Invalid DNSSEC proof"));
     }
 
-    #[test]
-    fn test_format_field_value_uses_dnssec_formatting() {
-        let dns_name = b"alice@bitcoin.org";
-        let proof_data = b"proofdata";
-        let mut data = vec![dns_name.len() as u8];
-        data.extend_from_slice(dns_name);
-        data.extend_from_slice(proof_data);
-
-        let result = format_field_value(FieldCategory::Output, PSBT_OUT_DNSSEC_PROOF, &data);
-        assert!(result.contains("alice@bitcoin.org"));
-    }
 }

@@ -14,7 +14,12 @@ pub struct DisplayField {
     pub field_name: String,
     pub key_type_str: String,
     pub key_preview: String,
-    pub value_preview: String,
+    /// Leading significant hex segment (elided on its right; reveals more as width grows).
+    pub value_lead: String,
+    /// Trailing significant hex segment; empty for short values.
+    pub value_tail: String,
+    /// Byte count label (e.g. "(64 bytes)"); always shown, never elided.
+    pub value_count: String,
     pub is_highlighted: bool,
     pub map_index: i32,
 }
@@ -128,15 +133,21 @@ fn create_display_field(
 
     let field_name = formatting::format_field_name(category, key_type);
     let key_type_str = format!("0x{:02x}", key_type);
-    let key_preview = formatting::format_value_preview(key_data);
-    let value_preview = formatting::format_field_value(category, key_type, value_data);
+    let key_preview = if key_data.is_empty() {
+        String::new()
+    } else {
+        formatting::format_value_preview(key_data)
+    };
+    let value_parts = formatting::format_field_value_parts(category, key_type, value_data);
 
     DisplayField {
         identifier,
         field_name: field_name.to_string(),
         key_type_str,
         key_preview,
-        value_preview,
+        value_lead: value_parts.lead,
+        value_tail: value_parts.tail,
+        value_count: value_parts.count,
         is_highlighted,
         map_index,
     }
