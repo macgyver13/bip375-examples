@@ -77,6 +77,7 @@ impl From<spdk_core::psbt::Error> for Bip375Error {
             // Wrapped errors
             spdk_core::psbt::Error::Bitcoin(_) => Bip375Error::PsbtError,
             spdk_core::psbt::Error::Secp256k1(_) => Bip375Error::CryptoError,
+            spdk_core::psbt::Error::Crypto(_) => Bip375Error::CryptoError,
             spdk_core::psbt::Error::Hex(_) => Bip375Error::InvalidData,
             spdk_core::psbt::Error::Io(_) => Bip375Error::IoError,
             spdk_core::psbt::Error::MissingWitnessUtxo(_) => Bip375Error::InvalidData,

@@ -112,7 +112,7 @@ pub fn finalize_sp_outputs_malicious(
     sp_info_bytes.extend_from_slice(&attacker_spend_key.serialize());
     psbt.outputs[1].sp_v0_info = Some(sp_info_bytes);
 
-    let aggregated_shares = aggregate_ecdh_shares(psbt)?;
+    let aggregated_shares = aggregate_ecdh_shares(psbt, secp)?;
 
     // Finalize output 0 (change) honestly using the hw wallet scan key
     let change_script = derive_honest_output(secp, hw_scan_key, &aggregated_shares, psbt, 0)?;
@@ -188,7 +188,7 @@ pub fn substitute_spend_key(
     psbt: &mut SilentPaymentPsbt,
     attacker_address: &SilentPaymentAddress,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let aggregated_shares = aggregate_ecdh_shares(psbt)?;
+    let aggregated_shares = aggregate_ecdh_shares(psbt, secp)?;
 
     // Read the HONEST scan key for output 1 from the PSBT (unchanged by this attack)
     let (recipient_scan_key, _old_spend_key) = psbt
