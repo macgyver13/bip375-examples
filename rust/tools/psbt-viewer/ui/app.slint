@@ -94,7 +94,7 @@ component PSBTFields inherits HorizontalBox{
 export component AppWindow inherits Window {
     title: "BIP-375 PSBT Viewer";
     preferred-width: 1400px;
-    preferred-height: 900px;
+    preferred-height: 950px;
     min-width: 1200px;
     min-height: 700px;
 
@@ -122,11 +122,13 @@ export component AppWindow inherits Window {
     in-out property <[TestVector]> test-vectors: [];
     in-out property <int> selected-test-vector-index: -1;
     in-out property <string> test-vector-status: "";
+    in-out property <string> test-vector-filter: "";
 
     // Callbacks (handled by Rust)
     callback import-psbt(string);
     callback clear();
     callback browse-test-vectors();
+    callback filter-test-vectors(string);
     callback select-test-vector(int);
     callback load-psbt-file();
     callback export-psbt();
@@ -202,6 +204,13 @@ export component AppWindow inherits Window {
                                 height: 30px;
                                 clicked => { root.browse-test-vectors(); }
                             }
+                        }
+
+                        LineEdit {
+                            text <=> test-vector-filter;
+                            placeholder-text: "Filter descriptions...";
+                            font-size: 12px;
+                            edited(filter) => { root.filter-test-vectors(filter); }
                         }
 
                         // Status message

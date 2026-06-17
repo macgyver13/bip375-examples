@@ -7,13 +7,13 @@ mod resources;
 mod test_vector_helper;
 
 use bip375_helpers::display::{adapter, psbt_analyzer, psbt_io};
-use slint::Model;
 use bip375_helpers::io::load_psbt;
+use slint::Model;
 use spdk_core::psbt::SilentPaymentPsbt;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
-use test_vector_helper::TestVectorFile;
+use test_vector_helper::{filter_vectors_by_description, TestVectorFile};
 
 slint::include_modules!();
 
@@ -83,20 +83,47 @@ fn display_psbt(
     window.set_has_psbt(true);
 }
 
+/// Update the visible test vector list from the complete vector set.
+fn apply_test_vector_filter(window: &AppWindow, all_vectors: &[TestVector], filter: &str) {
+    let filtered_vectors = filter_vectors_by_description(all_vectors, filter);
+    let filtered_count = filtered_vectors.len();
+    let total_count = all_vectors.len();
+    let trimmed_filter = filter.trim();
+
+    window.set_test_vectors(slint::ModelRc::new(slint::VecModel::from(filtered_vectors)));
+    window.set_selected_test_vector_index(-1);
+
+    let status = if total_count == 0 {
+        "No test vectors loaded".to_string()
+    } else if trimmed_filter.is_empty() {
+        format!("Loaded {} test vectors", total_count)
+    } else if filtered_count == 0 {
+        format!("No matches in {} test vectors", total_count)
+    } else {
+        format!("Showing {} of {} test vectors", filtered_count, total_count)
+    };
+
+    window.set_test_vector_status(status.into());
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let window = AppWindow::new()?;
 
     // Shared state for current PSBT
     let current_psbt: Rc<RefCell<Option<SilentPaymentPsbt>>> = Rc::new(RefCell::new(None));
+    let all_test_vectors: Rc<RefCell<Vec<TestVector>>> = Rc::new(RefCell::new(Vec::new()));
 
     // Auto-load test vectors on startup
     match resources::load_test_vectors() {
         Ok(json) => {
             if let Ok(vectors) = TestVectorFile::from_json(&json) {
                 let slint_vectors = vectors.to_slint_vectors();
-                let count = slint_vectors.len();
-                window.set_test_vectors(slint::ModelRc::new(slint::VecModel::from(slint_vectors)));
-                window.set_test_vector_status(format!("✅ Loaded {} test vectors", count).into());
+                *all_test_vectors.borrow_mut() = slint_vectors;
+                apply_test_vector_filter(
+                    &window,
+                    &all_test_vectors.borrow(),
+                    &window.get_test_vector_filter(),
+                );
             }
         }
         Err(_) => {
@@ -127,14 +154,15 @@ fn main() -> Result<(), slint::PlatformError> {
     // Handle clear callback
     let window_weak = window.as_weak();
     let current_psbt_clone = current_psbt.clone();
+    let all_test_vectors_clone = all_test_vectors.clone();
     window.on_clear(move || {
         *current_psbt_clone.borrow_mut() = None;
         let window = window_weak.unwrap();
         window.set_has_psbt(false);
         window.set_import_text("".into());
+        window.set_test_vector_filter("".into());
         window.set_status_message("".into());
-        window.set_selected_test_vector_index(-1);
-        window.set_test_vector_status("".into());
+        apply_test_vector_filter(&window, &all_test_vectors_clone.borrow(), "");
         window.set_global_fields(slint::ModelRc::new(slint::VecModel::from(
             Vec::<PsbtField>::new(),
         )));
@@ -148,6 +176,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // Handle browse-test-vectors callback
     let window_weak = window.as_weak();
+    let all_test_vectors_clone = all_test_vectors.clone();
     window.on_browse_test_vectors(move || {
         let window = window_weak.unwrap();
 
@@ -155,12 +184,11 @@ fn main() -> Result<(), slint::PlatformError> {
             match TestVectorFile::from_json(&json) {
                 Ok(vectors) => {
                     let slint_vectors = vectors.to_slint_vectors();
-                    let count = slint_vectors.len();
-                    window.set_test_vectors(slint::ModelRc::new(slint::VecModel::from(
-                        slint_vectors,
-                    )));
-                    window.set_test_vector_status(
-                        format!("✅ Loaded {} test vectors from file", count).into(),
+                    *all_test_vectors_clone.borrow_mut() = slint_vectors;
+                    apply_test_vector_filter(
+                        &window,
+                        &all_test_vectors_clone.borrow(),
+                        &window.get_test_vector_filter(),
                     );
                 }
                 Err(e) => {
@@ -168,6 +196,14 @@ fn main() -> Result<(), slint::PlatformError> {
                 }
             }
         }
+    });
+
+    // Handle test-vector filtering callback
+    let window_weak = window.as_weak();
+    let all_test_vectors_clone = all_test_vectors.clone();
+    window.on_filter_test_vectors(move |filter| {
+        let window = window_weak.unwrap();
+        apply_test_vector_filter(&window, &all_test_vectors_clone.borrow(), &filter);
     });
 
     // Handle select-test-vector callback (populates import field and auto-imports)
