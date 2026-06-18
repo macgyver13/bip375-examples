@@ -35,7 +35,7 @@ fn main() -> Result<()> {
     let psbt_path = PathBuf::from(&args[1]);
 
     let secp = Secp256k1::new();
-    let keys = workflow::setup_keys(&secp)?;
+    let keys = workflow::setup_keys(&secp, workflow::DEMO_SP_INDEX)?;
 
     // 1. Read the Round 2 PSBT outputted by the simulator
     let psbt_bytes = fs::read(&psbt_path).context("Failed to read PSBT file")?;

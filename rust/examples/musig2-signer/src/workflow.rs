@@ -54,8 +54,17 @@ pub struct KeySetup {
     pub sp_address: SilentPaymentAddress,
 }
 
+/// Synthetic `/0/*` leaf index used by the demo fixtures. The aggregate key,
+/// scriptPubKey, and the PSBT TAP_BIP32_DERIVATION path all derive from this, so
+/// build_payroll and finalize_payroll share this one source of truth to stay in
+/// sync. Change this to regenerate fixtures at a different index.
+pub const DEMO_SP_INDEX: u32 = 3;
+
 /// Generate deterministic demo key material and aggregate the MuSig2 key.
-pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
+///
+/// `sub_index` is the synthetic `/0/*` leaf index (BIP-328 derivation on the
+/// aggregate key); the external branch is fixed to `0`.
+pub fn setup_keys(secp: &Secp256k1<secp256k1::All>, sub_index: u32) -> Result<KeySetup> {
     use bip39::Mnemonic;
     use bitcoin::bip32::{DerivationPath, Xpriv};
     use hmac::{Hmac, Mac};
@@ -115,7 +124,7 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
             .map_err(|e| anyhow::anyhow!("Chaincode decode: {e}"))?;
     let mut current_pk = p_base_bitcoin;
 
-    let derivation_indices = [0u32, 0u32];
+    let derivation_indices = [0u32, sub_index];
     let mut tweaks = Vec::new();
 
     for index in derivation_indices {
@@ -156,7 +165,7 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
     let tweaked_agg_pk_bitcoin = PublicKey::from_slice(&tweaked_agg_pk_031.serialize())?;
     assert_eq!(current_pk, tweaked_agg_pk_bitcoin);
 
-    // untweaked_agg_xonly is the x-only of the derived child key (/0/0) before taproot tweak
+    // untweaked_agg_xonly is the x-only of the derived child key (/0/<sub_index>) before taproot tweak
     let (untweaked_agg_xonly, _) = current_pk.x_only_public_key();
 
     // Apply BIP-341 taproot tweak (no script tree => unspendable taproot tweak).

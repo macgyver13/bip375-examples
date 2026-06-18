@@ -140,7 +140,7 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(out_dir)?;
 
     let secp = Secp256k1::new();
-    let keys = workflow::setup_keys(&secp)?;
+    let keys = workflow::setup_keys(&secp, workflow::DEMO_SP_INDEX)?;
     let recipients = musig2_signer::recipients::recipient_addresses()?;
     // let recipients = real_payroll()?;
 
@@ -201,7 +201,7 @@ fn main() -> Result<()> {
         change_idx,
         &keys.untweaked_agg_xonly,
         agg_xfp,
-        &[0, 0],
+        &[0, workflow::DEMO_SP_INDEX],
     );
 
     // ── Round 1 PSBT: pre-contribution ───────────────────────────────────────
