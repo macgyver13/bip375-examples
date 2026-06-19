@@ -28,7 +28,6 @@ def sample_psbt(test_keys):
             vout=0,
             amount=100000,
             script_pubkey=bytes.fromhex("0014") + bytes(20),
-            private_key=test_keys["privkey"],
             public_key=test_keys["pubkey"],
             sequence=0xfffffffd,
             master_fingerprint=None,
@@ -47,10 +46,7 @@ def sample_psbt(test_keys):
         )
     ]
 
-    psbt = SilentPaymentPsbt.create(len(inputs), len(outputs))
-    psbt.add_inputs(inputs)
-    psbt.add_outputs(outputs)
-    return psbt
+    return SilentPaymentPsbt.create_from_parts(inputs, outputs)
 
 
 class TestCoreTypes:
@@ -147,14 +143,13 @@ class TestRoles:
     """Test PSBT role functions."""
 
     def test_add_ecdh_shares(self, sample_psbt, test_keys):
-        """Test adding ECDH shares."""
+        """Test adding ECDH shares via the multi-signer role."""
         inputs = [
             Utxo(
                 txid="a" * 64,
                 vout=0,
                 amount=100000,
                 script_pubkey=bytes.fromhex("0014") + bytes(20),
-                private_key=test_keys["privkey"],
                 public_key=test_keys["pubkey"],
                 sequence=0xfffffffd,
                 master_fingerprint=None,
@@ -162,8 +157,9 @@ class TestRoles:
             )
         ]
 
-        scan_keys = [test_keys["scan_key"]]
-        sample_psbt.add_ecdh_shares_full(inputs, scan_keys)
+        # Updater populates the fields the signer resolves ownership from
+        sample_psbt.update_inputs(inputs)
+        sample_psbt.generate_multi_signer_ecdh_shares(test_keys["privkey"])
 
         # Verify shares were added
         shares = sample_psbt.get_input_ecdh_shares(0)

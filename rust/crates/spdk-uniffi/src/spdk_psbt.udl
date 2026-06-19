@@ -79,7 +79,6 @@ dictionary Utxo {
   u32 vout;
   u64 amount;
   bytes script_pubkey;
-  bytes? private_key;
   u32? sequence;
   bytes? public_key;
   bytes? master_fingerprint;
@@ -111,6 +110,9 @@ interface SilentPaymentPsbt {
   
   [Name=create, Throws=Bip375Error]
   constructor(u32 num_inputs, u32 num_outputs);
+
+  [Name=create_from_parts, Throws=Bip375Error]
+  constructor(sequence<Utxo> inputs, sequence<PsbtOutput> outputs);
   
   [Name=deserialize, Throws=Bip375Error]
   constructor(bytes data);
@@ -131,6 +133,9 @@ interface SilentPaymentPsbt {
   sequence<EcdhShare> get_input_ecdh_shares(u32 input_index);
 
   [Throws=Bip375Error]
+  sequence<EcdhShare> get_global_ecdh_shares();
+
+  [Throws=Bip375Error]
   SilentPaymentAddress? get_output_sp_address(u32 output_index);
 
   [Throws=Bip375Error]
@@ -146,19 +151,22 @@ interface SilentPaymentPsbt {
   void add_outputs(sequence<PsbtOutput> outputs);
 
   [Throws=Bip375Error]
-  void add_ecdh_shares_full(sequence<Utxo> inputs, sequence<bytes> scan_keys);
+  void generate_single_signer_ecdh_shares(bytes spend_key);
 
   [Throws=Bip375Error]
-  void add_ecdh_shares_partial(sequence<u32> input_indices, sequence<Utxo> inputs, sequence<bytes> scan_keys, boolean include_dleq);
+  void generate_multi_signer_ecdh_shares(bytes spend_key);
 
   [Throws=Bip375Error]
-  void sign_inputs(sequence<Utxo> inputs);
+  void sign_input(u32 input_index, bytes privkey);
 
   [Throws=Bip375Error]
-  void finalize_sp_outputs();
+  void sign_silent_payment_inputs(bytes spend_key);
 
   [Throws=Bip375Error]
-  void finalize_input_witnesses();
+  void compute_sp_output_scripts();
+
+  [Throws=Bip375Error]
+  void finalize();
 
   [Throws=Bip375Error]
   bytes extract_transaction();

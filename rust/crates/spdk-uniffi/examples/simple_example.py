@@ -13,6 +13,7 @@ This example shows:
 # Import the role functions directly from spdk_psbt
 from spdk_psbt import (
     bip352_compute_ecdh_share,
+    bip352_pubkey_to_p2wpkh_script,
     dleq_generate_proof,
     dleq_verify_proof,
     Utxo,
@@ -36,14 +37,14 @@ def main():
     print("\nCreating PSBT with Silent Payment output")
     print("-" * 50)
 
-    # Define inputs
+    # Define inputs. Signing keys are NOT stored on the Utxo; they are passed to the
+    # signer methods (spdk role separation). The Utxo carries only Updater metadata.
     inputs = [
         Utxo(
             txid="a" * 64,  # Example txid
             vout=0,
             amount=100000,  # 100,000 sats
-            script_pubkey=bytes.fromhex("0014") + bytes(20),  # P2WPKH placeholder
-            private_key=privkey,
+            script_pubkey=bip352_pubkey_to_p2wpkh_script(pubkey),  # P2WPKH for this pubkey
             sequence=0xfffffffd,
             public_key=pubkey,
             master_fingerprint=None,
@@ -63,14 +64,9 @@ def main():
             ),
     ]
 
-    # Create PSBT
-    psbt = SilentPaymentPsbt.create(len(inputs), len(outputs))
-    print(f"✓ Created PSBT")
-    
-    # Add inputs and outputs to the PSBT
-    psbt.add_inputs(inputs)
-    psbt.add_outputs(outputs)
-    print(f"✓ Added {len(inputs)} input(s) and {len(outputs)} output(s)")
+    # Create PSBT (Constructor role: outpoints + outputs in one call)
+    psbt = SilentPaymentPsbt.create_from_parts(inputs, outputs)
+    print(f"✓ Created PSBT with {len(inputs)} input(s) and {len(outputs)} output(s)")
 
     print("\nComputing ECDH shares")
     print("-" * 50)
@@ -91,11 +87,11 @@ def main():
     print("\nAdding ECDH shares to PSBT")
     print("-" * 50)
 
-    # Update PSBT with inputs
+    # Updater role: attach witness UTXOs and bip32 derivations
     psbt.update_inputs(inputs)
-    # Add ECDH shares for all inputs (with DLEQ proofs)
-    scan_keys = [scan_key]
-    psbt.add_ecdh_shares_full(inputs, scan_keys)
+    # Signer role: contribute per-input ECDH shares (with DLEQ proofs) for the inputs
+    # this key owns. Recipient scan keys are read from the PSBT's silent payment outputs.
+    psbt.generate_multi_signer_ecdh_shares(privkey)
     print("✓ ECDH shares added to PSBT")
 
     # Check ECDH shares were added
@@ -111,7 +107,7 @@ def main():
     # Finalize (compute output scripts from silent payment addresses)
     print("\nComputing Silent Payment outputs")
     print("-" * 50)
-    psbt.finalize_sp_outputs()
+    psbt.compute_sp_output_scripts()
     print("✓ PSBT finalized (output scripts computed)")
     
     # Check output script was computed
@@ -121,12 +117,13 @@ def main():
 
     print("\nSigning inputs")
     print("-" * 50)
-    psbt.sign_inputs(inputs)
+    # Signing keys are supplied per input (spdk role separation)
+    psbt.sign_input(0, privkey)
     print("✓ All inputs signed")
 
     print("\nFinalizing PSBT")
     print("-" * 50)
-    psbt.finalize_input_witnesses()
+    psbt.finalize()
 
     print("\nExtracting transaction")
     print("-" * 50)
