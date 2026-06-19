@@ -7,12 +7,27 @@
 //! - Bob controls input 1
 //! - Charlie controls input 2
 
+use bip375_helpers::crypto::{pubkey_to_p2wpkh_script, script_type_string};
 use bip375_helpers::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
 use bitcoin::Amount;
+use bitcoin::{ScriptBuf, TxOut};
+use psbt_v2::v2::{Input, Output};
 use secp256k1::SecretKey;
 use silentpayments::{Network, SilentPaymentAddress, SpVersion};
-use spdk_core::psbt::crypto::{pubkey_to_p2wpkh_script, script_type_string};
-use spdk_core::psbt::{PsbtInput, PsbtOutput};
+
+fn sp_v0_info_bytes(address: &SilentPaymentAddress) -> [u8; 66] {
+    let mut bytes = [0u8; 66];
+    bytes[..33].copy_from_slice(&address.get_scan_key().serialize());
+    bytes[33..].copy_from_slice(&address.get_spend_key().serialize());
+    bytes
+}
+
+fn output_sp_info(output: &Output) -> Option<(secp256k1::PublicKey, secp256k1::PublicKey)> {
+    let bytes = output.sp_v0_info.as_ref()?;
+    let scan = secp256k1::PublicKey::from_slice(&bytes[..33]).ok()?;
+    let spend = secp256k1::PublicKey::from_slice(&bytes[33..]).ok()?;
+    Some((scan, spend))
+}
 
 /// Get the silent payment recipient address (same for all signers)
 pub fn get_recipient_address() -> SilentPaymentAddress {
@@ -31,7 +46,7 @@ pub fn get_party_wallet(party_name: &str) -> VirtualWallet {
 }
 
 /// Get transaction inputs from MultiPartyConfig
-pub fn get_transaction_inputs_from_config(config: &MultiPartyConfig) -> Vec<PsbtInput> {
+pub fn get_transaction_inputs_from_config(config: &MultiPartyConfig) -> Vec<Input> {
     let mut inputs = Vec::new();
 
     for party in &config.parties {
@@ -63,22 +78,24 @@ pub fn get_party_private_key(party_name: &str) -> SecretKey {
 /// - Output 1: Silent payment output (configurable amount)
 ///
 /// The config should be the combined config with total amounts.
-pub fn get_transaction_outputs(config: &TransactionConfig) -> Vec<PsbtOutput> {
+pub fn get_transaction_outputs(config: &TransactionConfig) -> Vec<Output> {
     // Change output to a regular P2WPKH address
     let change_wallet = SimpleWallet::new("change_address_for_multi_signer_test");
     let change_pubkey = change_wallet.input_key_pair(0).1;
     let change_script = pubkey_to_p2wpkh_script(&change_pubkey);
 
-    vec![
-        // Regular change output
-        PsbtOutput::regular(Amount::from_sat(config.change_amount), change_script),
-        // Silent payment output
-        PsbtOutput::silent_payment(
-            Amount::from_sat(config.recipient_amount),
-            get_recipient_address(),
-            None,
-        ),
-    ]
+    let change_output = Output::new(TxOut {
+        value: Amount::from_sat(config.change_amount),
+        script_pubkey: change_script,
+    });
+
+    let mut sp_output = Output::new(TxOut {
+        value: Amount::from_sat(config.recipient_amount),
+        script_pubkey: ScriptBuf::new(),
+    });
+    sp_output.sp_v0_info = Some(sp_v0_info_bytes(&get_recipient_address()));
+
+    vec![change_output, sp_output]
 }
 
 /// Format a txid for concise display: first 16 + last 8 hex chars.
@@ -96,7 +113,7 @@ pub fn print_step_header(step_number: u32, step_name: &str, party_name: &str) {
 }
 
 /// Print an overview of the multi-signer scenario
-pub fn print_scenario_overview(inputs: &[PsbtInput], config: &TransactionConfig) {
+pub fn print_scenario_overview(inputs: &[Input], config: &TransactionConfig) {
     println!("Multi-Signer Silent Payment Scenario");
     println!("{}", "=".repeat(50));
     println!("  Transaction Overview:");
@@ -111,57 +128,42 @@ pub fn print_scenario_overview(inputs: &[PsbtInput], config: &TransactionConfig)
     println!("  Inputs:");
     let parties = ["Alice", "Bob", "Charlie"];
     for (i, (input, party)) in inputs.iter().zip(parties.iter()).enumerate() {
-        let input_type = script_type_string(&input.witness_utxo.script_pubkey);
+        let utxo = input.witness_utxo.as_ref().expect("witness_utxo required");
+        let input_type = script_type_string(&utxo.script_pubkey);
         println!(
             "   Input {} ({}) [{}]: {} sats",
             i,
             party,
             input_type,
-            input.witness_utxo.value.to_sat()
+            utxo.value.to_sat()
         );
-        println!("      TXID: {}", format_txid_short(&input.outpoint.txid));
-        println!("      VOUT: {}", input.outpoint.vout);
+        println!("      TXID: {}", format_txid_short(&input.previous_txid));
+        println!("      VOUT: {}", input.spent_output_index);
     }
 
-    let total_input: u64 = inputs.iter().map(|i| i.witness_utxo.value.to_sat()).sum();
+    let total_input: u64 = inputs
+        .iter()
+        .map(|i| i.witness_utxo.as_ref().map_or(0, |u| u.value.to_sat()))
+        .sum();
     println!("   Total Input: {} sats", total_input);
     println!();
 
     println!("  Outputs:");
     for (i, output) in outputs.iter().enumerate() {
-        match output {
-            PsbtOutput::SilentPayment {
-                amount,
-                address,
-                label,
-            } => {
-                println!("   Output {} (Silent Payment): {} sats", i, amount.to_sat());
-                println!(
-                    "      Scan Key:  {}",
-                    hex::encode(address.get_scan_key().serialize())
-                );
-                println!(
-                    "      Spend Key: {}",
-                    hex::encode(address.get_spend_key().serialize())
-                );
-            }
-            PsbtOutput::Regular(txout) => {
-                println!("   Output {} (Change): {} sats", i, txout.value.to_sat());
-                println!(
-                    "      Script: {}",
-                    hex::encode(txout.script_pubkey.as_bytes())
-                );
-            }
+        if let Some((scan, spend)) = output_sp_info(output) {
+            println!("   Output {} (Silent Payment): {} sats", i, output.amount.to_sat());
+            println!("      Scan Key:  {}", hex::encode(scan.serialize()));
+            println!("      Spend Key: {}", hex::encode(spend.serialize()));
+        } else {
+            println!("   Output {} (Change): {} sats", i, output.amount.to_sat());
+            println!(
+                "      Script: {}",
+                hex::encode(output.script_pubkey.as_bytes())
+            );
         }
     }
 
-    let total_output: u64 = outputs
-        .iter()
-        .map(|o| match o {
-            PsbtOutput::SilentPayment { amount, .. } => amount.to_sat(),
-            PsbtOutput::Regular(txout) => txout.value.to_sat(),
-        })
-        .sum();
+    let total_output: u64 = outputs.iter().map(|o| o.amount.to_sat()).sum();
     let fee = total_input - total_output;
     println!("   Transaction Fee: {} sats", fee);
     println!();

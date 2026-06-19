@@ -51,8 +51,8 @@ impl WorkflowOrchestrator {
             // Check for DLEQ proof
             state.has_dleq_proof = !input.sp_dleq_proofs.is_empty();
 
-            // Check for signature (partial_sig in structured field)
-            state.has_signature = !input.partial_sigs.is_empty();
+            // Check for signature (ECDSA or taproot key-spend)
+            state.has_signature = input.tap_key_sig.is_some() || !input.partial_sigs.is_empty();
 
             // Determine assigned party based on index (Alice=0, Bob=1, Charlie=2)
             if state.has_ecdh_share || state.has_signature {
