@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/bip375-helpers",
-    #"crates/spdk-uniffi",
+    "crates/spdk-uniffi",
     "examples/hardware-signer",
     "examples/multi-signer",
     #"examples/musig2-signer",
