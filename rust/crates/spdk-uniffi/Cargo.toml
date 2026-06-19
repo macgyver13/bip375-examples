@@ -13,7 +13,8 @@ bip375-helpers.workspace = true
 bitcoin.workspace = true
 secp256k1.workspace = true
 silentpayments.workspace = true
-spdk-core.workspace = true
+psbt.workspace = true
+psbt-v2.workspace = true
 
 # UniFFI
 uniffi = { version = "0.28", features = ["build"] }
