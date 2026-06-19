@@ -1,71 +1,232 @@
 use bip375_helpers::display::psbt_io::{load_psbt, save_psbt};
 use bip375_helpers::transaction::{
-    build_inputs_from_multi_party_config, build_outputs, validate_transaction_balance,
+    build_inputs_from_multi_party_config, build_outputs, build_psbt, validate_transaction_balance,
 };
-use bip375_helpers::wallet::{MultiPartyConfig, PartyConfig, SimpleWallet};
-use bitcoin::Transaction;
-use secp256k1::{Secp256k1, SecretKey};
-use spdk_core::psbt::crypto::script_type_string;
+use bip375_helpers::wallet::{MultiPartyConfig, PartyConfig, SimpleWallet, VirtualWallet};
+use bip375_helpers::crypto::{apply_tweak_to_privkey, script_type_string};
 use bip375_helpers::io::PsbtMetadata;
-use spdk_core::psbt::roles::{
-    constructor::{add_inputs, add_outputs},
-    creator::create_psbt,
-    extractor::extract_transaction,
-    input_finalizer::finalize_sp_outputs,
-    input_witness_finalizer::finalize_input_witnesses,
-    signer::{add_ecdh_shares_partial, sign_inputs},
-    updater::update_input_derivation,
-    validation::{self, ValidationLevel},
-};
-use spdk_core::psbt::{PsbtInput, SilentPaymentPsbt};
+use bip375_helpers::sp_signer::add_input_ecdh_share;
+use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
+use bitcoin::taproot::TapTweakHash;
+use bitcoin::{CompressedPublicKey, NetworkKind, Transaction};
+use psbt::roles::{Bip375UpdaterExt, ExtractorPsbtExt, SignerPsbtExt};
+use psbt::Psbt;
+use psbt_v2::v2::Input;
+use secp256k1::{Parity, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::shared_utils;
 
-/// Create a new PSBT with inputs and outputs (no ECDH shares, no signatures)
-pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, String> {
-    let num_inputs = config.get_total_inputs();
-    let num_outputs = 2;
+type ControlledInput = (usize, SecretKey, bool);
 
-    let mut psbt = create_psbt(num_inputs, num_outputs);
+fn to_derivation_path(raw: Vec<u32>) -> DerivationPath {
+    DerivationPath::from(raw.into_iter().map(ChildNumber::from).collect::<Vec<_>>())
+}
 
-    let inputs = build_inputs_from_multi_party_config(config)?;
+fn finalize_input_witnesses(psbt: &mut Psbt) -> Result<(), String> {
+    for (i, input) in psbt.inputs.iter_mut().enumerate() {
+        if let Some(sig) = input.tap_key_sig {
+            let mut witness = bitcoin::Witness::new();
+            witness.push(sig.to_vec());
+            input.final_script_sig = Some(bitcoin::ScriptBuf::new());
+            input.final_script_witness = Some(witness);
+            input.tap_key_sig = None;
+            input.sighash_type = None;
+        } else if let Some((pubkey, sig)) = input.partial_sigs.iter().next().map(|(k, v)| (*k, *v))
+        {
+            let mut witness = bitcoin::Witness::new();
+            witness.push(sig.to_vec());
+            witness.push(pubkey.to_bytes());
+            input.final_script_sig = Some(bitcoin::ScriptBuf::new());
+            input.final_script_witness = Some(witness);
+            input.partial_sigs.clear();
+            input.sighash_type = None;
+        } else {
+            return Err(format!("Missing signature on input {}", i));
+        }
+    }
+    Ok(())
+}
 
-    add_inputs(&mut psbt, &inputs).map_err(|e| format!("Failed to add inputs: {}", e))?;
+fn build_party_wallet(party_name: &str) -> VirtualWallet {
+    VirtualWallet::multi_signer_wallet(&format!(
+        "{}_multi_signer_silent_payment_test_seed",
+        party_name.to_lowercase()
+    ))
+}
 
-    // Updater role: add BIP32 derivations so public keys are available in the PSBT.
-    // Per BIP 375, the Updater should add PSBT_IN_BIP32_DERIVATION for p2wpkh inputs
-    // so the public key is available for DLEQ proof verification.
-    let mut input_offset = 0;
+fn resolve_regular_p2tr_privkey(
+    secp: &Secp256k1<secp256k1::All>,
+    candidate_privkey: SecretKey,
+    candidate_pubkey: PublicKey,
+) -> Result<SecretKey, String> {
+    let (xonly, _) = candidate_pubkey.x_only_public_key();
+    let tweak = TapTweakHash::from_key_and_tweak(xonly, None)
+        .to_scalar()
+        .to_be_bytes();
+    let tweaked_sk = apply_tweak_to_privkey(&candidate_privkey, &tweak)
+        .map_err(|e| format!("BIP-341 tweak failed: {}", e))?;
+    let (_, parity) = PublicKey::from_secret_key(secp, &tweaked_sk).x_only_public_key();
+    Ok(if parity == Parity::Odd {
+        tweaked_sk.negate()
+    } else {
+        tweaked_sk
+    })
+}
+
+fn add_input_metadata(
+    psbt: &mut Psbt,
+    config: &MultiPartyConfig,
+) -> Result<(), String> {
+    let mut input_idx = 0usize;
     for party in &config.parties {
-        let wallet = SimpleWallet::new(&format!(
-            "{}_multi_signer_silent_payment_test_seed",
-            party.name.to_lowercase()
-        ));
-        let fingerprint = wallet.master_fingerprint();
-        for i in 0..party.controlled_input_indices.len() {
-            let (_, pubkey) = wallet.input_key_pair(i as u32);
-            update_input_derivation(&mut psbt, input_offset, &pubkey, fingerprint, &[0])
-                .map_err(|e| format!("Failed to add BIP32 derivation: {}", e))?;
-            input_offset += 1;
+        let wallet = build_party_wallet(&party.name);
+        let simple_wallet = SimpleWallet::new(&wallet.wallet_seed().to_string());
+        let fingerprint = Fingerprint::from(simple_wallet.master_fingerprint());
+
+        for &utxo_id in &party.tx_config.selected_utxo_ids {
+            let vu = wallet
+                .get_utxo(utxo_id)
+                .ok_or_else(|| format!("UTXO {} not found for party {}", utxo_id, party.name))?;
+            let input = psbt
+                .inputs
+                .get_mut(input_idx)
+                .ok_or_else(|| format!("Missing PSBT input {}", input_idx))?;
+
+            if let Some(tweak) = vu.tweak {
+                let (_, spend_pubkey) = simple_wallet.spend_key_pair();
+                input.set_sp_tweak(tweak);
+                input.set_sp_spend_bip32_derivation(
+                    CompressedPublicKey(spend_pubkey),
+                    fingerprint,
+                    to_derivation_path(simple_wallet.get_sp_spend_derivation_path()),
+                );
+            } else {
+                let (_, pubkey) = simple_wallet.input_key_pair(utxo_id as u32);
+                let witness_utxo = input
+                    .witness_utxo
+                    .as_ref()
+                    .ok_or_else(|| format!("Input {} missing witness_utxo", input_idx))?;
+                let raw_path = if witness_utxo.script_pubkey.is_p2tr() {
+                    simple_wallet.get_p2tr_derivation_path(utxo_id as u32)
+                } else if witness_utxo.script_pubkey.is_p2wpkh() {
+                    simple_wallet.get_p2wpkh_derivation_path(utxo_id as u32)
+                } else {
+                    input_idx += 1;
+                    continue;
+                };
+                input.set_bip32_derivation(&pubkey, fingerprint, to_derivation_path(raw_path));
+            }
+
+            input_idx += 1;
         }
     }
 
+    Ok(())
+}
+
+fn party_controlled_inputs(
+    psbt: &Psbt,
+    party: &PartyConfig,
+    secp: &Secp256k1<secp256k1::All>,
+) -> Result<Vec<ControlledInput>, String> {
+    let wallet = build_party_wallet(&party.name);
+    let simple_wallet = SimpleWallet::new(wallet.wallet_seed());
+    let spend_privkey = simple_wallet.spend_key_pair().0;
+    let mut controlled = Vec::new();
+
+    for (offset, &utxo_id) in party.tx_config.selected_utxo_ids.iter().enumerate() {
+        let input_idx = *party
+            .controlled_input_indices
+            .get(offset)
+            .ok_or_else(|| format!("Missing controlled input index for party {}", party.name))?;
+        let vu = wallet
+            .get_utxo(utxo_id)
+            .ok_or_else(|| format!("UTXO {} not found for party {}", utxo_id, party.name))?;
+        let input = psbt
+            .inputs
+            .get(input_idx)
+            .ok_or_else(|| format!("Missing PSBT input {}", input_idx))?;
+        let witness_utxo = input
+            .witness_utxo
+            .as_ref()
+            .ok_or_else(|| format!("Input {} missing witness_utxo", input_idx))?;
+
+        let privkey = if let Some(tweak) = vu.tweak {
+            apply_tweak_to_privkey(&spend_privkey, &tweak)?
+        } else {
+            let (candidate_privkey, candidate_pubkey) = simple_wallet.input_key_pair(utxo_id as u32);
+            //TODO: is this used?
+            if witness_utxo.script_pubkey.is_p2tr() {
+                resolve_regular_p2tr_privkey(secp, candidate_privkey, candidate_pubkey)?
+            } else if witness_utxo.script_pubkey.is_p2wpkh() {
+                candidate_privkey
+            } else {
+                return Err(format!("Unsupported script type for input {}", input_idx));
+            }
+        };
+
+        controlled.push((input_idx, privkey, vu.tweak.is_some()));
+    }
+
+    Ok(controlled)
+}
+
+fn sign_controlled_inputs(
+    mut psbt: Psbt,
+    secp: &Secp256k1<secp256k1::All>,
+    controlled: &[ControlledInput],
+    sp_spend_key: SecretKey,
+) -> Result<Psbt, String> {
+    if controlled.iter().any(|(_, _, is_sp)| *is_sp) {
+        psbt.sign_sp_inputs(secp, sp_spend_key)
+            .map_err(|e| format!("SP input signing failed: {}", e))?;
+    }
+
+    let mut tr_keystore: BTreeMap<bitcoin::PublicKey, bitcoin::PrivateKey> = BTreeMap::new();
+    for (idx, privkey, is_sp) in controlled {
+        if *is_sp {
+            continue;
+        }
+
+        let is_p2tr = psbt.inputs[*idx]
+            .witness_utxo
+            .as_ref()
+            .map_or(false, |u| u.script_pubkey.is_p2tr());
+        if is_p2tr {
+            tr_keystore.insert(
+                bitcoin::PublicKey::new(privkey.public_key(secp)),
+                bitcoin::PrivateKey::new(*privkey, NetworkKind::Main),
+            );
+        } else {
+            psbt.sign_input(*idx, privkey, secp)
+                .map_err(|e| format!("ECDSA signing failed for input {}: {}", idx, e))?;
+        }
+    }
+
+    if !tr_keystore.is_empty() {
+        psbt.sign_taproot_key_spend_inputs(&tr_keystore, secp)
+            .map_err(|e| format!("Taproot key-spend signing failed: {}", e))?;
+    }
+
+    Ok(psbt)
+}
+
+/// Create a new PSBT with inputs and outputs (no ECDH shares, no signatures)
+pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<Psbt, String> {
+    let inputs = build_inputs_from_multi_party_config(config)?;
     let recipient_address = shared_utils::get_recipient_address();
-
     let change_wallet = SimpleWallet::new("change_address_for_multi_signer_test");
-
-    let recipient_amount = config.get_recipient_amount();
-    let change_amount = config.get_change_amount();
-
     let outputs = build_outputs(
-        recipient_amount,
-        change_amount,
+        config.get_recipient_amount(),
+        config.get_change_amount(),
         &recipient_address,
         &change_wallet,
     )?;
-
-    add_outputs(&mut psbt, &outputs).map_err(|e| format!("Failed to add outputs: {}", e))?;
+    let mut psbt = build_psbt(inputs.clone(), outputs.clone())
+        .map_err(|e| format!("Failed to build PSBT: {}", e))?;
+    add_input_metadata(&mut psbt, config)?;
 
     validate_transaction_balance(&inputs, &outputs, config.total_fee)?;
 
@@ -77,40 +238,17 @@ pub fn create_psbt_only(config: &MultiPartyConfig) -> Result<SilentPaymentPsbt, 
 /// Per BIP 375, each Signer adds ECDH shares first. Signatures are only added
 /// after all SP output scripts have been computed.
 pub fn add_ecdh_shares_for_party(
-    psbt: &mut SilentPaymentPsbt,
+    psbt: &mut Psbt,
     party: &PartyConfig,
-    config: &MultiPartyConfig,
+    _config: &MultiPartyConfig,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Vec<usize>, String> {
     let scan_key = shared_utils::get_recipient_address().get_scan_key();
-
-    validation::validate_psbt(secp, psbt, ValidationLevel::DleqOnly)
-        .map_err(|e| format!("Validation failed: {}", e))?;
-
-    let private_key = get_party_private_key(&party.name)?;
-
-    let inputs = build_inputs_from_multi_party_config(config)?;
-
-    let inputs_with_keys: Vec<PsbtInput> = inputs
-        .into_iter()
-        .enumerate()
-        .map(|(idx, mut input)| {
-            if party.controlled_input_indices.contains(&idx) {
-                input.private_key = Some(private_key);
-            }
-            input
-        })
-        .collect();
-
-    add_ecdh_shares_partial(
-        secp,
-        psbt,
-        &inputs_with_keys,
-        &[scan_key],
-        &party.controlled_input_indices,
-        true,
-    )
-    .map_err(|e| format!("Failed to add ECDH shares: {}", e))?;
+    let controlled = party_controlled_inputs(psbt, party, secp)?;
+    for (idx, privkey, _) in &controlled {
+        add_input_ecdh_share(secp, &mut psbt.inputs[*idx], *idx, privkey, &scan_key)
+            .map_err(|e| format!("Failed to add ECDH share for input {}: {}", idx, e))?;
+    }
 
     Ok(party.controlled_input_indices.clone())
 }
@@ -120,10 +258,14 @@ pub fn add_ecdh_shares_for_party(
 /// Called automatically when all inputs have ECDH shares. This computes the
 /// PSBT_OUT_SCRIPT for each SP output and clears tx_modifiable_flags.
 pub fn compute_output_scripts(
-    psbt: &mut SilentPaymentPsbt,
+    psbt: &mut Psbt,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<(), String> {
-    finalize_sp_outputs(secp, psbt).map_err(|e| format!("Failed to compute output scripts: {}", e))
+    let map = psbt
+        .compute_sp_outputs(secp)
+        .map_err(|e| format!("Failed to compute output scripts: {}", e))?;
+    psbt.set_sp_scriptpubkey(map)
+        .map_err(|e| format!("Failed to set output scripts: {}", e))
 }
 
 /// Sign inputs for a party. Must only be called after all SP output scripts are set.
@@ -131,9 +273,9 @@ pub fn compute_output_scripts(
 /// Per BIP 375: "If any output does not have PSBT_OUT_SCRIPT set, the Signer
 /// must not yet add a signature."
 pub fn sign_inputs_for_party(
-    psbt: &mut SilentPaymentPsbt,
+    psbt: &mut Psbt,
     party: &PartyConfig,
-    config: &MultiPartyConfig,
+    _config: &MultiPartyConfig,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Vec<usize>, String> {
     // Guard: all outputs must have script_pubkey set before signing
@@ -146,23 +288,14 @@ pub fn sign_inputs_for_party(
         }
     }
 
-    let private_key = get_party_private_key(&party.name)?;
-
-    let inputs = build_inputs_from_multi_party_config(config)?;
-
-    let inputs_with_keys: Vec<PsbtInput> = inputs
-        .into_iter()
-        .enumerate()
-        .map(|(idx, mut input)| {
-            if party.controlled_input_indices.contains(&idx) {
-                input.private_key = Some(private_key);
-            }
-            input
-        })
-        .collect();
-
-    sign_inputs(secp, psbt, &inputs_with_keys)
-        .map_err(|e| format!("Failed to sign inputs: {}", e))?;
+    let simple_wallet = SimpleWallet::new(&format!(
+        "{}_multi_signer_silent_payment_test_seed",
+        party.name.to_lowercase()
+    ));
+    let spend_privkey = simple_wallet.spend_key_pair().0;
+    let controlled = party_controlled_inputs(psbt, party, secp)?;
+    let signed = sign_controlled_inputs(psbt.clone(), secp, &controlled, spend_privkey)?;
+    *psbt = signed;
 
     Ok(party.controlled_input_indices.clone())
 }
@@ -172,15 +305,14 @@ pub fn sign_inputs_for_party(
 /// Output scripts must already be computed (via compute_output_scripts) and all
 /// inputs must be signed before calling this.
 pub fn validate_and_extract(
-    psbt: &mut SilentPaymentPsbt,
-    secp: &Secp256k1<secp256k1::All>,
+    psbt: &mut Psbt,
+    _secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Transaction, String> {
-    validation::validate_psbt(secp, psbt, ValidationLevel::Full)
-        .map_err(|e| format!("Final validation failed: {}", e))?;
-
     finalize_input_witnesses(psbt).map_err(|e| format!("Finalization failed: {}", e))?;
-
-    let tx = extract_transaction(psbt).map_err(|e| format!("Extraction failed: {}", e))?;
+    let tx = psbt
+        .clone()
+        .extract_tx()
+        .map_err(|e| format!("Extraction failed: {}", e))?;
 
     Ok(tx)
 }
@@ -200,7 +332,7 @@ pub fn create_input_assignments_metadata(config: &MultiPartyConfig) -> HashMap<u
 }
 
 pub fn save_psbt_with_metadata(
-    psbt: &SilentPaymentPsbt,
+    psbt: &Psbt,
     description: impl Into<String>,
 ) -> Result<(), String> {
     let mut metadata = PsbtMetadata::with_description(description);
@@ -211,11 +343,11 @@ pub fn save_psbt_with_metadata(
     Ok(())
 }
 
-pub fn load_psbt_with_metadata() -> Result<(SilentPaymentPsbt, Option<PsbtMetadata>), String> {
+pub fn load_psbt_with_metadata() -> Result<(Psbt, Option<PsbtMetadata>), String> {
     load_psbt().map_err(|e| format!("Failed to load PSBT: {:?}", e))
 }
 
-pub fn print_transaction_summary(config: &MultiPartyConfig, inputs: &[PsbtInput]) {
+pub fn print_transaction_summary(config: &MultiPartyConfig, inputs: &[Input]) {
     println!("Multi-Signer Silent Payment Transaction");
     println!("{}", "=".repeat(50));
     println!("  Configuration:");
@@ -233,17 +365,21 @@ pub fn print_transaction_summary(config: &MultiPartyConfig, inputs: &[PsbtInput]
             .map(|p| p.name.as_str())
             .unwrap_or("Unassigned");
 
-        let input_type = script_type_string(&input.witness_utxo.script_pubkey);
+        let utxo = input.witness_utxo.as_ref().expect("witness_utxo required");
+        let input_type = script_type_string(&utxo.script_pubkey);
         println!(
             "   Input {} ({}): {} sats [{}]",
             idx,
             party,
-            input.witness_utxo.value.to_sat(),
+            utxo.value.to_sat(),
             input_type
         );
     }
 
-    let total_input: u64 = inputs.iter().map(|i| i.witness_utxo.value.to_sat()).sum();
+    let total_input: u64 = inputs
+        .iter()
+        .map(|i| i.witness_utxo.as_ref().map_or(0, |u| u.value.to_sat()))
+        .sum();
     println!("   Total: {} sats", total_input);
     println!();
 
