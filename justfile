@@ -73,6 +73,10 @@ uniffi-test:
 uniffi-example:
   python crates/spdk-uniffi/examples/simple_example.py
 
+[group('musig2')]
+musig2:
+  cargo r -p musig2-signer
+
 # Generate documentation.
 docsrs *flags:
   RUSTDOCFLAGS="--cfg docsrs -D warnings -D rustdoc::broken-intra-doc-links" cargo +{{NIGHTLY_VERSION}} doc --all-features {{flags}}
