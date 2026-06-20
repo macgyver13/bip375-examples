@@ -20,9 +20,8 @@ use psbt::roles::{ExtractorPsbtExt, InputWitnessFinalizerPsbtExt};
 use psbt::{generate_dleq_proof, verify_dleq_proof, Psbt};
 use psbt_v2::v2::{Input, Output};
 
-use crate::sp_musig2::outputs::finalize_sp_outputs;
-use crate::sp_musig2::psbt_fields::{self, PartialEcdhShareData};
-use crate::sp_musig2::signing;
+use crate::musig2_psbt::{self as psbt_fields, PartialEcdhShareData};
+use crate::musig2_spdk::{finalize_sp_outputs, signing};
 
 /// Build the 66-byte PSBT_OUT_SP_V0_INFO payload (scan_key || spend_key).
 fn sp_v0_info_bytes(address: &SilentPaymentAddress) -> [u8; 66] {
@@ -66,8 +65,8 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
     type HmacSha512 = Hmac<Sha512>;
 
     let mnemonic_str = "wife shiver author away frog air rough vanish fantasy frozen noodle athlete pioneer citizen symptom firm much faith extend rare axis garment kiwi clarify";
-    let mnemonic = Mnemonic::parse(mnemonic_str)
-        .map_err(|e| anyhow::anyhow!("Mnemonic parse: {e}"))?;
+    let mnemonic =
+        Mnemonic::parse(mnemonic_str).map_err(|e| anyhow::anyhow!("Mnemonic parse: {e}"))?;
 
     let path = DerivationPath::from_str("m/48'/1'/0'/2'")
         .map_err(|e| anyhow::anyhow!("Path parse: {e}"))?;
@@ -111,8 +110,9 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
     let untweaked_agg_pk = p_base_bitcoin;
 
     // BIP-328 synthetic xpub chaincode (SHA256 of "MuSig2MuSig2MuSig2")
-    let mut current_chaincode = hex::decode("868087ca02a6f974c4598924c36b57762d32cb45717167e300622c7167e38965")
-        .map_err(|e| anyhow::anyhow!("Chaincode decode: {e}"))?;
+    let mut current_chaincode =
+        hex::decode("868087ca02a6f974c4598924c36b57762d32cb45717167e300622c7167e38965")
+            .map_err(|e| anyhow::anyhow!("Chaincode decode: {e}"))?;
     let mut current_pk = p_base_bitcoin;
 
     let derivation_indices = [0u32, 0u32];
@@ -135,7 +135,8 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
             .map_err(|e| anyhow::anyhow!("Scalar from BE: {e}"))?;
         tweaks.push(il.to_vec());
 
-        current_pk = current_pk.add_exp_tweak(secp, &scalar)
+        current_pk = current_pk
+            .add_exp_tweak(secp, &scalar)
             .map_err(|e| anyhow::anyhow!("Add exp tweak: {e}"))?;
         current_chaincode = ir.to_vec();
     }
@@ -146,7 +147,8 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
         let tweak_arr: [u8; 32] = tweak.as_slice().try_into()?;
         let musig_scalar = musig2::secp256k1::Scalar::from_be_bytes(tweak_arr)
             .map_err(|e| anyhow::anyhow!("MuSig Scalar from BE: {e}"))?;
-        key_agg_ctx = key_agg_ctx.with_plain_tweak(musig_scalar)
+        key_agg_ctx = key_agg_ctx
+            .with_plain_tweak(musig_scalar)
             .map_err(|e| anyhow::anyhow!("With plain tweak: {e}"))?;
     }
 
@@ -198,33 +200,6 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>) -> Result<KeySetup> {
         scan_sk,
         sp_address,
     })
-}
-
-/// A reusable actor that holds key material for a specific party.
-pub struct Participant<'a> {
-    pub name: &'a str,
-    pub sk: &'a SecretKey,
-    pub pk: &'a PublicKey,
-    pub agg_pk: &'a PublicKey,
-    pub key_agg_ctx: &'a musig2::KeyAggContext,
-}
-
-impl<'a> Participant<'a> {
-    /// Round 1: ECDH share + Nonce
-    pub fn contribute(
-        &self,
-        secp: &Secp256k1<secp256k1::All>,
-        psbt: &mut Psbt,
-        scan_pk: &PublicKey,
-        nonce_seed: [u8; 32],
-    ) -> Result<SecNonce> {
-        contribute(secp, psbt, self.name, self.sk, self.pk, scan_pk, self.agg_pk, self.key_agg_ctx, nonce_seed)
-    }
-
-    /// Round 2: Partial Signature
-    pub fn sign(&self, psbt: &mut Psbt, sec_nonce: SecNonce, message: &[u8; 32]) -> Result<()> {
-        partial_sign(psbt, self.name, self.sk, self.pk, self.agg_pk, sec_nonce, self.key_agg_ctx, message)
-    }
 }
 
 /// Create the PSBT with 1 MuSig2 P2TR input and N+1 outputs (N SP recipients + change).
@@ -448,15 +423,11 @@ pub fn aggregate_and_extract(
 }
 
 /// Derive the SP output script from the aggregated ECDH shares.
-pub fn derive_sp_output(
-    secp: &Secp256k1<secp256k1::All>,
-    psbt: &mut Psbt,
-) -> Result<()> {
+pub fn derive_sp_output(secp: &Secp256k1<secp256k1::All>, psbt: &mut Psbt) -> Result<()> {
     finalize_sp_outputs(secp, psbt)?;
 
     Ok(())
 }
-
 
 // =========================================================================
 // Helpers (shared with CLI path)

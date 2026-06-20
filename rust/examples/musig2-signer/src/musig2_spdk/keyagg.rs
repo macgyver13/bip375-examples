@@ -38,10 +38,8 @@ pub fn build_key_agg_ctx(participants: &[PublicKey]) -> Result<KeyAggContext> {
     let mut sorted = participants.to_vec();
     sorted.sort_by(|a, b| a.serialize().cmp(&b.serialize()));
 
-    let points: Vec<musig2::secp256k1::PublicKey> = sorted
-        .iter()
-        .map(to_musig2_pubkey)
-        .collect::<Result<_>>()?;
+    let points: Vec<musig2::secp256k1::PublicKey> =
+        sorted.iter().map(to_musig2_pubkey).collect::<Result<_>>()?;
 
     KeyAggContext::new(points).map_err(|e| anyhow!("key aggregation failed: {e}"))
 }
@@ -161,8 +159,8 @@ fn derive_bip328_plain_tweaks(
         data.extend_from_slice(&current_pk.serialize());
         data.extend_from_slice(&index.to_be_bytes());
 
-        let mut mac = HmacSha512::new_from_slice(&chaincode)
-            .map_err(|e| anyhow!("HMAC init failed: {e}"))?;
+        let mut mac =
+            HmacSha512::new_from_slice(&chaincode).map_err(|e| anyhow!("HMAC init failed: {e}"))?;
         mac.update(&data);
         let result = mac.finalize().into_bytes();
 
@@ -221,13 +219,6 @@ pub(crate) fn from_musig2_pubkey(pk: &musig2::secp256k1::PublicKey) -> Result<Pu
     PublicKey::from_slice(&pk.serialize()).map_err(|e| anyhow!("pubkey 0.31->0.29: {e}"))
 }
 
-pub(crate) fn from_musig2_xonly(
-    xonly: &musig2::secp256k1::XOnlyPublicKey,
-) -> Result<secp256k1::XOnlyPublicKey> {
-    secp256k1::XOnlyPublicKey::from_slice(&xonly.serialize())
-        .map_err(|e| anyhow!("xonly 0.31->0.29: {e}"))
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -235,7 +226,11 @@ mod tests {
     use secp256k1::SecretKey;
 
     /// The ECDH point a contributor publishes: `sk * scan_key`.
-    fn ecdh_point(secp: &Secp256k1<secp256k1::All>, sk: &SecretKey, scan_key: &PublicKey) -> PublicKey {
+    fn ecdh_point(
+        secp: &Secp256k1<secp256k1::All>,
+        sk: &SecretKey,
+        scan_key: &PublicKey,
+    ) -> PublicKey {
         let scalar = Scalar::from_be_bytes(sk.secret_bytes()).unwrap();
         scan_key.mul_tweak(secp, &scalar).unwrap()
     }
@@ -291,6 +286,9 @@ mod tests {
         assert_eq!(got, expected, "synthesized share must equal t * scan_key");
 
         let plain_sum = share1.combine(&share2).unwrap();
-        assert_ne!(got, plain_sum, "expected BIP-327 weighting, not a plain sum");
+        assert_ne!(
+            got, plain_sum,
+            "expected BIP-327 weighting, not a plain sum"
+        );
     }
 }

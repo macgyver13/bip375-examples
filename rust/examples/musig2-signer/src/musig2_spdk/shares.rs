@@ -5,11 +5,11 @@
 
 use anyhow::{anyhow, Result};
 use secp256k1::{PublicKey, Secp256k1};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use super::bip352_hash::input_hash_bytes;
+use super::finalizer::input_hash_bytes;
 use super::keyagg;
-use super::psbt_fields::{
+use crate::musig2_psbt::{
     get_input_musig2_participant_pubkeys, get_input_partial_ecdh_shares, get_input_sp_spend_path,
     get_output_sp_info, input_outpoint_bytes,
 };
@@ -38,19 +38,10 @@ impl AggregatedShares {
     }
 }
 
-/// True if the input spends an eligible (BIP-352) script type.
-pub fn is_input_eligible(input: &psbt_v2::v2::Input) -> bool {
-    match input.funding_utxo() {
-        Ok(utxo) => silentpayments::utils::receiving::is_eligible(utxo.script_pubkey.as_bytes()),
-        Err(_) => false,
-    }
-}
-
-/// BIP-352 input public key for an eligible input (taproot output key, P2WPKH key, ...).
-fn input_pubkey(input: &psbt_v2::v2::Input) -> Result<PublicKey> {
+/// BIP-352 input public key, or `None` for an ineligible input.
+fn input_pubkey(input: &psbt_v2::v2::Input) -> Result<Option<PublicKey>> {
     psbt::roles::signer::extract_eligible_input_pubkey(input)
-        .map_err(|e| anyhow!("extract input pubkey: {e}"))?
-        .ok_or_else(|| anyhow!("input is not eligible / missing pubkey fields"))
+        .map_err(|e| anyhow!("extract input pubkey: {e}"))
 }
 
 /// Collect ECDH shares and input-pubkey sums from a PSBT, grouped by scan key.
@@ -69,7 +60,7 @@ pub fn aggregate_ecdh_shares(
     // Discover scan keys from SP outputs.
     let mut scan_keys = Vec::new();
     for output in &psbt.outputs {
-        if let Some((scan_key, _)) = get_output_sp_info(output) {
+        if let Some((scan_key, _)) = get_output_sp_info(output)? {
             if !scan_keys.contains(&scan_key) {
                 scan_keys.push(scan_key);
             }
@@ -78,75 +69,48 @@ pub fn aggregate_ecdh_shares(
 
     let synthesized = synthesize_partial_ecdh_shares(psbt, secp)?;
 
-    // Global shares (single-signer path): scan_key -> share.
-    let global_shares: HashMap<PublicKey, PublicKey> = psbt
-        .global
-        .sp_ecdh_shares
-        .iter()
-        .map(|(scan, share)| (scan.0, share.0))
-        .collect();
-
     let mut result = HashMap::new();
 
     for scan_key in scan_keys {
-        if let Some(&global_share) = global_shares.get(&scan_key) {
-            let input_sum = sum_all_eligible_pubkeys(psbt)?;
-            result.insert(
-                scan_key,
-                AggregatedShare {
-                    scan_key,
-                    aggregated_share: global_share,
-                    input_sum,
-                },
-            );
-            continue;
-        }
-
-        // Per-input mode: sum shares + pubkeys from contributing inputs.
+        // Sum one synthesized MuSig2 share for every eligible input. Ordinary
+        // BIP-375 global/per-input shares remain the responsibility of SPDK's
+        // `SignerPsbtExt::compute_sp_outputs` and are intentionally not copied here.
         let mut agg_share: Option<PublicKey> = None;
         let mut input_sum: Option<PublicKey> = None;
 
         for (input_idx, input) in psbt.inputs.iter().enumerate() {
+            let Some(pubkey) = input_pubkey(input)? else {
+                continue;
+            };
             let share = synthesized
                 .get(&input_idx)
                 .and_then(|m| m.get(&scan_key))
                 .copied()
-                .or_else(|| {
-                    input
-                        .sp_ecdh_shares
-                        .iter()
-                        .find(|(scan, _)| scan.0 == scan_key)
-                        .map(|(_, share)| share.0)
-                });
-
-            let Some(share) = share else { continue };
-            if !is_input_eligible(input) {
-                continue;
-            }
-
+                .ok_or_else(|| {
+                    anyhow!(
+                        "missing MuSig2 ECDH share for input {input_idx} and scan key {scan_key}"
+                    )
+                })?;
             agg_share = Some(match agg_share {
                 None => share,
                 Some(existing) => combine_keys(&existing, &share)?,
             });
-
-            if let Ok(pubkey) = input_pubkey(input) {
-                input_sum = Some(match input_sum {
-                    None => pubkey,
-                    Some(existing) => combine_keys(&existing, &pubkey)?,
-                });
-            }
+            input_sum = Some(match input_sum {
+                None => pubkey,
+                Some(existing) => combine_keys(&existing, &pubkey)?,
+            });
         }
 
-        if let (Some(agg_share), Some(input_sum)) = (agg_share, input_sum) {
-            result.insert(
+        let aggregated_share = agg_share.ok_or_else(|| anyhow!("no eligible MuSig2 inputs"))?;
+        let input_sum = input_sum.ok_or_else(|| anyhow!("no eligible input public keys"))?;
+        result.insert(
+            scan_key,
+            AggregatedShare {
                 scan_key,
-                AggregatedShare {
-                    scan_key,
-                    aggregated_share: agg_share,
-                    input_sum,
-                },
-            );
-        }
+                aggregated_share,
+                input_sum,
+            },
+        );
     }
 
     Ok(AggregatedShares { shares: result })
@@ -183,24 +147,9 @@ pub fn compute_sp_shared_secrets(
 
 // ===== helpers =====
 
-fn sum_all_eligible_pubkeys(psbt: &Psbt) -> Result<PublicKey> {
-    let mut sum: Option<PublicKey> = None;
-    for input in &psbt.inputs {
-        if !is_input_eligible(input) {
-            continue;
-        }
-        if let Ok(pubkey) = input_pubkey(input) {
-            sum = Some(match sum {
-                None => pubkey,
-                Some(existing) => combine_keys(&existing, &pubkey)?,
-            });
-        }
-    }
-    sum.ok_or_else(|| anyhow!("no eligible input pubkeys found"))
-}
-
 fn combine_keys(a: &PublicKey, b: &PublicKey) -> Result<PublicKey> {
-    a.combine(b).map_err(|e| anyhow!("EC point addition failed: {e}"))
+    a.combine(b)
+        .map_err(|e| anyhow!("EC point addition failed: {e}"))
 }
 
 /// Synthesize per-input ECDH shares from partial shares (MuSig2).
@@ -215,7 +164,7 @@ fn synthesize_partial_ecdh_shares(
     let mut synthesized: HashMap<usize, HashMap<PublicKey, PublicKey>> = HashMap::new();
 
     for (input_idx, input) in psbt.inputs.iter().enumerate() {
-        let partial_shares = get_input_partial_ecdh_shares(input);
+        let partial_shares = get_input_partial_ecdh_shares(input)?;
         if partial_shares.is_empty() {
             continue;
         }
@@ -223,22 +172,34 @@ fn synthesize_partial_ecdh_shares(
         // Group (contributor_pk, share, proof) by scan key.
         let mut by_scan_key: HashMap<PublicKey, Vec<(PublicKey, PublicKey, _)>> = HashMap::new();
         for partial in &partial_shares {
-            by_scan_key
-                .entry(partial.scan_key)
-                .or_default()
-                .push((partial.contributor_pk, partial.share, partial.dleq_proof));
+            by_scan_key.entry(partial.scan_key).or_default().push((
+                partial.contributor_pk,
+                partial.share,
+                partial.dleq_proof,
+            ));
         }
 
-        let musig2_info = get_input_musig2_participant_pubkeys(input);
+        let musig2_info = get_input_musig2_participant_pubkeys(input)?;
+        if musig2_info.len() > 1 {
+            return Err(anyhow!(
+                "input {input_idx} has multiple MuSig2 aggregate key entries"
+            ));
+        }
         let has_musig2 = !musig2_info.is_empty();
 
         for (scan_key, entries) in by_scan_key {
             // Verify each contributor's DLEQ proof against its own partial share.
             for (contributor_pk, share, proof) in &entries {
                 let rust_proof = psbt::core::utils::to_rust_dleq(*proof);
-                let verified =
-                    psbt::verify_dleq_proof(secp, contributor_pk, &scan_key, share, &rust_proof, None)
-                        .map_err(|e| anyhow!("DLEQ verify failed on input {input_idx}: {e:?}"))?;
+                let verified = psbt::verify_dleq_proof(
+                    secp,
+                    contributor_pk,
+                    &scan_key,
+                    share,
+                    &rust_proof,
+                    None,
+                )
+                .map_err(|e| anyhow!("DLEQ verify failed on input {input_idx}: {e:?}"))?;
                 if !verified {
                     return Err(anyhow!("invalid DLEQ proof on input {input_idx}"));
                 }
@@ -246,6 +207,16 @@ fn synthesize_partial_ecdh_shares(
 
             let agg_share = if has_musig2 {
                 let (_agg_pk, participants) = &musig2_info[0];
+                let expected: HashSet<PublicKey> = participants.iter().copied().collect();
+                let actual: HashSet<PublicKey> = entries
+                    .iter()
+                    .map(|(contributor, _, _)| *contributor)
+                    .collect();
+                if actual != expected {
+                    return Err(anyhow!(
+                        "incomplete or unknown MuSig2 contributors on input {input_idx}"
+                    ));
+                }
                 let path = get_input_sp_spend_path(input).unwrap_or_else(|| vec![0, 0]);
                 let contributions: Vec<(PublicKey, PublicKey)> =
                     entries.iter().map(|(c, s, _)| (*c, *s)).collect();

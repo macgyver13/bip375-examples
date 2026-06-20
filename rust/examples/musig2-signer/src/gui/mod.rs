@@ -60,7 +60,11 @@ fn sync_state_to_ui(window: &AppWindow, state: &AppState) {
         window.set_input_fields(slint::ModelRc::new(slint::VecModel::from(vec![])));
         window.set_output_fields(slint::ModelRc::new(slint::VecModel::from(vec![])));
         window.set_tx_summary(TransactionSummary {
-            total_input: 0, total_output: 0, fee: 0, num_inputs: 0, num_outputs: 0,
+            total_input: 0,
+            total_output: 0,
+            fee: 0,
+            num_inputs: 0,
+            num_outputs: 0,
         });
     }
 
@@ -94,7 +98,12 @@ fn into_slint_field(f: bip375_helpers::display::adapter::DisplayField) -> PsbtFi
         field_name: f.field_name.into(),
         key_type: f.key_type_str.into(),
         key_preview: f.key_preview.into(),
-        value_preview: f.value_preview.into(),
+        value_preview: if f.value_tail.is_empty() {
+            format!("{} {}", f.value_lead, f.value_count)
+        } else {
+            format!("{}…{} {}", f.value_lead, f.value_tail, f.value_count)
+        }
+        .into(),
         is_highlighted: f.is_highlighted,
         map_index: f.map_index,
     }

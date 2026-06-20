@@ -3,10 +3,10 @@
 //! Run with no arguments for the GUI (default), or `--cli` for the
 //! original command-line demonstration.
 
-use musig2_signer::sp_musig2::psbt_fields;
-use musig2_signer::workflow;
 #[cfg(feature = "gui")]
 use musig2_signer::gui;
+use musig2_signer::musig2_psbt as psbt_fields;
+use musig2_signer::workflow;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -65,7 +65,10 @@ fn run_cli() -> anyhow::Result<()> {
 
     // -----------------------------------------------------------------------
     println!("--- 2. PSBT Construction ---");
-    let mut psbt = workflow::construct_psbt(&keys, &[(keys.sp_address.clone(), bitcoin::Amount::from_sat(90_000))])?;
+    let mut psbt = workflow::construct_psbt(
+        &keys,
+        &[(keys.sp_address.clone(), bitcoin::Amount::from_sat(90_000))],
+    )?;
     println!("PSBT created: 1 input, 2 outputs");
     println!("BIP-373 participant pubkeys registered\n");
 
@@ -141,7 +144,7 @@ fn run_cli() -> anyhow::Result<()> {
     // -----------------------------------------------------------------------
     // Round 2 preamble: each signer verifies output before signing
     println!("--- 5. Each Signer Verifies Output Before Signing ---");
-    let partial_shares = psbt_fields::get_input_partial_ecdh_shares(&psbt.inputs[0]);
+    let partial_shares = psbt_fields::get_input_partial_ecdh_shares(&psbt.inputs[0])?;
     assert_eq!(partial_shares.len(), 3, "Expected 3 partial shares");
 
     for (name, _, _) in &parties {

@@ -490,25 +490,36 @@ fn to_derivation_path(raw: Vec<u32>) -> DerivationPath {
 // TODO: upstream a mixed-witness finalizer into spdk's finalizer role and delegate here.
 fn finalize_input_witnesses(psbt: &mut psbt::Psbt) -> Result<(), Bip375Error> {
     for input in psbt.inputs.iter_mut() {
-        if let Some(sig) = input.tap_key_sig {
-            let mut witness = bitcoin::Witness::new();
-            witness.push(sig.to_vec());
-            input.final_script_sig = Some(ScriptBuf::new());
-            input.final_script_witness = Some(witness);
-            input.tap_key_sig = None;
-            input.sighash_type = None;
+        let witness = if let Some(sig) = input.tap_key_sig {
+            let mut w = bitcoin::Witness::new();
+            w.push(sig.to_vec());
+            w
         } else if let Some((pubkey, sig)) = input.partial_sigs.iter().next().map(|(k, v)| (*k, *v))
         {
-            let mut witness = bitcoin::Witness::new();
-            witness.push(sig.to_vec());
-            witness.push(pubkey.to_bytes());
-            input.final_script_sig = Some(ScriptBuf::new());
-            input.final_script_witness = Some(witness);
-            input.partial_sigs.clear();
-            input.sighash_type = None;
+            let mut w = bitcoin::Witness::new();
+            w.push(sig.to_vec());
+            w.push(pubkey.to_bytes());
+            w
         } else {
             return Err(Bip375Error::ValidationError);
-        }
+        };
+
+        // BIP-174 Input Finalizer: keep only UTXO, tx fields, finalized scripts,
+        // and unknown/proprietary fields; clear all signing data. The segwit/taproot
+        // scriptSig is empty; it is kept as Some(empty) so the input reports as
+        // finalized (and extracts), but serialization omits the empty 0x07 record.
+        let outpoint = OutPoint { txid: input.previous_txid, vout: input.spent_output_index };
+        let mut finalized = Input::new(&outpoint);
+        finalized.sequence = input.sequence;
+        finalized.min_time = input.min_time;
+        finalized.min_height = input.min_height;
+        finalized.witness_utxo = input.witness_utxo.take();
+        finalized.non_witness_utxo = input.non_witness_utxo.take();
+        finalized.unknowns = std::mem::take(&mut input.unknowns);
+        finalized.proprietaries = std::mem::take(&mut input.proprietaries);
+        finalized.final_script_sig = Some(ScriptBuf::new());
+        finalized.final_script_witness = Some(witness);
+        *input = finalized;
     }
     Ok(())
 }

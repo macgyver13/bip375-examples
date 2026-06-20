@@ -11,16 +11,16 @@
 //!   cargo run -p musig2-signer --bin finalize path/to/r2-alice.psbt
 
 use anyhow::{bail, Context, Result};
-use hex;
-use musig2_signer::workflow::{self, KeySetup};
-use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
 use bip375_helpers::crypto::tweaked_key_to_p2tr_script;
-use musig2_signer::sp_musig2::bip352_hash::input_hash_bytes;
-use musig2_signer::sp_musig2::outputs::derive_silent_payment_output_pubkey;
-use musig2_signer::sp_musig2::psbt_fields::{get_output_sp_info, input_outpoint_bytes};
-use musig2_signer::sp_musig2::shares::is_input_eligible;
+use hex;
+use musig2_signer::musig2_psbt::{get_output_sp_info, input_outpoint_bytes};
+use musig2_signer::musig2_spdk::finalizer::{
+    derive_silent_payment_output_pubkey, input_hash_bytes,
+};
+use musig2_signer::workflow::{self, KeySetup};
 use psbt::roles::signer::extract_eligible_input_pubkey;
 use psbt::Psbt as SilentPaymentPsbt;
+use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -83,14 +83,26 @@ fn main() -> Result<()> {
 
     // 4. Bob and Charlie Partial Sign
     workflow::partial_sign(
-        &mut psbt, "Bob", &keys.bob_sk, &keys.bob_pk, &keys.agg_pk,
-        bob_sec_nonce, &keys.key_agg_ctx, &message,
+        &mut psbt,
+        "Bob",
+        &keys.bob_sk,
+        &keys.bob_pk,
+        &keys.agg_pk,
+        bob_sec_nonce,
+        &keys.key_agg_ctx,
+        &message,
     )?;
     println!("[Bob] Partial signature added");
 
     workflow::partial_sign(
-        &mut psbt, "Charlie", &keys.charlie_sk, &keys.charlie_pk, &keys.agg_pk,
-        charlie_sec_nonce, &keys.key_agg_ctx, &message,
+        &mut psbt,
+        "Charlie",
+        &keys.charlie_sk,
+        &keys.charlie_pk,
+        &keys.agg_pk,
+        charlie_sec_nonce,
+        &keys.key_agg_ctx,
+        &message,
     )?;
     println!("[Charlie] Partial signature added");
 
@@ -230,10 +242,9 @@ fn verify_outputs_discoverable(
 
     let mut input_pks: Vec<PublicKey> = Vec::new();
     for input in &psbt.inputs {
-        if is_input_eligible(input) {
-            let pk = extract_eligible_input_pubkey(input)
-                .map_err(|e| anyhow::anyhow!("input pubkey: {e:?}"))?
-                .ok_or_else(|| anyhow::anyhow!("eligible input missing pubkey"))?;
+        if let Some(pk) = extract_eligible_input_pubkey(input)
+            .map_err(|e| anyhow::anyhow!("input pubkey: {e:?}"))?
+        {
             input_pks.push(pk);
         }
     }
@@ -248,7 +259,7 @@ fn verify_outputs_discoverable(
     let mut verified = 0usize;
 
     for i in 0..psbt.outputs.len() {
-        let (scan_pk, spend_pk) = match get_output_sp_info(&psbt.outputs[i]) {
+        let (scan_pk, spend_pk) = match get_output_sp_info(&psbt.outputs[i])? {
             Some(v) => v,
             None => continue, // change / non-SP output
         };
@@ -264,8 +275,9 @@ fn verify_outputs_discoverable(
             .map_err(|e| anyhow::anyhow!("apply input hash: {e}"))?;
 
         let k = *scan_key_k.get(&scan_pk).unwrap_or(&0);
-        let output_pk = derive_silent_payment_output_pubkey(secp, &spend_pk, &shared_secret.serialize(), k)
-            .map_err(|e| anyhow::anyhow!("derive output pubkey: {e}"))?;
+        let output_pk =
+            derive_silent_payment_output_pubkey(secp, &spend_pk, &shared_secret.serialize(), k)
+                .map_err(|e| anyhow::anyhow!("derive output pubkey: {e}"))?;
         let expected = tweaked_key_to_p2tr_script(&output_pk);
 
         if psbt.outputs[i].script_pubkey != expected {

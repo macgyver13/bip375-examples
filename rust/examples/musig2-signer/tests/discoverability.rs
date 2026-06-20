@@ -4,8 +4,8 @@
 //! derivation (assembled from DLEQ-proven partial ECDH shares) agrees with the
 //! standard `silentpayments` receiver path.
 
+use musig2_signer::musig2_psbt::PSBT_IN_MUSIG2_PARTIAL_DLEQ;
 use musig2_signer::recipients::{recipient_keys, RECIPIENT_SEEDS};
-use musig2_signer::sp_musig2::shares::is_input_eligible;
 use musig2_signer::{recipients, workflow};
 use psbt::roles::signer::extract_eligible_input_pubkey;
 use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
@@ -57,11 +57,7 @@ fn sp_outputs_discoverable_by_recipients() {
             .as_ref()
             .map(|u| u.script_pubkey.to_bytes())
             .unwrap_or_default();
-        let pubkey = if is_input_eligible(input) {
-            extract_eligible_input_pubkey(input).expect("pubkey")
-        } else {
-            None
-        };
+        let pubkey = extract_eligible_input_pubkey(input).expect("pubkey");
         tx_inputs.push(outpoint, spk, pubkey);
     }
     let tweak_data = PublicTweakData::new(&secp, &tx_inputs).expect("tweak data");
@@ -93,6 +89,89 @@ fn sp_outputs_discoverable_by_recipients() {
             .scan_transaction(&shared, &candidates)
             .expect("scan");
         let detected: usize = found.values().map(|m| m.len()).sum();
-        assert_eq!(detected, 1, "recipient[{idx}] should detect exactly one output");
+        assert_eq!(
+            detected, 1,
+            "recipient[{idx}] should detect exactly one output"
+        );
     }
+}
+
+#[test]
+fn rejects_incomplete_musig2_contributor_set() {
+    let secp = Secp256k1::new();
+    let keys = workflow::setup_keys(&secp).expect("key setup");
+    let recipients = vec![(keys.sp_address.clone(), bitcoin::Amount::from_sat(1_000))];
+    let mut psbt = workflow::construct_psbt(&keys, &recipients).expect("construct");
+    let scan = keys.sp_address.get_scan_key();
+
+    workflow::add_ecdh_share(
+        &secp,
+        &mut psbt,
+        "Alice",
+        &keys.alice_sk,
+        &keys.alice_pk,
+        &scan,
+    )
+    .expect("alice share");
+    workflow::add_ecdh_share(&secp, &mut psbt, "Bob", &keys.bob_sk, &keys.bob_pk, &scan)
+        .expect("bob share");
+
+    assert!(workflow::derive_sp_output(&secp, &mut psbt).is_err());
+}
+
+#[test]
+fn rejects_invalid_participant_dleq_proof() {
+    let secp = Secp256k1::new();
+    let keys = workflow::setup_keys(&secp).expect("key setup");
+    let recipients = vec![(keys.sp_address.clone(), bitcoin::Amount::from_sat(1_000))];
+    let mut psbt = workflow::construct_psbt(&keys, &recipients).expect("construct");
+    let scan = keys.sp_address.get_scan_key();
+
+    for (name, sk, pk) in [
+        ("Alice", &keys.alice_sk, &keys.alice_pk),
+        ("Bob", &keys.bob_sk, &keys.bob_pk),
+        ("Charlie", &keys.charlie_sk, &keys.charlie_pk),
+    ] {
+        workflow::add_ecdh_share(&secp, &mut psbt, name, sk, pk, &scan).expect("share");
+    }
+
+    let proof = psbt.inputs[0]
+        .unknowns
+        .iter_mut()
+        .find(|(key, _)| key.type_value == PSBT_IN_MUSIG2_PARTIAL_DLEQ)
+        .map(|(_, value)| value)
+        .expect("DLEQ proof");
+    proof[0] ^= 1;
+
+    assert!(workflow::derive_sp_output(&secp, &mut psbt).is_err());
+}
+
+#[test]
+fn repeated_scan_key_uses_distinct_output_indices() {
+    let secp = Secp256k1::new();
+    let keys = workflow::setup_keys(&secp).expect("key setup");
+    let recipients = vec![
+        (keys.sp_address.clone(), bitcoin::Amount::from_sat(1_000)),
+        (keys.sp_address.clone(), bitcoin::Amount::from_sat(2_000)),
+    ];
+    let mut psbt = workflow::construct_psbt(&keys, &recipients).expect("construct");
+    let scan = keys.sp_address.get_scan_key();
+
+    for (name, sk, pk) in [
+        ("Alice", &keys.alice_sk, &keys.alice_pk),
+        ("Bob", &keys.bob_sk, &keys.bob_pk),
+        ("Charlie", &keys.charlie_sk, &keys.charlie_pk),
+    ] {
+        workflow::add_ecdh_share(&secp, &mut psbt, name, sk, pk, &scan).expect("share");
+    }
+    workflow::derive_sp_output(&secp, &mut psbt).expect("derive outputs");
+
+    let scripts: Vec<_> = psbt
+        .outputs
+        .iter()
+        .filter(|output| output.sp_v0_info.is_some())
+        .map(|output| output.script_pubkey.clone())
+        .collect();
+    assert_eq!(scripts.len(), 2);
+    assert_ne!(scripts[0], scripts[1]);
 }

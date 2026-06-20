@@ -43,7 +43,8 @@ pub fn recipient_addresses() -> Result<Vec<(SilentPaymentAddress, Amount)>> {
             let (scan_sk, spend_sk) = recipient_keys(seed);
             let scan_pk = PublicKey::from_secret_key(&secp, &scan_sk);
             let spend_pk = PublicKey::from_secret_key(&secp, &spend_sk);
-            let addr = SilentPaymentAddress::new(scan_pk, spend_pk, SpNetwork::Mainnet, SpVersion::ZERO);
+            let addr =
+                SilentPaymentAddress::new(scan_pk, spend_pk, SpNetwork::Mainnet, SpVersion::ZERO);
             Ok((addr, Amount::from_sat(*amount)))
         })
         .collect()

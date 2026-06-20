@@ -15,11 +15,11 @@
 //!   desc-musig-sp-demo.txt          — tr(musig(A,B,C)) descriptor for Coldcard enrollment
 
 use anyhow::Result;
-use bitcoin::{Amount, Txid};
-use hex;
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::key::XOnlyPublicKey;
-use musig2_signer::sp_musig2::psbt_fields::get_output_sp_info;
+use bitcoin::{Amount, Txid};
+use hex;
+use musig2_signer::musig2_psbt::get_output_sp_info;
 use musig2_signer::workflow;
 use psbt::Psbt;
 use secp256k1::Secp256k1;
@@ -133,7 +133,9 @@ fn build_descriptor() -> String {
 }
 
 fn main() -> Result<()> {
-    let out_dir = std::env::args().nth(1).unwrap_or_else(|| "output".to_string());
+    let out_dir = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "output".to_string());
     let out_dir = std::path::Path::new(&out_dir);
     std::fs::create_dir_all(out_dir)?;
 
@@ -152,8 +154,7 @@ fn main() -> Result<()> {
     // Build pre-contribution PSBT with all SP outputs.
     let mut psbt = workflow::construct_psbt(&keys, &recipients)?;
 
-    psbt.inputs[0].previous_txid =
-        FIXTURE_PREV_TXID_HEX.parse::<Txid>().expect("static hex");
+    psbt.inputs[0].previous_txid = FIXTURE_PREV_TXID_HEX.parse::<Txid>().expect("static hex");
 
     // Change output is identified by the absence of sp_v0_info (outputs are
     // shuffled by the constructor, so position is not reliable).
@@ -168,7 +169,13 @@ fn main() -> Result<()> {
     let participant_pks = [keys.alice_pk, keys.bob_pk, keys.charlie_pk];
     for (i, cosigner) in COSIGNERS_TEST.iter().enumerate() {
         let (xonly, _) = participant_pks[i].x_only_public_key();
-        add_tap_derivation(&mut psbt, change_idx, &xonly, cosigner.xfp, &BIP48_ACCOUNT_PATH);
+        add_tap_derivation(
+            &mut psbt,
+            change_idx,
+            &xonly,
+            cosigner.xfp,
+            &BIP48_ACCOUNT_PATH,
+        );
     }
 
     // Add derivation for the aggregate internal key (P) so the simulator can
@@ -184,7 +191,10 @@ fn main() -> Result<()> {
     agg_xfp.copy_from_slice(&agg_hash[..4]);
 
     println!("DBG: Account-level aggregate PK: {}", keys.untweaked_agg_pk);
-    println!("Aggregate internal key fingerprint: {}\n", hex::encode(agg_xfp));
+    println!(
+        "Aggregate internal key fingerprint: {}\n",
+        hex::encode(agg_xfp)
+    );
 
     add_tap_derivation(
         &mut psbt,
@@ -198,44 +208,87 @@ fn main() -> Result<()> {
     let round1_bytes = psbt.serialize();
     let round1_path = out_dir.join("musig2-sp-round1-in.psbt");
     std::fs::write(&round1_path, &round1_bytes)?;
-    println!("Wrote {} ({} bytes)", round1_path.display(), round1_bytes.len());
+    println!(
+        "Wrote {} ({} bytes)",
+        round1_path.display(),
+        round1_bytes.len()
+    );
 
     // ── Contribute: all 3 parties × all scan keys ─────────────
     // Each party contributes one ECDH share per scan key (and one nonce total).
-    let scan_keys: Vec<_> = recipients.iter().map(|(addr, _)| addr.get_scan_key()).collect();
+    let scan_keys: Vec<_> = recipients
+        .iter()
+        .map(|(addr, _)| addr.get_scan_key())
+        .collect();
 
     let _nonce = workflow::contribute(
-        &secp, &mut psbt, "Bob",
-        &keys.bob_sk, &keys.bob_pk, &scan_keys[0],
-        &keys.agg_pk, &keys.key_agg_ctx, test_nonce_seed("Bob"),
+        &secp,
+        &mut psbt,
+        "Bob",
+        &keys.bob_sk,
+        &keys.bob_pk,
+        &scan_keys[0],
+        &keys.agg_pk,
+        &keys.key_agg_ctx,
+        test_nonce_seed("Bob"),
     )?;
     for sk in &scan_keys[1..] {
         workflow::add_ecdh_share(&secp, &mut psbt, "Bob", &keys.bob_sk, &keys.bob_pk, sk)?;
     }
 
     let _nonce = workflow::contribute(
-        &secp, &mut psbt, "Charlie",
-        &keys.charlie_sk, &keys.charlie_pk, &scan_keys[0],
-        &keys.agg_pk, &keys.key_agg_ctx, test_nonce_seed("Charlie"),
+        &secp,
+        &mut psbt,
+        "Charlie",
+        &keys.charlie_sk,
+        &keys.charlie_pk,
+        &scan_keys[0],
+        &keys.agg_pk,
+        &keys.key_agg_ctx,
+        test_nonce_seed("Charlie"),
     )?;
     for sk in &scan_keys[1..] {
-        workflow::add_ecdh_share(&secp, &mut psbt, "Charlie", &keys.charlie_sk, &keys.charlie_pk, sk)?;
+        workflow::add_ecdh_share(
+            &secp,
+            &mut psbt,
+            "Charlie",
+            &keys.charlie_sk,
+            &keys.charlie_pk,
+            sk,
+        )?;
     }
 
     // ── Cosigner Contrib PSBT: Bob and Charlie only, no Alice ────────────────
     let cosigner_contrib_bytes = psbt.serialize();
     let cosigner_contrib_path = out_dir.join("musig2-sp-cosigner-contrib.psbt");
     std::fs::write(&cosigner_contrib_path, &cosigner_contrib_bytes)?;
-    println!("Wrote {} ({} bytes)", cosigner_contrib_path.display(), cosigner_contrib_bytes.len());
+    println!(
+        "Wrote {} ({} bytes)",
+        cosigner_contrib_path.display(),
+        cosigner_contrib_bytes.len()
+    );
 
     // ── Alice's Contribution ─────────────────────────────────────────────────
     let _nonce = workflow::contribute(
-        &secp, &mut psbt, "Alice",
-        &keys.alice_sk, &keys.alice_pk, &scan_keys[0],
-        &keys.agg_pk, &keys.key_agg_ctx, test_nonce_seed("Alice"),
+        &secp,
+        &mut psbt,
+        "Alice",
+        &keys.alice_sk,
+        &keys.alice_pk,
+        &scan_keys[0],
+        &keys.agg_pk,
+        &keys.key_agg_ctx,
+        test_nonce_seed("Alice"),
     )?;
     for sk in &scan_keys[1..] {
-        workflow::add_ecdh_share(&secp, &mut psbt, "Alice", &keys.alice_sk, &keys.alice_pk, sk)?;
+        workflow::add_ecdh_share(
+            &secp,
+            &mut psbt,
+            "Alice",
+            &keys.alice_sk,
+            &keys.alice_pk,
+            sk,
+        )?;
     }
 
     // ── Descriptor ───────────────────────────────────────────────────────────
@@ -252,7 +305,7 @@ fn main() -> Result<()> {
     // shuffled, so match each SP output back to its recipient via sp_v0_info.
     println!("\nSP output scripts ({} recipients):", recipients.len());
     for (i, output) in psbt.outputs.iter().enumerate() {
-        let Some((scan, spend)) = get_output_sp_info(output) else {
+        let Some((scan, spend)) = get_output_sp_info(output)? else {
             continue;
         };
         if let Some((addr, amount)) = recipients

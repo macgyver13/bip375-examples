@@ -11,21 +11,22 @@
 use anyhow::{bail, Context, Result};
 use hex;
 use musig2_signer::recipients::{recipient_keys, RECIPIENT_SEEDS};
+use psbt::roles::signer::extract_eligible_input_pubkey;
+use psbt::Psbt as SilentPaymentPsbt;
 use secp256k1::{PublicKey, Secp256k1, XOnlyPublicKey};
 use silentpayments::receiving::{Label, Receiver};
 use silentpayments::utils::receiving::PublicTweakData;
 use silentpayments::utils::OutPoint as SpOutPoint;
 use silentpayments::{Network, SpVersion, TransactionInputs, TransactionSharedSecret};
-use musig2_signer::sp_musig2::shares::is_input_eligible;
-use psbt::roles::signer::extract_eligible_input_pubkey;
-use psbt::Psbt as SilentPaymentPsbt;
 use std::fs;
 use std::path::PathBuf;
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: cargo run -p musig2-signer --bin scan-recipient <path_to_musig2-sp-final.psbt>");
+        eprintln!(
+            "Usage: cargo run -p musig2-signer --bin scan-recipient <path_to_musig2-sp-final.psbt>"
+        );
         std::process::exit(1);
     }
     let psbt_path = PathBuf::from(&args[1]);
@@ -50,13 +51,11 @@ fn main() -> Result<()> {
             .as_ref()
             .map(|u| u.script_pubkey.to_bytes())
             .unwrap_or_default();
-        let pubkey = if is_input_eligible(input) {
+        let pubkey = extract_eligible_input_pubkey(input)
+            .map_err(|e| anyhow::anyhow!("input pubkey: {e:?}"))?;
+        if pubkey.is_some() {
             eligible_count += 1;
-            extract_eligible_input_pubkey(input)
-                .map_err(|e| anyhow::anyhow!("input pubkey: {e:?}"))?
-        } else {
-            None
-        };
+        }
         tx_inputs.push(outpoint, spk, pubkey);
     }
     if eligible_count == 0 {
@@ -89,8 +88,14 @@ fn main() -> Result<()> {
         let scan_pk = PublicKey::from_secret_key(&secp, &scan_sk);
         let spend_pk = PublicKey::from_secret_key(&secp, &spend_sk);
 
-        let receiver = Receiver::new(SpVersion::ZERO, scan_pk, spend_pk, Label::new(scan_sk, 0), Network::Mainnet)
-            .map_err(|e| anyhow::anyhow!("Receiver::new: {e}"))?;
+        let receiver = Receiver::new(
+            SpVersion::ZERO,
+            scan_pk,
+            spend_pk,
+            Label::new(scan_sk, 0),
+            Network::Mainnet,
+        )
+        .map_err(|e| anyhow::anyhow!("Receiver::new: {e}"))?;
 
         let shared_secret =
             TransactionSharedSecret::new_from_public_tweak_data(&secp, &tweak_data, &scan_sk)
@@ -103,7 +108,10 @@ fn main() -> Result<()> {
             found.values().flat_map(|m| m.keys().copied()).collect();
 
         if detected.is_empty() {
-            println!("  recipient[{idx}] (expected {} sats): NOT DETECTED", expected_amount);
+            println!(
+                "  recipient[{idx}] (expected {} sats): NOT DETECTED",
+                expected_amount
+            );
             all_detected = false;
             continue;
         }
@@ -132,8 +140,13 @@ fn main() -> Result<()> {
 
     println!();
     if !all_detected {
-        bail!("one or more recipients could not detect their output — outputs are NOT discoverable");
+        bail!(
+            "one or more recipients could not detect their output — outputs are NOT discoverable"
+        );
     }
-    println!("All {} recipient(s) detected their output — outputs are discoverable", RECIPIENT_SEEDS.len());
+    println!(
+        "All {} recipient(s) detected their output — outputs are discoverable",
+        RECIPIENT_SEEDS.len()
+    );
     Ok(())
 }

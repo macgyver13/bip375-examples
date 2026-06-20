@@ -13,22 +13,12 @@ use musig2::{
     KeyAggContext, PartialSignature, PubNonce, SecNonce,
 };
 use psbt_v2::v2::Input;
-use secp256k1::{PublicKey, Secp256k1, SecretKey, XOnlyPublicKey};
+use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
-use super::keyagg::{build_key_agg_ctx, from_musig2_xonly};
-use super::psbt_fields::{
+use crate::musig2_psbt::{
     add_input_musig2_partial_sig, add_input_musig2_pub_nonce, get_input_musig2_partial_sigs,
     get_input_musig2_pub_nonces,
 };
-
-/// Aggregate participant public keys into a MuSig2 context + the tweaked aggregate
-/// x-only key (the P2TR internal key).
-pub fn aggregate_musig2_keys(participants: &[PublicKey]) -> Result<(KeyAggContext, XOnlyPublicKey)> {
-    let key_agg_ctx = build_key_agg_ctx(participants)?;
-    let agg_xonly: musig2::secp256k1::XOnlyPublicKey = key_agg_ctx.aggregated_pubkey();
-    let xonly = from_musig2_xonly(&agg_xonly)?;
-    Ok((key_agg_ctx, xonly))
-}
 
 /// Generate a MuSig2 nonce for one participant and write the public nonce to the
 /// input. Returns the `SecNonce` — keep it secret and use it exactly once in
@@ -93,7 +83,7 @@ pub fn aggregate_musig2_sigs(
 ) -> Result<()> {
     let agg_nonce = collect_agg_nonce(input)?;
 
-    let partial_sigs_raw = get_input_musig2_partial_sigs(input);
+    let partial_sigs_raw = get_input_musig2_partial_sigs(input)?;
     if partial_sigs_raw.is_empty() {
         return Err(anyhow!("no MuSig2 partial signatures present"));
     }
@@ -125,7 +115,7 @@ pub fn aggregate_musig2_sigs(
 // ===== internal helpers =====
 
 fn collect_agg_nonce(input: &Input) -> Result<AggNonce> {
-    let nonces_raw = get_input_musig2_pub_nonces(input);
+    let nonces_raw = get_input_musig2_pub_nonces(input)?;
     if nonces_raw.is_empty() {
         return Err(anyhow!("no MuSig2 nonces present"));
     }
