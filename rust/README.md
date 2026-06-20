@@ -18,13 +18,14 @@ This is a Rust implementation of BIP-375, providing:
 ```
 rust/
 ├── crates/
-│   ├── bip375-core/      # Core PSBT v2 data structures
-│   ├── bip375-crypto/    # Cryptographic primitives
-│   ├── bip375-io/        # Serialization and I/O
-│   └── bip375-roles/     # Role-based PSBT operations
+│   ├── bip375-helpers/   # Role-based PSBT operations
+│   └── spdk-uniffi       # spdk python wrapper
+│
 ├── examples/
 │   ├── hardware-signer/  # Air-gapped hardware wallet simulation
+│   ├── musig2-signer/    # Musig2 signing workflow
 │   └── multi-signer/     # Multi-party signing workflow
+│
 ├── tests/                # Test vector runner
 └-- tools/
     └── psbt-viewer/      # Visual PSBT reader
