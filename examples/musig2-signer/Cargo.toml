@@ -1,0 +1,47 @@
+[package]
+name = "musig2-signer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "musig2-signer"
+
+[features]
+default = ["gui"]
+gui = ["slint", "slint-build"]
+
+[[bin]]
+name = "musig2-signer"
+path = "src/main.rs"
+
+[[bin]]
+name = "payroll"
+path = "src/bin/build_payroll.rs"
+
+[[bin]]
+name = "finalize"
+path = "src/bin/finalize_payroll.rs"
+
+[[bin]]
+name = "scan-recipient"
+path = "src/bin/scan_recipient.rs"
+
+[dependencies]
+anyhow.workspace = true
+bip375-helpers.workspace = true
+bip39 = "2.0"
+bitcoin.workspace = true
+hex.workspace = true
+hmac = "0.12"
+musig2 = { version = "0.3.1", features = ["secp256k1"] }
+psbt = { path = "/Users/ron/src/spdk/psbt" }
+psbt-v2 = { path = "/Users/ron/src/rust-psbt", features = ["silent-payments"] }
+rand = { version = "0.8", features = ["std", "std_rng"] }
+secp256k1.workspace = true
+sha2.workspace = true
+silentpayments = { path = "/Users/ron/src/spdk/silentpayments" }
+
+# GUI framework
+slint = { version = "1.8", optional = true }
+
+[build-dependencies]
+slint-build = { version = "1.8", optional = true }
