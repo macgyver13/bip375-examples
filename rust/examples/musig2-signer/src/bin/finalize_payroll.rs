@@ -1,14 +1,15 @@
 //! Finalize Simulator PSBT
 //!
-//! Takes the r2-alice.psbt from the Coldcard simulator (which contains
-//! Alice's partial signature and the finalized SP output scripts) and:
-//!   1. Re-derives Bob's and Charlie's secret nonces from their deterministic test seeds
-//!   2. Computes the final sighash
-//!   3. Adds Bob's and Charlie's partial signatures
-//!   4. Aggregates all signatures and extracts the final transaction
+//! Takes the r2-charlie.psbt from the Coldcard simulator (which contains
+//! all partial signatures and the finalized SP output scripts) and:
+//!   1. Computes the final sighash
+//!   2. Aggregates all signatures and extracts the final transaction
+//! 
+//! Writes final musig2-sp-final.psbt and musig2-sp-final-tx.hex to the same 
+//! directory as the input PSBT.
 //!
 //! Usage:
-//!   cargo run -p musig2-signer --bin finalize path/to/r2-alice.psbt
+//!   cargo run -p musig2-signer --bin finalize path/to/r2-charlie.psbt
 
 use anyhow::{bail, Context, Result};
 use bip375_helpers::crypto::tweaked_key_to_p2tr_script;
@@ -25,19 +26,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-/// Matches the deterministic seed used in gen_fixtures.rs to perfectly re-create SecNonces
-fn test_nonce_seed(party: &str) -> [u8; 32] {
-    let mut seed = [0u8; 32];
-    let bytes = party.as_bytes();
-    let len = bytes.len().min(32);
-    seed[..len].copy_from_slice(&bytes[..len]);
-    seed
-}
-
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
-        eprintln!("Usage: cargo run -p musig2-signer --bin finalize <path_to_r2-alice.psbt>");
+        eprintln!("Usage: cargo run -p musig2-signer --bin finalize <path_to_r2-charlie.psbt>");
         std::process::exit(1);
     }
     let psbt_path = PathBuf::from(&args[1]);
@@ -51,68 +43,16 @@ fn main() -> Result<()> {
 
     println!("Loaded PSBT from {}", psbt_path.display());
 
-    // 2. Re-derive Bob and Charlie's secret nonces
-    // We do this by feeding their deterministic seeds into workflow::add_nonce
-    // using a throwaway valid PSBT, extracting exactly the same SecNonce they used in round 1.
-    let recipients = vec![(keys.sp_address.clone(), bitcoin::Amount::from_sat(1000))];
-    let mut dummy_psbt = workflow::construct_psbt(&keys, &recipients)?;
-
-    let bob_sec_nonce = workflow::add_nonce(
-        &mut dummy_psbt,
-        "Bob",
-        &keys.bob_sk,
-        &keys.bob_pk,
-        &keys.agg_pk,
-        &keys.key_agg_ctx,
-        test_nonce_seed("Bob"),
-    )?;
-
-    let charlie_sec_nonce = workflow::add_nonce(
-        &mut dummy_psbt,
-        "Charlie",
-        &keys.charlie_sk,
-        &keys.charlie_pk,
-        &keys.agg_pk,
-        &keys.key_agg_ctx,
-        test_nonce_seed("Charlie"),
-    )?;
-
-    // 3. Compute Sighash (outputs were already finalized by the simulator)
+    // 2. Compute Sighash (outputs were already finalized by the simulator)
     let message = workflow::compute_sighash(&psbt).context("Failed to compute sighash")?;
     println!("Computed taproot sighash: {}", hex::encode(message));
 
-    // 4. Bob and Charlie Partial Sign
-    workflow::partial_sign(
-        &mut psbt,
-        "Bob",
-        &keys.bob_sk,
-        &keys.bob_pk,
-        &keys.agg_pk,
-        bob_sec_nonce,
-        &keys.key_agg_ctx,
-        &message,
-    )?;
-    println!("[Bob] Partial signature added");
 
-    workflow::partial_sign(
-        &mut psbt,
-        "Charlie",
-        &keys.charlie_sk,
-        &keys.charlie_pk,
-        &keys.agg_pk,
-        charlie_sec_nonce,
-        &keys.key_agg_ctx,
-        &message,
-    )?;
-    println!("[Charlie] Partial signature added");
-
-    // 5. Aggregate Signatures & Extract Transaction
+    // 3. Aggregate Signatures & Extract Transaction
     let tx = workflow::aggregate_and_extract(&secp, &mut psbt, &keys.key_agg_ctx, &message)
         .context("Failed to aggregate signatures and extract tx")?;
 
-    // 6. Independently verify every SP output is discoverable on chain by its recipient.
-    // This does NOT use the PSBT's stored ECDH shares; it reconstructs the aggregate input
-    // secret and recomputes each recipient's shared secret from the real input key + outpoints.
+    // 4. Independently verify every SP output is discoverable on chain by its recipient.
     verify_outputs_discoverable(&secp, &keys, &psbt, &tx)
         .context("SP output discoverability verification failed")?;
 
@@ -296,7 +236,7 @@ fn verify_outputs_discoverable(
         }
 
         println!(
-            "  [{i}] {} -> discoverable",
+            "  output[{i}] {} -> discoverable",
             hex::encode(expected.as_bytes())
         );
         scan_key_k.insert(scan_pk, k + 1);
