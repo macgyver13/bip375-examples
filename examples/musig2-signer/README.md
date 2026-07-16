@@ -23,8 +23,8 @@ To keep the total number of PSBT rounds to a minimum the MuSig2 nonce and ECDH s
 
 | Name | \<keytype> | \<keydata> | \<keydata> Description | \<valuedata> | \<valuedata> Description | Versions Requiring Inclusion | Versions Requiring Exclusion | Versions Allowing Inclusion |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| MuSig2 Partial Silent Payment Input ECDH Share | `PSBT_IN_MUSIG2_PARTIAL_ECDH_SHARE` = 0x21 | <33 byte scankey> <33 byte participant pubkey> | The pairing of scan key and MuSig2 participant public key that this ECDH share is for. | <33 byte share> | Each party's partial ECDH share computed as `skᵢ * B_scan` | | 0 | 2 |
-| MuSig2 Partial Silent Payment Input DLEQ Proof | `PSBT_IN_MUSIG2_PARTIAL_DLEQ` = 0x22 | <33 byte scankey> <33 byte participant pubkey> | The pairing of scan key and MuSig2 participant public key that this DLEQ proof is for. | <64 byte proof> | Each party's partial DLEQ proof (`dleqᵢ`) | | 0 | 2 |
+| MuSig2 Partial Silent Payment Input ECDH Share | `PSBT_IN_SP_PARTIAL_ECDH_SHARE` = 0x21 | <33 byte scankey> <33 byte participant pubkey> | The pairing of scan key and MuSig2 participant public key that this ECDH share is for. | <33 byte share> | Each party's partial ECDH share computed as `skᵢ * B_scan` | | 0 | 2 |
+| MuSig2 Partial Silent Payment Input DLEQ Proof | `PSBT_IN_SP_PARTIAL_DLEQ` = 0x22 | <33 byte scankey> <33 byte participant pubkey> | The pairing of scan key and MuSig2 participant public key that this DLEQ proof is for. | <64 byte proof> | Each party's partial DLEQ proof (`dleqᵢ`) | | 0 | 2 |
 
 ### Notation
 
@@ -97,7 +97,7 @@ The coordinator builds a PSBT with one MuSig2 P2TR input and N SP recipients + 1
 
 #### 2. Contribute - shares + nonce
 
-Each party independently computes a partial ECDH share `shareᵢ = skᵢ * B_scan` from its account-level participant secret `skᵢ`, and writes it to `PSBT_IN_MUSIG2_PARTIAL_ECDH_SHARE`. A DLEQ proof binding that share to its account-level participant pubkey is written to `PSBT_IN_MUSIG2_PARTIAL_DLEQ`.
+Each party independently computes a partial ECDH share `shareᵢ = skᵢ * B_scan` from its account-level participant secret `skᵢ`, and writes it to `PSBT_IN_SP_PARTIAL_ECDH_SHARE`. A DLEQ proof binding that share to its account-level participant pubkey is written to `PSBT_IN_SP_PARTIAL_DLEQ`.
 
 Additionally, a fresh MuSig2 pubnonce is written to `PSBT_IN_MUSIG2_PUB_NONCE`. The secret nonce **cannot** be bound to the taproot sighash the way a normal MuSig2 signer would: the Silent Payment output script does not exist yet (the final Round-1 signer derives it in step 3), so the sighash differs between Round 1 and Round 2. Instead the nonce is bound to a round-stable synthetic message that commits to the inputs and, for each SP output, its `value || scan_key || spend_key` (rather than the not-yet-known `scriptPubKey`), plus the signing-key context. This keeps the secret nonce reproducible across rounds while preserving BIP-327 nonce-misuse resistance.
 
@@ -142,4 +142,4 @@ The partial signatures are combined with the aggregated pubnonce and sighash int
 
 - Spot checking a SP address on hardware signer is prone to error - display a checksum to simplify comparison
 - The recipient list must be unforgeable - implement an out-of-band exchange by treasury signers any time the grantee list / amounts are altered
-- **secp256k1 version shim** - The `musig2` crate uses secp256k1 0.31 while the rest of the workspace uses 0.29; byte-level converters in `spdk-core/src/psbt/roles/musig2_signer.rs` bridge the two and should be removed once the workspace upgrades.
+- **secp256k1 version shim** - The upstream `psbt` MuSig2 signer role bridges the `musig2` crate's secp256k1 0.31 types with this workspace's secp256k1 0.29 types. Remove that bridge once the workspace upgrades.

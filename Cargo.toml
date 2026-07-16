@@ -18,12 +18,12 @@ repository = "https://github.com/bitcoin/bips"
 
 [workspace.dependencies]
 bitcoin = "0.32.6"
-psbt = { git = "https://github.com/macgyver13/spdk.git", branch = "psbt-validation" }
+psbt = { git = "https://github.com/macgyver13/spdk.git", branch = "musig2-working" }
 # Native PSBT v2 types/signing used directly by examples (matches spdk's pin)
-psbt-v2 = { git = "https://gitea.bitcoin.ninja/macgyver/rust-psbt.git", branch = "spdk-psbt-validation", features = ["miniscript", "silent-payments"] }
+psbt-v2 = { git = "https://gitea.bitcoin.ninja/macgyver/rust-psbt.git", branch = "musig2-working", features = ["miniscript", "musig2", "silent-payments"] }
 secp256k1 = { version = "0.29", features = ["rand", "global-context", "serde"] }
 sha2 = "0.10"
-silentpayments = { git = "https://github.com/macgyver13/spdk.git", branch = "psbt-validation" }
+silentpayments = { git = "https://github.com/macgyver13/spdk.git", branch = "musig2-working" }
 
 # Serialization
 base64 = "0.21"

@@ -21,12 +21,12 @@ bitcoin.workspace = true
 hex.workspace = true
 hmac = "0.12"
 musig2 = { version = "0.3.1", features = ["secp256k1"] }
-psbt = { path = "/Users/ron/src/spdk/psbt" }
-psbt-v2 = { path = "/Users/ron/src/rust-psbt", features = ["silent-payments"] }
+psbt.workspace = true
+psbt-v2.workspace = true
 rand = { version = "0.8", features = ["std", "std_rng"] }
 secp256k1.workspace = true
 sha2.workspace = true
-silentpayments = { path = "/Users/ron/src/spdk/silentpayments" }
+silentpayments.workspace = true
 
 # GUI framework
 slint = { version = "1.8", optional = true }

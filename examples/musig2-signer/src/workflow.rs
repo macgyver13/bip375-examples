@@ -14,14 +14,13 @@ use musig2::SecNonce;
 use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
 use silentpayments::{Network as SpNetwork, SilentPaymentAddress, SpVersion};
 
-use bip375_helpers::transaction::build_psbt;
+use psbt::musig2::build_psbt;
+use psbt::musig2::finalize_sp_outputs;
 use psbt::core::utils::to_psbt_dleq;
+use psbt::roles::musig2_signer as signing;
 use psbt::roles::{ExtractorPsbtExt, InputWitnessFinalizerPsbtExt};
 use psbt::{generate_dleq_proof, verify_dleq_proof, Psbt};
-use psbt_v2::v2::{Input, Output};
-
-use crate::musig2_psbt::{self as psbt_fields, PartialEcdhShareData};
-use crate::musig2_spdk::{finalize_sp_outputs, signing};
+use psbt_v2::{Output, PartialEcdhShareData};
 
 /// Build the 66-byte PSBT_OUT_SP_V0_INFO payload (scan_key || spend_key).
 fn sp_v0_info_bytes(address: &SilentPaymentAddress) -> [u8; 66] {
@@ -223,14 +222,6 @@ pub fn construct_psbt(
     let fee = Amount::from_sat(1_000);
     let input_amount = Amount::from_sat(total_payment) + change_amount + fee;
 
-    // One MuSig2 P2TR input spending the treasury UTXO.
-    let mut input = Input::new(&OutPoint::new(Txid::all_zeros(), 0));
-    input.sequence = Some(Sequence::MAX);
-    input.witness_utxo = Some(TxOut {
-        value: input_amount,
-        script_pubkey: keys.p2tr_script.clone(),
-    });
-
     // N silent-payment outputs (script computed later) + 1 change output to the
     // same MuSig2 script. `build_psbt` shuffles outputs (BIP-375), so SP vs change
     // is distinguished by `sp_v0_info`, not position.
@@ -250,23 +241,32 @@ pub fn construct_psbt(
         script_pubkey: keys.p2tr_script.clone(),
     }));
 
-    let mut psbt = build_psbt(vec![input], outputs).map_err(|e| anyhow::anyhow!(e))?;
+    let mut psbt = build_psbt(vec![OutPoint::new(Txid::all_zeros(), 0)], outputs)?;
+    psbt.inputs[0].sequence = Some(Sequence::MAX);
+    psbt.inputs[0].witness_utxo = Some(TxOut {
+        value: input_amount,
+        script_pubkey: keys.p2tr_script.clone(),
+    });
 
     // PSBT_IN_TAP_INTERNAL_KEY holds the untweaked aggregate P (BIP-341/BIP-371);
     // the taproot tweak is applied when verifying the output key.
     psbt.inputs[0].tap_internal_key = Some(keys.untweaked_agg_xonly);
-    psbt_fields::set_input_musig2_participant_pubkeys(
-        &mut psbt.inputs[0],
+    psbt.inputs[0].set_musig2_participant_pubkeys(
         &keys.untweaked_agg_pk,
         &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
+    );
+    psbt.inputs[0].set_musig2_agg_derivation(
+        &keys.untweaked_agg_pk,
+        keys.untweaked_agg_xonly,
+        0,
+        DEMO_SP_INDEX,
     );
 
     // BIP-373: tag the change output (the non-SP output) with the participant
     // pubkeys to aid change detection.
     for output in psbt.outputs.iter_mut() {
         if output.sp_v0_info.is_none() {
-            psbt_fields::set_output_musig2_participant_pubkeys(
-                output,
+            output.set_musig2_participant_pubkeys(
                 &keys.untweaked_agg_pk,
                 &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
             );
@@ -313,7 +313,7 @@ pub fn add_ecdh_share(
         share: partial_share,
         dleq_proof: to_psbt_dleq(dleq_proof),
     };
-    psbt_fields::add_input_partial_ecdh_share(&mut psbt.inputs[0], &partial);
+    psbt.inputs[0].add_sp_partial_ecdh_share(&partial);
 
     Ok(())
 }
@@ -412,12 +412,12 @@ pub fn partial_sign(
 
 /// Aggregate partial signatures into a Schnorr signature and extract the transaction.
 pub fn aggregate_and_extract(
-    secp: &Secp256k1<secp256k1::All>,
+    _secp: &Secp256k1<secp256k1::All>,
     psbt: &mut Psbt,
     key_agg_ctx: &musig2::KeyAggContext,
     message: &[u8; 32],
 ) -> Result<Transaction> {
-    signing::aggregate_musig2_sigs(&mut psbt.inputs[0], key_agg_ctx, message, secp)
+    signing::aggregate_musig2_sigs(&mut psbt.inputs[0], key_agg_ctx, message)
         .map_err(|e| anyhow::anyhow!("aggregate sigs: {e}"))?;
 
     // Re-construct psbt to make sure callers references to psbt see a finalized version.

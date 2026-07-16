@@ -5,7 +5,6 @@
 
 #[cfg(feature = "gui")]
 use musig2_signer::gui;
-use musig2_signer::musig2_psbt as psbt_fields;
 use musig2_signer::workflow;
 
 fn main() -> anyhow::Result<()> {
@@ -76,7 +75,7 @@ fn run_cli() -> anyhow::Result<()> {
     // Round 1: Each party contributes ECDH share + nonce in a single pass.
     // BIP-327 allows nonce preprocessing (generating before the message is known).
     println!("--- 3. Round 1: Contribute (ECDH + Nonce) ---");
-    println!("NOTE: PSBT_IN_MUSIG2_PARTIAL_ECDH_SHARE (0x21) is a proposed new field.");
+    println!("NOTE: PSBT_IN_SP_PARTIAL_ECDH_SHARE (0x21) is a proposed new field.");
 
     let parties = [
         ("Alice", &keys.alice_sk, &keys.alice_pk),
@@ -144,7 +143,7 @@ fn run_cli() -> anyhow::Result<()> {
     // -----------------------------------------------------------------------
     // Round 2 preamble: each signer verifies output before signing
     println!("--- 5. Each Signer Verifies Output Before Signing ---");
-    let partial_shares = psbt_fields::get_input_partial_ecdh_shares(&psbt.inputs[0])?;
+    let partial_shares = psbt.inputs[0].parse_sp_partial_ecdh_shares()?;
     assert_eq!(partial_shares.len(), 3, "Expected 3 partial shares");
 
     for (name, _, _) in &parties {
