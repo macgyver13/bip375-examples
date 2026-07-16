@@ -529,6 +529,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "base16ct"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
+
+[[package]]
 name = "base58ck"
 version = "0.1.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -613,7 +619,7 @@ dependencies = [
  "psbt-v2",
  "rfd",
  "rust-dleq",
- "secp256k1",
+ "secp256k1 0.29.1",
  "serde",
  "serde_json",
  "sha2",
@@ -663,7 +669,7 @@ dependencies = [
  "bitcoin_hashes",
  "hex-conservative 0.2.3",
  "hex_lit",
- "secp256k1",
+ "secp256k1 0.29.1",
  "serde",
 ]
 
@@ -1214,6 +1220,7 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+ "subtle",
 ]
 
 [[package]]
@@ -1951,7 +1958,7 @@ dependencies = [
  "hex",
  "psbt",
  "psbt-v2",
- "secp256k1",
+ "secp256k1 0.29.1",
  "serde",
  "serde_json",
  "sha2",
@@ -2058,6 +2065,15 @@ name = "hex_lit"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3011d1213f159867b13cfd6ac92d2cd5f1345762c63be3554e84092d85a50bbd"
+
+[[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
 
 [[package]]
 name = "htmlparser"
@@ -3077,9 +3093,46 @@ dependencies = [
  "hex",
  "psbt",
  "psbt-v2",
- "secp256k1",
+ "secp256k1 0.29.1",
  "serde",
  "serde_json",
+ "sha2",
+ "silentpayments",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
+name = "musig2"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c5ffeab912897e7577287c8f2b4efbc4be24912f77531b45ba4b18c93f8be21"
+dependencies = [
+ "base16ct",
+ "hmac",
+ "once_cell",
+ "secp",
+ "secp256k1 0.31.1",
+ "sha2",
+ "subtle",
+]
+
+[[package]]
+name = "musig2-signer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bip375-helpers",
+ "bip39",
+ "bitcoin",
+ "hex",
+ "hmac",
+ "musig2",
+ "psbt",
+ "psbt-v2",
+ "rand 0.8.8",
+ "rust-dleq",
+ "secp256k1 0.29.1",
  "sha2",
  "silentpayments",
  "slint",
@@ -3924,19 +3977,25 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 [[package]]
 name = "psbt"
 version = "0.1.0"
-source = "git+https://github.com/macgyver13/spdk.git?rev=c4547165#c454716597c5f7010c2ea85da264be2d17c4db69"
+source = "git+https://github.com/macgyver13/spdk.git?rev=0fcf8e76#0fcf8e763402f717dc43e572f951b3378ccb71fc"
 dependencies = [
+ "anyhow",
  "bitcoin",
+ "hex",
+ "hmac",
+ "musig2",
  "psbt-v2",
+ "rand 0.8.8",
  "rust-dleq",
- "secp256k1",
+ "secp256k1 0.29.1",
+ "sha2",
  "silentpayments",
 ]
 
 [[package]]
 name = "psbt-v2"
 version = "0.3.0"
-source = "git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=4d55175c#4d55175c76749de9db4b8ce0322a2f1ba6371aaa"
+source = "git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=6552113c#6552113cb060d9bfc073ac30734d4593ff1d5e2e"
 dependencies = [
  "bitcoin",
  "bitcoin-consensus-encoding",
@@ -4277,7 +4336,7 @@ version = "0.1.0"
 source = "git+https://github.com/Sosthene00/rust-dleq.git?rev=097644a14d87c454e9bd9895de2e60992ff1ba93#097644a14d87c454e9bd9895de2e60992ff1ba93"
 dependencies = [
  "bitcoin_hashes",
- "secp256k1",
+ "secp256k1 0.29.1",
 ]
 
 [[package]]
@@ -4394,6 +4453,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "secp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d3b203895e8f18854c828d1cf7e5710683c3abc28d79330fe5ab723ce5b76e1"
+dependencies = [
+ "base16ct",
+ "once_cell",
+ "secp256k1 0.31.1",
+ "subtle",
+]
+
+[[package]]
 name = "secp256k1"
 version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4401,8 +4472,19 @@ checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
  "bitcoin_hashes",
  "rand 0.8.8",
- "secp256k1-sys",
+ "secp256k1-sys 0.10.1",
  "serde",
+]
+
+[[package]]
+name = "secp256k1"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c3c81b43dc2d8877c216a3fccf76677ee1ebccd429566d3e67447290d0c42b2"
+dependencies = [
+ "bitcoin_hashes",
+ "rand 0.9.5",
+ "secp256k1-sys 0.11.0",
 ]
 
 [[package]]
@@ -4410,6 +4492,15 @@ name = "secp256k1-sys"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dcb913707158fadaf0d8702c2db0e857de66eb003ccfdda5924b5f5ac98efb38"
 dependencies = [
  "cc",
 ]
@@ -4523,13 +4614,13 @@ dependencies = [
 [[package]]
 name = "silentpayments"
 version = "0.8.0"
-source = "git+https://github.com/macgyver13/spdk.git?rev=c4547165#c454716597c5f7010c2ea85da264be2d17c4db69"
+source = "git+https://github.com/macgyver13/spdk.git?rev=0fcf8e76#0fcf8e763402f717dc43e572f951b3378ccb71fc"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin_hashes",
  "hex",
  "rust-dleq",
- "secp256k1",
+ "secp256k1 0.29.1",
 ]
 
 [[package]]
@@ -4803,7 +4894,7 @@ dependencies = [
  "psbt",
  "psbt-v2",
  "rust-dleq",
- "secp256k1",
+ "secp256k1 0.29.1",
  "silentpayments",
  "uniffi",
 ]
@@ -4867,6 +4958,12 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "subtle"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "svgtypes"

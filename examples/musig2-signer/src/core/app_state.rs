@@ -2,7 +2,7 @@
 
 use bip375_helpers::display::field_identifier::{FieldIdentifier, TransactionSummary};
 use musig2::SecNonce;
-use psbt::Psbt as SilentPaymentPsbt;
+use psbt_v2::Psbt as SilentPaymentPsbt;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

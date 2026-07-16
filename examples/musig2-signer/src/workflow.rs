@@ -12,24 +12,14 @@ use bitcoin::{
 };
 use musig2::SecNonce;
 use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
-use silentpayments::{Network as SpNetwork, SilentPaymentAddress, SpVersion};
+use silentpayments::{Network as SpNetwork, SilentPaymentCode};
 
-use bip375_helpers::transaction::build_psbt;
-use psbt::core::utils::to_psbt_dleq;
-use psbt::roles::{ExtractorPsbtExt, InputWitnessFinalizerPsbtExt};
-use psbt::{generate_dleq_proof, verify_dleq_proof, Psbt};
-use psbt_v2::v2::{Input, Output};
-
-use crate::musig2_psbt::{self as psbt_fields, PartialEcdhShareData};
-use crate::musig2_spdk::{finalize_sp_outputs, signing};
-
-/// Build the 66-byte PSBT_OUT_SP_V0_INFO payload (scan_key || spend_key).
-fn sp_v0_info_bytes(address: &SilentPaymentAddress) -> [u8; 66] {
-    let mut bytes = [0u8; 66];
-    bytes[..33].copy_from_slice(&address.get_scan_key().serialize());
-    bytes[33..].copy_from_slice(&address.get_spend_key().serialize());
-    bytes
-}
+use bip375_helpers::transaction::to_sp_v0_info;
+use psbt::musig2::build_psbt;
+use psbt::musig2::finalize_sp_outputs;
+use psbt::roles::musig2_signer as signing;
+use psbt_v2::{DleqProof, Extractor, Finalizer, Output, PartialEcdhShareData, Psbt};
+use rust_dleq::{generate_dleq_proof, verify_dleq_proof};
 
 /// Static key material for the demo.
 pub struct KeySetup {
@@ -51,7 +41,7 @@ pub struct KeySetup {
     pub p2tr_script: ScriptBuf,
     pub scan_pk: PublicKey,
     pub scan_sk: SecretKey,
-    pub sp_address: SilentPaymentAddress,
+    pub sp_address: SilentPaymentCode,
 }
 
 /// Synthetic `/0/*` leaf index used by the demo fixtures. The aggregate key,
@@ -188,8 +178,7 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>, sub_index: u32) -> Result<Ke
     let spend_sk = SecretKey::from_slice(&[0x22_u8; 32])?;
     let scan_pk = PublicKey::from_secret_key(secp, &scan_sk);
     let spend_pk = PublicKey::from_secret_key(secp, &spend_sk);
-    let sp_address =
-        SilentPaymentAddress::new(scan_pk, spend_pk, SpNetwork::Mainnet, SpVersion::ZERO);
+    let sp_address = SilentPaymentCode::new_v0(scan_pk, spend_pk, SpNetwork::Mainnet);
 
     Ok(KeySetup {
         alice_sk,
@@ -216,20 +205,12 @@ pub fn setup_keys(secp: &Secp256k1<secp256k1::All>, sub_index: u32) -> Result<Ke
 /// returning to the same MuSig2 script is appended automatically (9 000 sats).
 pub fn construct_psbt(
     keys: &KeySetup,
-    recipients: &[(SilentPaymentAddress, Amount)],
+    recipients: &[(SilentPaymentCode, Amount)],
 ) -> Result<Psbt> {
     let total_payment: u64 = recipients.iter().map(|(_, a)| a.to_sat()).sum();
     let change_amount = Amount::from_sat(9_000);
     let fee = Amount::from_sat(1_000);
     let input_amount = Amount::from_sat(total_payment) + change_amount + fee;
-
-    // One MuSig2 P2TR input spending the treasury UTXO.
-    let mut input = Input::new(&OutPoint::new(Txid::all_zeros(), 0));
-    input.sequence = Some(Sequence::MAX);
-    input.witness_utxo = Some(TxOut {
-        value: input_amount,
-        script_pubkey: keys.p2tr_script.clone(),
-    });
 
     // N silent-payment outputs (script computed later) + 1 change output to the
     // same MuSig2 script. `build_psbt` shuffles outputs (BIP-375), so SP vs change
@@ -241,7 +222,7 @@ pub fn construct_psbt(
                 value: *amount,
                 script_pubkey: ScriptBuf::new(),
             });
-            o.sp_v0_info = Some(sp_v0_info_bytes(addr));
+            o.sp_v0_info = Some(to_sp_v0_info(addr));
             o
         })
         .collect();
@@ -250,23 +231,32 @@ pub fn construct_psbt(
         script_pubkey: keys.p2tr_script.clone(),
     }));
 
-    let mut psbt = build_psbt(vec![input], outputs).map_err(|e| anyhow::anyhow!(e))?;
+    let mut psbt = build_psbt(vec![OutPoint::new(Txid::all_zeros(), 0)], outputs)?;
+    psbt.inputs[0].sequence = Some(Sequence::MAX);
+    psbt.inputs[0].witness_utxo = Some(TxOut {
+        value: input_amount,
+        script_pubkey: keys.p2tr_script.clone(),
+    });
 
     // PSBT_IN_TAP_INTERNAL_KEY holds the untweaked aggregate P (BIP-341/BIP-371);
     // the taproot tweak is applied when verifying the output key.
     psbt.inputs[0].tap_internal_key = Some(keys.untweaked_agg_xonly);
-    psbt_fields::set_input_musig2_participant_pubkeys(
-        &mut psbt.inputs[0],
+    psbt.inputs[0].set_musig2_participant_pubkeys(
         &keys.untweaked_agg_pk,
         &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
+    );
+    psbt.inputs[0].set_musig2_agg_derivation(
+        &keys.untweaked_agg_pk,
+        keys.untweaked_agg_xonly,
+        0,
+        DEMO_SP_INDEX,
     );
 
     // BIP-373: tag the change output (the non-SP output) with the participant
     // pubkeys to aid change detection.
     for output in psbt.outputs.iter_mut() {
         if output.sp_v0_info.is_none() {
-            psbt_fields::set_output_musig2_participant_pubkeys(
-                output,
+            output.set_musig2_participant_pubkeys(
                 &keys.untweaked_agg_pk,
                 &[keys.alice_pk, keys.bob_pk, keys.charlie_pk],
             );
@@ -311,9 +301,9 @@ pub fn add_ecdh_share(
         scan_key: *scan_pk,
         contributor_pk: *party_pk,
         share: partial_share,
-        dleq_proof: to_psbt_dleq(dleq_proof),
+        dleq_proof: DleqProof(dleq_proof.0),
     };
-    psbt_fields::add_input_partial_ecdh_share(&mut psbt.inputs[0], &partial);
+    psbt.inputs[0].add_sp_partial_ecdh_share(&partial);
 
     Ok(())
 }
@@ -417,17 +407,23 @@ pub fn aggregate_and_extract(
     key_agg_ctx: &musig2::KeyAggContext,
     message: &[u8; 32],
 ) -> Result<Transaction> {
-    signing::aggregate_musig2_sigs(&mut psbt.inputs[0], key_agg_ctx, message, secp)
+    signing::aggregate_musig2_sigs(&mut psbt.inputs[0], key_agg_ctx, message)
         .map_err(|e| anyhow::anyhow!("aggregate sigs: {e}"))?;
 
+    let mut verified = psbt.clone();
+    finalize_sp_outputs(secp, &mut verified)?;
+    for (index, (actual, expected)) in psbt.outputs.iter().zip(&verified.outputs).enumerate() {
+        if actual.sp_v0_info.is_some() && actual.script_pubkey != expected.script_pubkey {
+            bail!("silent payment output {index} does not match the ECDH shares");
+        }
+    }
+
     // Re-construct psbt to make sure callers references to psbt see a finalized version.
-    *psbt = psbt
-        .clone()
-        .finalize()
+    *psbt = Finalizer::new(psbt.clone())?
+        .finalize(secp)
         .map_err(|e| anyhow::anyhow!("finalize witnesses: {e:?}"))?;
 
-    let tx = psbt
-        .clone()
+    let tx = Extractor::new(psbt.clone())?
         .extract_tx()
         .map_err(|e| anyhow::anyhow!("extract: {e:?}"))?;
     Ok(tx)
