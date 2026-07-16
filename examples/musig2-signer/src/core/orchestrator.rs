@@ -18,7 +18,7 @@ impl Orchestrator {
     /// Steps 1–3: create PSBT with 1 MuSig2 input.
     pub fn execute_create_psbt(state: &mut AppState) -> Result<(), String> {
         let secp = Secp256k1::new();
-        let keys = crate::workflow::setup_keys(&secp).map_err(|e| e.to_string())?;
+        let keys = crate::workflow::setup_keys(&secp, crate::workflow::DEMO_SP_INDEX).map_err(|e| e.to_string())?;
         let psbt = crate::workflow::construct_psbt(
             &keys,
             &[(keys.sp_address.clone(), bitcoin::Amount::from_sat(90_000))],
@@ -144,7 +144,7 @@ impl Orchestrator {
         })?;
 
         // Extract Schnorr sig from the finalized witness (tap_key_sig is
-        // cleared by finalize_input_witnesses per BIP-174).
+        // cleared by finalize per BIP-174).
         if let Some(sig_bytes) = tx.input[0].witness.iter().next() {
             state.schnorr_sig_hex = Some(hex::encode(sig_bytes));
         }

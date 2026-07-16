@@ -49,7 +49,7 @@ fn run_cli() -> anyhow::Result<()> {
 
     // -----------------------------------------------------------------------
     println!("--- 1. Key Setup ---");
-    let keys = workflow::setup_keys(&secp)?;
+    let keys = workflow::setup_keys(&secp, workflow::DEMO_SP_INDEX)?;
     println!("Alice pubkey:   {}", hex::encode(keys.alice_pk.serialize()));
     println!("Bob pubkey:     {}", hex::encode(keys.bob_pk.serialize()));
     println!(

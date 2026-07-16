@@ -13,18 +13,6 @@ gui = ["slint", "slint-build"]
 name = "musig2-signer"
 path = "src/main.rs"
 
-[[bin]]
-name = "payroll"
-path = "src/bin/build_payroll.rs"
-
-[[bin]]
-name = "finalize"
-path = "src/bin/finalize_payroll.rs"
-
-[[bin]]
-name = "scan-recipient"
-path = "src/bin/scan_recipient.rs"
-
 [dependencies]
 anyhow.workspace = true
 bip375-helpers.workspace = true
