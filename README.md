@@ -18,12 +18,6 @@ New to BIP375? Start here:
 
 ## Libraries
 
-- Python
-  - **`psbt_sp/`** - Package to PSBT v2 for Silent Payments
-    - Full role-based implementation (Creator, Constructor, Updater, Signer, Input Finalizer, Extractor)
-    - Serialization, crypto utilities, and BIP 352 integration
-  - **`dleq_374.py`** - BIP 374 DLEQ proof implementation
-  - **`secp256k1_374.py`** - secp256k1 implementation
 - Rust
   - **`crates/`** - Crates to support PSBTv2 for Silent Payments
 
