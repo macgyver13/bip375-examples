@@ -1,0 +1,235 @@
+import { Button, ComboBox, HorizontalBox, ScrollView, VerticalBox } from "std-widgets.slint";
+
+export struct PsbtField {
+    field-name: string,
+    key-type: string,
+    key-preview: string,
+    value-preview: string,
+    is-highlighted: bool,
+    map-index: int,
+}
+
+export struct TransactionSummary {
+    total-input: int,
+    total-output: int,
+    fee: int,
+    num-inputs: int,
+    num-outputs: int,
+}
+
+export struct PhaseProgress {
+    contribute-done: int,
+    signed-done: int,
+}
+
+component MenuButton inherits Button {
+    preferred-height: 40px;
+    max-height: 40px;
+}
+
+component FieldRow inherits Rectangle {
+    in property <PsbtField> field;
+    min-height: max(36px, row-layout.min-height);
+    preferred-height: max(36px, row-layout.preferred-height);
+    background: field.is-highlighted ? #d6f5d6 : #f7f7f7;
+
+    row-layout := HorizontalBox {
+        padding: 8px;
+        spacing: 8px;
+
+        Text {
+            text: field.key-type;
+            font-size: 12px;
+            color: #666666;
+            vertical-alignment: center;
+            max-width: 40px;
+        }
+
+        if field.map-index >= 0: Text {
+            text: "[" + field.map-index + "]";
+            font-size: 12px;
+            color: #888888;
+            font-weight: 700;
+            vertical-alignment: center;
+            horizontal-alignment: left;
+            max-width: 30px;
+        }
+
+        TextInput {
+            text: field.field-name;
+            font-size: 14px;
+            color: #2c2c2c;
+            read-only: true;
+            horizontal-alignment: left;
+            min-width: 0px;
+            max-width: 340px;
+        }
+
+        VerticalBox {
+            alignment: LayoutAlignment.center;
+            spacing: 2px;
+            padding: 0px;
+            horizontal-stretch: 1;
+
+            if field.key-preview != "": TextInput {
+                read-only: true;
+                text: "key: " + field.key-preview;
+                font-size: 10px;
+                color: #666666;
+                horizontal-alignment: right;
+            }
+
+            TextInput {
+                read-only: true;
+                text: field.value-preview;
+                font-size: 12px;
+                color: #666666;
+                horizontal-alignment: right;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "BIP-375 2-of-3 FROST Signer";
+    preferred-width: 1400px;
+    preferred-height: 900px;
+    min-width: 1400px;
+    min-height: 700px;
+
+    in-out property <string> workflow-state: "Init";
+    in-out property <bool> has-pending-parties: false;
+    in-out property <string> selected-party: "";
+    in-out property <[string]> available-parties;
+    in-out property <bool> has-psbt: false;
+    in-out property <[PsbtField]> global-fields: [];
+    in-out property <[PsbtField]> input-fields: [];
+    in-out property <[PsbtField]> output-fields: [];
+    in-out property <TransactionSummary> tx-summary: {
+        total-input: 0, total-output: 0, fee: 0, num-inputs: 0, num-outputs: 0,
+    };
+    in-out property <PhaseProgress> phase-progress: {
+        contribute-done: 0, signed-done: 0,
+    };
+    in-out property <string> schnorr-sig: "";
+
+    callback create-psbt();
+    callback contribute(string);
+    callback partial-sign(string);
+    callback extract();
+    callback export-psbt();
+    callback reset();
+
+    pure function is-contribute-phase() -> bool {
+        workflow-state == "ContributeInProgress(0)" || workflow-state == "ContributeInProgress(1)"
+    }
+    pure function is-signing-phase() -> bool {
+        workflow-state == "OutputDerived" || workflow-state == "SigningInProgress(1)"
+    }
+
+    VerticalBox {
+        Rectangle {
+            height: 60px;
+            background: #343434;
+            HorizontalBox {
+                padding: 16px;
+                Text { text: "BIP-375 2-of-3 FROST Signer"; font-size: 20px; font-weight: 700; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: workflow-state; font-size: 16px; font-weight: 700; }
+            }
+        }
+
+        HorizontalBox {
+            vertical-stretch: 1;
+            Rectangle {
+                width: 360px;
+                background: #424242;
+                VerticalBox {
+                    padding: 16px;
+                    spacing: 14px;
+                    Text { text: "Threshold Workflow"; font-size: 24px; font-weight: 700; }
+                    Text {
+                        text: "Choose any two distinct signers. Only those signers may complete round two.";
+                        wrap: word-wrap;
+                        color: #dddddd;
+                    }
+                    Rectangle { height: 1px; background: #666666; }
+                    MenuButton {
+                        text: "1. Create FROST PSBT";
+                        enabled: workflow-state == "Init" || workflow-state == "Extracted";
+                        clicked => { root.create-psbt(); }
+                    }
+                    if has-pending-parties: HorizontalBox {
+                        preferred-height: 40px;
+                        max-height: 40px;
+                        Text { text: "Signer:"; vertical-alignment: center; }
+                        ComboBox { model: available-parties; current-value <=> selected-party; }
+                    }
+                    MenuButton {
+                        text: "2. Contribute ECDH + Commitment";
+                        enabled: selected-party != "" && root.is-contribute-phase();
+                        clicked => { root.contribute(selected-party); }
+                    }
+                    MenuButton {
+                        text: "3. Create FROST Signature Share";
+                        enabled: selected-party != "" && root.is-signing-phase();
+                        clicked => { root.partial-sign(selected-party); }
+                    }
+                    MenuButton {
+                        text: "4. Aggregate and Extract";
+                        enabled: workflow-state == "PartialSigningComplete";
+                        clicked => { root.extract(); }
+                    }
+                    Rectangle { height: 1px; background: #666666; }
+                    MenuButton { text: "Export PSBT"; enabled: has-psbt; clicked => { root.export-psbt(); } }
+                    MenuButton { text: "Reset"; clicked => { root.reset(); } }
+                    Rectangle { vertical-stretch: 1; }
+                    Text { text: "Round 1: " + phase-progress.contribute-done + "/2"; }
+                    Text { text: "Round 2: " + phase-progress.signed-done + "/2"; }
+                }
+            }
+
+            Rectangle {
+                background: #4a4a4a;
+                horizontal-stretch: 1;
+                if !has-psbt: VerticalBox {
+                    alignment: center;
+                    Text { text: "No PSBT created"; font-size: 20px; horizontal-alignment: center; }
+                    Text { text: "Create one to begin the 2-of-3 workflow"; color: #aaaaaa; horizontal-alignment: center; }
+                }
+                if has-psbt: VerticalBox {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "PSBT Properties"; font-size: 24px; font-weight: 700; }
+                    view := ScrollView {
+                        VerticalBox {
+                            width: view.visible-width;
+                            spacing: 8px;
+                            if global-fields.length > 0: Text { text: "Global Fields"; font-size: 18px; font-weight: 700; }
+                            for field in global-fields: FieldRow { field: field; }
+                            if input-fields.length > 0: Text { text: "Input Fields"; font-size: 18px; font-weight: 700; }
+                            for field in input-fields: FieldRow { field: field; }
+                            if output-fields.length > 0: Text { text: "Output Fields"; font-size: 18px; font-weight: 700; }
+                            for field in output-fields: FieldRow { field: field; }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 82px;
+            background: #383838;
+            HorizontalBox {
+                padding: 12px;
+                spacing: 18px;
+                if has-psbt: Text { text: "Inputs: " + tx-summary.total-input + " sats"; }
+                if has-psbt: Text { text: "Outputs: " + tx-summary.total-output + " sats"; }
+                if has-psbt: Text { text: "Fee: " + tx-summary.fee + " sats"; }
+                if schnorr-sig != "": Text { text: "Schnorr: " + schnorr-sig; overflow: elide; color: #77dd77; }
+            }
+        }
+    }
+}

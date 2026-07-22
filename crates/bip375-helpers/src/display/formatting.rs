@@ -101,8 +101,12 @@ pub fn key_type_name(category: FieldCategory, key_type: u64) -> &'static str {
             0x1e => "PSBT_IN_SP_DLEQ",                   // BIP-375
             0x1f => "PSBT_IN_SP_SPEND_BIP32_DERIVATION", // BIP-376
             0x20 => "PSBT_IN_SP_TWEAK",                  // BIP-376
-            0x21 => "PSBT_IN_SP_PARTIAL_ECDH_SHARE", // proposed (MuSig2 SP)
-            0x22 => "PSBT_IN_SP_PARTIAL_DLEQ",       // proposed (MuSig2 SP)
+            0x21 => "PSBT_IN_SP_PARTIAL_ECDH_SHARE",     // proposed (MuSig2 SP)
+            0x22 => "PSBT_IN_SP_PARTIAL_DLEQ",           // proposed (MuSig2 SP)
+            0x30 => "PSBT_IN_FROST_CONFIGURATION",       // provisional FROST
+            0x31 => "PSBT_IN_FROST_PARTICIPANT_COMMITMENT", // provisional FROST
+            0x32 => "PSBT_IN_FROST_SIGNATURE_SHARE",     // provisional FROST
+            0x33 => "PSBT_IN_FROST_VERIFYING_SHARE",     // provisional FROST
             _ => "PSBT_IN_UNKNOWN",
         },
         FieldCategory::Output => match key_type {
@@ -115,8 +119,9 @@ pub fn key_type_name(category: FieldCategory, key_type: u64) -> &'static str {
             0x06 => "PSBT_OUT_TAP_TREE",
             0x07 => "PSBT_OUT_TAP_BIP32_DERIVATION",
             0x08 => "PSBT_OUT_MUSIG2_PARTICIPANT_PUBKEYS",
-            0x09 => "PSBT_OUT_SP_V0_INFO",  // BIP-375
-            0x0a => "PSBT_OUT_SP_V0_LABEL", // BIP-375
+            0x09 => "PSBT_OUT_SP_V0_INFO",               // BIP-375
+            0x0a => "PSBT_OUT_SP_V0_LABEL",              // BIP-375
+            0x20 => "PSBT_OUT_FROST_PARTICIPANT_SHARES", // provisional FROST
             PSBT_OUT_DNSSEC_PROOF => "PSBT_OUT_DNSSEC_PROOF", // BIP-353
             _ => "PSBT_OUT_UNKNOWN",
         },
@@ -318,6 +323,23 @@ mod tests {
     }
 
     #[test]
+    fn test_provisional_frost_field_names() {
+        let input_fields = [
+            (0x30, "PSBT_IN_FROST_CONFIGURATION"),
+            (0x31, "PSBT_IN_FROST_PARTICIPANT_COMMITMENT"),
+            (0x32, "PSBT_IN_FROST_SIGNATURE_SHARE"),
+            (0x33, "PSBT_IN_FROST_VERIFYING_SHARE"),
+        ];
+        for (key_type, expected) in input_fields {
+            assert_eq!(key_type_name(FieldCategory::Input, key_type), expected);
+        }
+        assert_eq!(
+            key_type_name(FieldCategory::Output, 0x20),
+            "PSBT_OUT_FROST_PARTICIPANT_SHARES"
+        );
+    }
+
+    #[test]
     fn test_format_dnssec_proof_short() {
         // Format: <length-byte><dns_name><proof_data>
         let dns_name = b"user@example.com";
@@ -346,5 +368,4 @@ mod tests {
         let result = format_dnssec_proof(&data);
         assert!(result.contains("Invalid DNSSEC proof"));
     }
-
 }

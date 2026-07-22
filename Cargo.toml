@@ -4,6 +4,7 @@ members = [
     "crates/bip375-helpers",
     "crates/spdk-uniffi",
     "examples/hardware-signer",
+    "examples/frost-signer",
     "examples/multi-signer",
     "examples/musig2-signer",
     "tools/psbt-viewer",

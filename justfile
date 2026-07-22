@@ -77,6 +77,24 @@ uniffi-example:
 musig2:
   cargo r -p musig2-signer
 
+[group('frost')]
+frost:
+  cargo r -p frost-signer
+
+# Generate a discoverable BIP-375 PSBT headless for validate-outputs testing
+[group('frost')]
+frost-gen:
+  cargo r -p frost-signer -- --generate
+
+# Generate then scan the PSBT as the recipient to prove discoverability
+[group('frost')]
+frost-validate: frost-gen
+  #!/usr/bin/env bash
+  set -euo pipefail
+  addr=$(sed -n '1p' examples/frost-signer/output/frost-sp.txt)
+  key=$(sed -n '2p' examples/frost-signer/output/frost-sp.txt)
+  cargo r -p validate-outputs -- examples/frost-signer/output/frost-sp.psbt --address "$addr" --scan-key "$key"
+
 # Generate documentation.
 docsrs *flags:
   RUSTDOCFLAGS="--cfg docsrs -D warnings -D rustdoc::broken-intra-doc-links" cargo +{{NIGHTLY_VERSION}} doc --all-features {{flags}}
