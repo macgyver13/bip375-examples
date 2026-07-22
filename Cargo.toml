@@ -4,6 +4,7 @@ members = [
     "crates/bip375-helpers",
     "crates/spdk-uniffi",
     "examples/hardware-signer",
+    "examples/frost-signer",
     "examples/multi-signer",
     "examples/musig2-signer",
     "tools/psbt-viewer",
@@ -18,6 +19,7 @@ repository = "https://github.com/bitcoin/bips"
 
 [workspace.dependencies]
 bitcoin = "0.32.6"
+frost-secp256k1-tr = "3.0.0"
 psbt = { git = "https://github.com/macgyver13/spdk.git", branch = "musig2-working" }
 # Native PSBT v2 types/signing used directly by examples (matches spdk's pin)
 psbt-v2 = { git = "https://gitea.bitcoin.ninja/macgyver/rust-psbt.git", branch = "musig2-working", features = ["miniscript", "musig2", "silent-payments"] }
