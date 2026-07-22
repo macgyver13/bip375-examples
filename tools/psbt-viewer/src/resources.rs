@@ -11,7 +11,7 @@ pub fn load_test_vectors() -> Result<String, String> {
     }
 
     // Strategy 2: Use compile-time embedded version as fallback
-    const EMBEDDED_TEST_VECTORS: &str = include_str!("../../../../bip375_test_vectors.json");
+    const EMBEDDED_TEST_VECTORS: &str = include_str!("../../../../bips/bip-0375/bip375_test_vectors.json");
     Ok(EMBEDDED_TEST_VECTORS.to_string())
 }
 

@@ -7,7 +7,7 @@ pub enum Bip375Error {
     InvalidData,
     SerializationError,
     CryptoError,
-    IoError,
+    IoError { message: String },
     ValidationError,
     InvalidAddress,
     InvalidKey,
@@ -22,7 +22,7 @@ impl fmt::Display for Bip375Error {
             Bip375Error::InvalidData => write!(f, "Invalid data"),
             Bip375Error::SerializationError => write!(f, "Serialization error"),
             Bip375Error::CryptoError => write!(f, "Cryptographic operation failed"),
-            Bip375Error::IoError => write!(f, "I/O operation failed"),
+            Bip375Error::IoError { message } => write!(f, "I/O operation failed: {message}"),
             Bip375Error::ValidationError => write!(f, "Validation failed"),
             Bip375Error::InvalidAddress => write!(f, "Invalid address"),
             Bip375Error::InvalidKey => write!(f, "Invalid key"),
@@ -59,7 +59,9 @@ impl From<psbt::Error> for Bip375Error {
             psbt::Error::Bitcoin(_) => Bip375Error::PsbtError,
             psbt::Error::Secp256k1(_) => Bip375Error::CryptoError,
             psbt::Error::Hex(_) => Bip375Error::InvalidData,
-            psbt::Error::Io(_) => Bip375Error::IoError,
+            psbt::Error::Io(e) => Bip375Error::IoError {
+                message: e.to_string(),
+            },
             psbt::Error::Other(_) => Bip375Error::PsbtError,
         }
     }
@@ -70,21 +72,26 @@ impl From<bip375_helpers::io::IoError> for Bip375Error {
     fn from(err: bip375_helpers::io::IoError) -> Self {
         use bip375_helpers::io::IoError;
         match err {
-            IoError::Io(_) => Bip375Error::IoError,
+            IoError::Io(e) => Bip375Error::IoError {
+                message: e.to_string(),
+            },
             IoError::Json(_) => Bip375Error::SerializationError,
             IoError::Psbt(e) => e.into(),
             IoError::Hex(_) => Bip375Error::InvalidData,
             IoError::InvalidFormat(_) => Bip375Error::ValidationError,
-            IoError::NotFound(_) => Bip375Error::IoError,
-            IoError::Other(_) => Bip375Error::IoError,
+            IoError::NotFound(message) | IoError::Other(message) => {
+                Bip375Error::IoError { message }
+            }
         }
     }
 }
 
 // Standard I/O error conversion
 impl From<std::io::Error> for Bip375Error {
-    fn from(_: std::io::Error) -> Self {
-        Bip375Error::IoError
+    fn from(err: std::io::Error) -> Self {
+        Bip375Error::IoError {
+            message: err.to_string(),
+        }
     }
 }
 

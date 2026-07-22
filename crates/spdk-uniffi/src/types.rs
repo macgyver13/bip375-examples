@@ -381,7 +381,8 @@ impl Psbt {
                 let Some(pk_bytes) = &u.public_key else {
                     continue;
                 };
-                let pubkey = PublicKey::from_slice(pk_bytes).map_err(|_| Bip375Error::InvalidKey)?;
+                let pubkey =
+                    PublicKey::from_slice(pk_bytes).map_err(|_| Bip375Error::InvalidKey)?;
                 let fingerprint = Fingerprint::from(
                     u.master_fingerprint
                         .as_deref()
@@ -415,10 +416,7 @@ impl Psbt {
     /// Delegates to spdk `multi_signer_generate_ecdh_shares`. Contributes per-input
     /// shares only for the inputs this `spend_key` owns; other inputs are left for
     /// their owners to sign.
-    pub fn generate_multi_signer_ecdh_shares(
-        &self,
-        spend_key: Vec<u8>,
-    ) -> Result<(), Bip375Error> {
+    pub fn generate_multi_signer_ecdh_shares(&self, spend_key: Vec<u8>) -> Result<(), Bip375Error> {
         let secp = Secp256k1::new();
         let spend_key = SecretKey::from_slice(&spend_key).map_err(|_| Bip375Error::InvalidKey)?;
         self.with_inner(|p| p.multi_signer_generate_ecdh_shares(&secp, spend_key))?;

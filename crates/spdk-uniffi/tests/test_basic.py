@@ -2,6 +2,10 @@
 Basic tests for BIP-375 Python bindings.
 """
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from spdk_psbt import *
@@ -201,6 +205,34 @@ class TestFileIO:
         loaded = SilentPaymentPsbt.load(file_path)
         assert loaded.num_inputs() == sample_psbt.num_inputs()
         assert loaded.num_outputs() == sample_psbt.num_outputs()
+
+    def test_example_creates_output_directory(self, tmp_path):
+        """The example creates its output directory before saving metadata."""
+        example_path = Path(__file__).parents[1] / "examples" / "simple_example.py"
+
+        subprocess.run(
+            [sys.executable, str(example_path)],
+            check=True,
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+
+        json_path = tmp_path / "output" / "transfer.json"
+        assert json_path.is_file()
+        loaded = SilentPaymentPsbt.load(str(json_path))
+        assert loaded.num_inputs() == 1
+        assert loaded.num_outputs() == 1
+
+    def test_save_reports_io_error_details(self, sample_psbt, tmp_path):
+        """I/O failures retain the operating system's error message."""
+        parent_file = tmp_path / "not-a-directory"
+        parent_file.write_text("not a directory")
+
+        with pytest.raises(Bip375Error.IoError) as error:
+            sample_psbt.save(str(parent_file / "test.json"), None)
+
+        assert "not a directory" in str(error.value).lower()
 
 
 if __name__ == "__main__":

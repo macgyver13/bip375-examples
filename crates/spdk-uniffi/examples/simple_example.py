@@ -10,6 +10,8 @@ This example shows:
 5. Saving/loading PSBTs with metadata
 """
 
+from pathlib import Path
+
 # Import the role functions directly from spdk_psbt
 from spdk_psbt import (
     bip352_compute_ecdh_share,
@@ -146,12 +148,13 @@ def main():
     )
 
     # Save as JSON with metadata
-    json_path = "output/transfer.json"
-    psbt.save(json_path, metadata)
+    json_path = Path("output/transfer.json")
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    psbt.save(str(json_path), metadata)
     print(f"✓ Saved PSBT with metadata to {json_path}")
 
     # Load back
-    loaded_psbt = SilentPaymentPsbt.load(json_path)
+    loaded_psbt = SilentPaymentPsbt.load(str(json_path))
     print(f"✓ Loaded PSBT: {loaded_psbt.num_inputs()} inputs, {loaded_psbt.num_outputs()} outputs")
 
 

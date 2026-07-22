@@ -157,8 +157,8 @@ fn party_controlled_inputs(
             apply_tweak_to_privkey(&spend_privkey, &tweak)?
         } else {
             let (candidate_privkey, candidate_pubkey) = simple_wallet.input_key_pair(utxo_id as u32);
-            //TODO: is this used?
             if witness_utxo.script_pubkey.is_p2tr() {
+                //TODO: is this used?
                 resolve_regular_p2tr_privkey(secp, candidate_privkey, candidate_pubkey)?
             } else if witness_utxo.script_pubkey.is_p2wpkh() {
                 candidate_privkey
