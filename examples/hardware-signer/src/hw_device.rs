@@ -18,7 +18,7 @@ use bitcoin::taproot::TapTweakHash;
 use bitcoin::{CompressedPublicKey, NetworkKind, ScriptBuf};
 use psbt::roles::{Bip375UpdaterExt, SignerPsbtExt};
 use psbt::Psbt;
-use secp256k1::{Parity, PublicKey, Secp256k1, SecretKey};
+use secp256k1::{Parity, PublicKey, Scalar, Secp256k1, SecretKey};
 use std::collections::BTreeMap;
 use std::io::{self, Write};
 
@@ -532,12 +532,29 @@ impl HardwareDevice {
         }
 
         // Resolve the private key for each hardware-controlled input.
-        // SP inputs use the spend key (the PSBT tweak is applied by the signer); regular inputs
-        // use the matching derived key (taproot-tweaked output key for P2TR, raw key for P2WPKH).
+        // SP inputs contribute the tweaked signing key d = spend_privkey + sp_tweak (BIP-376
+        // §Signer), negated to even parity (BIP-352 §3 normalizes every taproot input key so
+        // the x-only sum matches the even-parity output key read from the scriptPubKey). This
+        // is the key BIP-352 ECDH is computed against. Actual signing still goes through
+        // `sign_sp_inputs`, which applies the tweak itself from the untweaked `spend_privkey`;
+        // this tweaked-and-normalized copy is only consumed by the per-input ECDH helper used
+        // in attack-mode share generation. Regular inputs use the matching derived key
+        // (taproot-tweaked output key for P2TR, raw key for P2WPKH).
         let mut controlled: Vec<ControlledInput> = Vec::new();
         for &input_idx in &hw_controlled_inputs {
-            if psbt.inputs[input_idx].sp_tweak.is_some() {
-                controlled.push((input_idx, spend_privkey, true));
+            if let Some(tweak_bytes) = psbt.inputs[input_idx].sp_tweak {
+                let tweak = Scalar::from_be_bytes(tweak_bytes)
+                    .map_err(|e| format!("Invalid sp_tweak: {}", e))?;
+                let tweaked_privkey = spend_privkey
+                    .add_tweak(&tweak)
+                    .map_err(|e| format!("Failed to apply sp_tweak: {}", e))?;
+                let (_, parity) = tweaked_privkey.x_only_public_key(&secp);
+                let normalized_privkey = if parity == Parity::Odd {
+                    tweaked_privkey.negate()
+                } else {
+                    tweaked_privkey
+                };
+                controlled.push((input_idx, normalized_privkey, true));
                 continue;
             }
 
@@ -605,10 +622,13 @@ impl HardwareDevice {
             println!("   Signing inputs...\n");
         }
 
-        // ECDH share generation (hybrid). With honest scan keys, SP inputs use the upstream
-        // multi-signer share generator and non-SP inputs use the per-input helper. The
-        // wrong-scan-key attacks instead route every controlled input through the per-input
-        // helper so the attacker's scan key can be injected explicitly.
+        // ECDH share generation (hybrid). With honest scan keys, the upstream multi-signer
+        // generator resolves ownership against a single spend key, so it covers SP-tweaked
+        // inputs directly. Ordinary inputs are keyed off this wallet's per-UTXO derived key
+        // (`hw_wallet.input_key_pair`), not the spend key, so the generator can't resolve them;
+        // fill those gaps per-input with the helper. The wrong-scan-key attacks instead route
+        // every controlled input through the per-input helper so the attacker's scan key can be
+        // injected explicitly.
         if attack.uses_wrong_scan_key() {
             for (idx, privkey, _is_sp) in &controlled {
                 for scan_key in &scan_keys {
@@ -617,13 +637,12 @@ impl HardwareDevice {
                 }
             }
         } else {
-            // Best effort: the upstream multi-signer covers SP inputs whose tweaked spend key it
-            // can resolve. It does not own inputs keyed off the untweaked spend pubkey declared in
-            // sp_spend_bip32_derivation, so fill any remaining (idx, scan_key) gaps per-input with
-            // the helper, which keys the share to the pubkey compute_sp_outputs expects.
             psbt.multi_signer_generate_ecdh_shares(&secp, spend_privkey)
                 .map_err(|e| format!("Multi-signer ECDH generation failed: {}", e))?;
-            for (idx, privkey, _is_sp) in &controlled {
+            for (idx, privkey, is_sp) in &controlled {
+                if *is_sp {
+                    continue;
+                }
                 for scan_key in &scan_keys {
                     if !psbt.inputs[*idx]
                         .sp_ecdh_shares
