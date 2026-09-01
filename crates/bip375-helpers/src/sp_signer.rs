@@ -14,7 +14,7 @@
 use bitcoin::CompressedPublicKey;
 use psbt::core::utils::to_psbt_dleq;
 use psbt::generate_dleq_proof;
-use psbt_v2::v2::Input;
+use psbt_v2::Input;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 /// Add a per-input ECDH share and DLEQ proof for one recipient scan key.

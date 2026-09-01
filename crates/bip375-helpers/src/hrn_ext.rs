@@ -1,7 +1,7 @@
 //! BIP-375 Extension Traits and PSBT Accessors
 //!
 //! This module provides extension traits that add BIP-375 silent payment functionality
-//! to the `psbt_v2::v2::Psbt` type, along with convenience accessor functions for
+//! to the `psbt_v2::psbt::Psbt` type, along with convenience accessor functions for
 //! common PSBT field access patterns.
 //!
 //! # Module Contents

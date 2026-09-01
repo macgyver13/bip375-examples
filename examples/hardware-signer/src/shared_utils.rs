@@ -14,7 +14,7 @@ use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::{Amount, CompressedPublicKey, ScriptBuf, TxOut};
 use psbt::roles::Bip375UpdaterExt;
 use psbt::Psbt;
-use psbt_v2::v2::{Input, Output};
+use psbt_v2::{Input, Output};
 use secp256k1::PublicKey;
 use silentpayments::{Network, SilentPaymentAddress, SpVersion};
 

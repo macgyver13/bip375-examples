@@ -11,7 +11,8 @@ use psbt::roles::{
     Bip375UpdaterExt, ExtractorPsbtExt, InputWitnessFinalizerPsbtExt, SignerPsbtExt,
 };
 use psbt::PsbtKey;
-use psbt_v2::v2::{dleq, Creator, Input, Output};
+use psbt_v2::psbt::Creator;
+use psbt_v2::{dleq, Input, Output};
 use psbt_v2::PsbtSighashType;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use silentpayments::SpVersion;

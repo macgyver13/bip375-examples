@@ -8,7 +8,7 @@ use crate::crypto::{
     script_type_string, tweaked_key_to_p2tr_script,
 };
 use bitcoin::key::TapTweak;
-use psbt_v2::v2::Input;
+use psbt_v2::Input;
 
 use bip39::{Language, Mnemonic};
 use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};

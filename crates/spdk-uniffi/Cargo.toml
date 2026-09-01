@@ -17,13 +17,13 @@ psbt.workspace = true
 psbt-v2.workspace = true
 
 # UniFFI
-uniffi = { version = "0.28", features = ["build"] }
+uniffi = { version = "0.30", features = ["build"] }
 
 # Serialization
 hex = "0.4"
 
 [build-dependencies]
-uniffi = { version = "0.28", features = ["build"] }
+uniffi = { version = "0.30", features = ["build"] }
 
 [dev-dependencies]
-uniffi = { version = "0.28", features = ["bindgen-tests"] }
+uniffi = { version = "0.30", features = ["bindgen-tests"] }

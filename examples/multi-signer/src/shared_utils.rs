@@ -11,7 +11,7 @@ use bip375_helpers::crypto::{pubkey_to_p2wpkh_script, script_type_string};
 use bip375_helpers::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
 use bitcoin::Amount;
 use bitcoin::{ScriptBuf, TxOut};
-use psbt_v2::v2::{Input, Output};
+use psbt_v2::{Input, Output};
 use secp256k1::SecretKey;
 use silentpayments::{Network, SilentPaymentAddress, SpVersion};
 

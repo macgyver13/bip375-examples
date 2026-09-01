@@ -11,7 +11,7 @@ use bitcoin::taproot::TapTweakHash;
 use bitcoin::{CompressedPublicKey, NetworkKind, Transaction};
 use psbt::roles::{Bip375UpdaterExt, ExtractorPsbtExt, SignerPsbtExt};
 use psbt::Psbt;
-use psbt_v2::v2::Input;
+use psbt_v2::Input;
 use secp256k1::{Parity, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::collections::BTreeMap;

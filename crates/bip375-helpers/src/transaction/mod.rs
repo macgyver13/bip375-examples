@@ -6,7 +6,7 @@ use bitcoin::{Amount, OutPoint, ScriptBuf, TxOut};
 use silentpayments::SilentPaymentAddress;
 use psbt::roles::ConstructorPsbtExt;
 use psbt::Psbt;
-use psbt_v2::v2::{Input, Output};
+use psbt_v2::{Input, Output};
 
 /// Assemble a PSBT from built inputs and outputs using the new Constructor role.
 ///
