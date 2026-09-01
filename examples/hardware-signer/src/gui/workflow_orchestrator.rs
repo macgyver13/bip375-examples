@@ -6,7 +6,7 @@
 use super::app_state::*;
 use crate::{hw_device::HardwareDevice, wallet_coordinator::WalletCoordinator};
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
-use psbt::Psbt;
+use psbt_v2::Psbt;
 use std::collections::HashSet;
 
 /// Orchestrates workflow steps and captures PSBT changes

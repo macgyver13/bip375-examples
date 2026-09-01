@@ -13,10 +13,9 @@ use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::{Amount, CompressedPublicKey, ScriptBuf, TxOut};
 use psbt::roles::Bip375UpdaterExt;
-use psbt::Psbt;
-use psbt_v2::v2::{Input, Output};
+use psbt_v2::{Input, Output, Psbt, SpV0Info};
 use secp256k1::PublicKey;
-use silentpayments::{Network, SilentPaymentAddress, SpVersion};
+use silentpayments::{Network, SilentPaymentCode};
 
 /// Read scan keys (compressed secp pubkeys) from every SP output's `sp_v0_info`.
 ///
@@ -24,8 +23,9 @@ use silentpayments::{Network, SilentPaymentAddress, SpVersion};
 pub fn output_scan_keys(psbt: &Psbt) -> Vec<PublicKey> {
     psbt.outputs
         .iter()
-        .filter_map(|o| o.sp_v0_info.as_ref())
-        .filter_map(|b| PublicKey::from_slice(&b[..33]).ok())
+        .filter_map(|o| o.sp_v0_info)
+        .map(|info| info.scan_key())
+        .map(|scan| scan.0)
         .collect()
 }
 
@@ -33,18 +33,8 @@ pub fn output_scan_keys(psbt: &Psbt) -> Vec<PublicKey> {
 ///
 /// Local replacement for the old `Bip375PsbtExt::get_output_sp_info()`.
 pub fn output_sp_info(output: &Output) -> Option<(PublicKey, PublicKey)> {
-    let b = output.sp_v0_info.as_ref()?;
-    let scan = PublicKey::from_slice(&b[..33]).ok()?;
-    let spend = PublicKey::from_slice(&b[33..]).ok()?;
-    Some((scan, spend))
-}
-
-/// Build the 66-byte `PSBT_OUT_SP_V0_INFO` payload (scan_key || spend_key).
-fn sp_v0_info_bytes(address: &SilentPaymentAddress) -> [u8; 66] {
-    let mut bytes = [0u8; 66];
-    bytes[..33].copy_from_slice(&address.get_scan_key().serialize());
-    bytes[33..].copy_from_slice(&address.get_spend_key().serialize());
-    bytes
+    let info = output.sp_v0_info?;
+    Some((info.scan_key().0, info.spend_key().0))
 }
 
 /// Convert a raw `Vec<u32>` derivation path (with hardened bits set) to `DerivationPath`.
@@ -53,12 +43,15 @@ fn to_derivation_path(raw: Vec<u32>) -> DerivationPath {
 }
 
 /// Build a native silent-payment `Output` carrying `sp_v0_info` (+ optional label).
-fn sp_output(amount: u64, address: &SilentPaymentAddress, label: Option<u32>) -> Output {
+fn sp_output(amount: u64, address: &SilentPaymentCode, label: Option<u32>) -> Output {
     let mut o = Output::new(TxOut {
         value: Amount::from_sat(amount),
         script_pubkey: ScriptBuf::new(),
     });
-    o.sp_v0_info = Some(sp_v0_info_bytes(address));
+    o.sp_v0_info = Some(SpV0Info::new(
+        CompressedPublicKey(address.scan_key()),
+        CompressedPublicKey(address.m_pubkey()),
+    ));
     o.sp_v0_label = label;
     o
 }
@@ -81,17 +74,17 @@ pub fn get_hardware_wallet(mnemonic: Option<&str>) -> Result<SimpleWallet, Strin
 }
 
 /// Get the recipient address for silent payment
-pub fn get_recipient_address() -> SilentPaymentAddress {
+pub fn get_recipient_address() -> SilentPaymentCode {
     let wallet = SimpleWallet::new(RECIPIENT_SEED);
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, SpVersion::ZERO)
+    SilentPaymentCode::new_v0(scan_key, spend_key, Network::Mainnet)
 }
 
 /// Get the attacker's address (for attack simulation)
-pub fn get_attacker_address() -> SilentPaymentAddress {
+pub fn get_attacker_address() -> SilentPaymentCode {
     let wallet = SimpleWallet::new(ATTACKER_SEED);
     let (scan_key, spend_key) = wallet.scan_spend_keys();
-    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, SpVersion::ZERO)
+    SilentPaymentCode::new_v0(scan_key, spend_key, Network::Mainnet)
 }
 
 /// Get the attacker's wallet (for attack simulation — spend private key access)
@@ -143,7 +136,7 @@ pub fn create_transaction_outputs(
     let (scan_key, spend_key) = hw_wallet.scan_spend_keys();
 
     // Change output: Silent payment back to hardware wallet with label=0 (reserved for change per BIP 352)
-    let change_address = SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, SpVersion::ZERO);
+    let change_address = SilentPaymentCode::new_v0(scan_key, spend_key, Network::Mainnet);
 
     let mut outputs = Vec::new();
     if config.change_amount > 0 {

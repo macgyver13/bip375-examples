@@ -128,7 +128,7 @@ pub fn dleq_generate_proof(
     let sk = SecretKey::from_slice(&privkey).map_err(|_| Bip375Error::InvalidKey)?;
     let pk = PublicKey::from_slice(&pubkey).map_err(|_| Bip375Error::InvalidKey)?;
     let aux: [u8; 32] = aux_rand.try_into().map_err(|_| Bip375Error::InvalidData)?;
-    let proof = psbt::generate_dleq_proof(&secp, &sk, &pk, &aux, None)
+    let proof = rust_dleq::generate_dleq_proof(&secp, &sk, &pk, &aux, None)
         .map_err(|_| Bip375Error::SigningError)?;
     Ok(proof.as_bytes().to_vec())
 }
@@ -146,8 +146,8 @@ pub fn dleq_verify_proof(
     let proof_array: [u8; 64] = proof_bytes
         .try_into()
         .map_err(|_| Bip375Error::InvalidData)?;
-    let proof = psbt::DleqProof::from(proof_array);
-    psbt::verify_dleq_proof(&secp, &pk_a, &pk_b, &pk_c, &proof, None)
+    let proof = rust_dleq::DleqProof::from(proof_array);
+    rust_dleq::verify_dleq_proof(&secp, &pk_a, &pk_b, &pk_c, &proof, None)
         .map_err(|_| Bip375Error::InvalidProof)
 }
 

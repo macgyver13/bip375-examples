@@ -157,6 +157,12 @@ interface SilentPaymentPsbt {
   void generate_multi_signer_ecdh_shares(bytes spend_key);
 
   [Throws=Bip375Error]
+  void generate_single_signer_ecdh_shares_with_keys(sequence<bytes> spend_keys);
+
+  [Throws=Bip375Error]
+  void generate_multi_signer_ecdh_shares_with_keys(sequence<bytes> spend_keys);
+
+  [Throws=Bip375Error]
   void sign_input(u32 input_index, bytes privkey);
 
   [Throws=Bip375Error]

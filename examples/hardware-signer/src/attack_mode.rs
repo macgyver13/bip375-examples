@@ -17,11 +17,12 @@
 //! any production code path.
 
 use crate::shared_utils::{get_recipient_address, output_scan_keys, output_sp_info};
-use bitcoin::{NetworkKind, ScriptBuf};
-use psbt::roles::SignerPsbtExt;
-use psbt::Psbt;
+use bitcoin::{CompressedPublicKey, NetworkKind, ScriptBuf};
+use psbt_v2::SpV0Info;
+use psbt::roles::SpSignerExt;
+use psbt_v2::Psbt;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
-use silentpayments::SilentPaymentAddress;
+use silentpayments::SilentPaymentCode;
 use std::collections::BTreeMap;
 
 /// Which attack variant the firmware is simulating.
@@ -74,10 +75,10 @@ type ControlledInput = (usize, SecretKey, bool);
 /// hardware wallet's own scan key (robust to BIP-375 output shuffling).
 pub fn prepare_scan_keys(
     psbt: &Psbt,
-    attacker_address: &SilentPaymentAddress,
+    attacker_address: &SilentPaymentCode,
     hw_scan_key: &PublicKey,
 ) -> Vec<PublicKey> {
-    let attacker_scan_key = attacker_address.get_scan_key();
+    let attacker_scan_key = attacker_address.scan_key();
     output_scan_keys(psbt)
         .into_iter()
         .map(|sk| {
@@ -105,10 +106,10 @@ pub fn finalize_sp_outputs_malicious(
     secp: &Secp256k1<secp256k1::All>,
     psbt: &mut Psbt,
     hw_scan_key: &PublicKey,
-    attacker_address: &SilentPaymentAddress,
+    attacker_address: &SilentPaymentCode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let attacker_scan_key = attacker_address.get_scan_key();
-    let attacker_spend_key = attacker_address.get_spend_key();
+    let attacker_scan_key = attacker_address.scan_key();
+    let attacker_spend_key = attacker_address.m_pubkey();
 
     // Recipient output = the SP output whose scan key is not the hardware wallet's.
     let recipient_idx = psbt
@@ -121,13 +122,12 @@ pub fn finalize_sp_outputs_malicious(
         })
         .ok_or("Recipient SP output not found")?;
 
-    let mut sp_info_bytes = [0u8; 66];
-    sp_info_bytes[..33].copy_from_slice(&attacker_scan_key.serialize());
-    sp_info_bytes[33..].copy_from_slice(&attacker_spend_key.serialize());
-    psbt.outputs[recipient_idx].sp_v0_info = Some(sp_info_bytes);
+    psbt.outputs[recipient_idx].sp_v0_info = Some(SpV0Info::new(
+        CompressedPublicKey(attacker_scan_key),
+        CompressedPublicKey(attacker_spend_key),
+    ));
 
-    let xonly_map = psbt.compute_sp_outputs(secp)?;
-    psbt.set_sp_scriptpubkey(xonly_map)?;
+    psbt.commit_sp_outputs(secp)?;
 
     println!(
         "   Malicious script_pubkey for recipient output {}: {}",
@@ -203,12 +203,12 @@ pub fn sign_inputs_malicious(
 /// and the output script is recomputed (now spendable by the attacker). The coordinator
 /// catches this by comparing the `sp_v0_info` spend key against the expected recipient.
 pub fn substitute_spend_key(
-    secp: &Secp256k1<secp256k1::All>,
+    _secp: &Secp256k1<secp256k1::All>,
     psbt: &mut Psbt,
-    attacker_address: &SilentPaymentAddress,
+    attacker_address: &SilentPaymentCode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let recipient_scan = get_recipient_address().get_scan_key();
-    let attacker_spend_key = attacker_address.get_spend_key();
+    let recipient_scan = get_recipient_address().scan_key();
+    let attacker_spend_key = attacker_address.m_pubkey();
 
     // Recipient output = the SP output carrying the honest recipient scan key.
     let recipient_idx = psbt
@@ -222,16 +222,18 @@ pub fn substitute_spend_key(
         .ok_or("Recipient SP output not found")?;
 
     // Keep the honest scan key, swap the spend key to the attacker's.
-    let mut sp_info_bytes = psbt.outputs[recipient_idx]
+    let honest_scan_key = psbt.outputs[recipient_idx]
         .sp_v0_info
-        .ok_or("Recipient output missing sp_v0_info")?;
-    sp_info_bytes[33..].copy_from_slice(&attacker_spend_key.serialize());
-    psbt.outputs[recipient_idx].sp_v0_info = Some(sp_info_bytes);
+        .ok_or("Recipient output missing sp_v0_info")?
+        .scan_key();
+    psbt.outputs[recipient_idx].sp_v0_info = Some(SpV0Info::new(
+        honest_scan_key,
+        CompressedPublicKey(attacker_spend_key),
+    ));
 
     // Recompute output scripts: the recipient now uses the honest shared secret with the
     // attacker's spend key, so the script pays a key the attacker controls.
-    let xonly_map = psbt.compute_sp_outputs(secp)?;
-    psbt.set_sp_scriptpubkey(xonly_map)?;
+    // The caller commits output scripts after this metadata mutation.
 
     println!(
         "   Substituted spend key in sp_v0_info for output {}",
@@ -257,9 +259,9 @@ pub fn substitute_spend_key(
 pub fn strip_sp_fields(
     secp: &Secp256k1<secp256k1::All>,
     psbt: &mut Psbt,
-    attacker_address: &SilentPaymentAddress,
+    attacker_address: &SilentPaymentCode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let recipient_scan = get_recipient_address().get_scan_key();
+    let recipient_scan = get_recipient_address().scan_key();
 
     let recipient_idx = psbt
         .outputs
@@ -284,7 +286,7 @@ pub fn strip_sp_fields(
     psbt.global.sp_ecdh_shares.clear();
 
     // Set the recipient script directly to the attacker's plain P2TR address.
-    let attacker_spend_key = attacker_address.get_spend_key();
+    let attacker_spend_key = attacker_address.m_pubkey();
     let (xonly, _) = attacker_spend_key.x_only_public_key();
     let attacker_script = ScriptBuf::new_p2tr(secp, xonly, None);
     psbt.outputs[recipient_idx].script_pubkey = attacker_script.clone();

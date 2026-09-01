@@ -9,7 +9,7 @@ mod test_vector_helper;
 use bip375_helpers::display::{adapter, psbt_analyzer, psbt_io};
 use bip375_helpers::io::load_psbt;
 use slint::Model;
-use psbt::Psbt;
+use psbt_v2::Psbt;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;

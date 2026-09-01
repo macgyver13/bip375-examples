@@ -3,7 +3,7 @@
 //! Manages state for flexible multi-party signing workflow
 
 use bip375_helpers::wallet::MultiPartyConfig;
-use psbt::Psbt;
+use psbt_v2::Psbt;
 use std::collections::HashSet;
 
 // Re-export types from gui-common for convenience

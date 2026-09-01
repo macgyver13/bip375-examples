@@ -31,7 +31,7 @@ def sample_psbt(test_keys):
             txid="a" * 64,
             vout=0,
             amount=100000,
-            script_pubkey=bytes.fromhex("0014") + bytes(20),
+            script_pubkey=bip352_pubkey_to_p2wpkh_script(test_keys["pubkey"]),
             public_key=test_keys["pubkey"],
             sequence=0xfffffffd,
             master_fingerprint=None,
@@ -153,7 +153,7 @@ class TestRoles:
                 txid="a" * 64,
                 vout=0,
                 amount=100000,
-                script_pubkey=bytes.fromhex("0014") + bytes(20),
+                script_pubkey=bip352_pubkey_to_p2wpkh_script(test_keys["pubkey"]),
                 public_key=test_keys["pubkey"],
                 sequence=0xfffffffd,
                 master_fingerprint=None,
@@ -169,6 +169,60 @@ class TestRoles:
         shares = sample_psbt.get_input_ecdh_shares(0)
         assert len(shares) > 0
         assert shares[0].dleq_proof is not None  # DLEQ proof should be included
+
+
+class TestDistinctInputKeys:
+    """A signer holding a different key per input."""
+
+    KEY_1 = bytes.fromhex("00" * 31 + "01")
+    KEY_2 = bytes.fromhex("00" * 31 + "02")
+
+    def _psbt(self, test_keys):
+        pubkey_2 = test_keys["spend_key"]  # 2G
+        inputs = [
+            Utxo(
+                txid=str(i) * 64,
+                vout=0,
+                amount=100000,
+                script_pubkey=bip352_pubkey_to_p2wpkh_script(pubkey),
+                public_key=pubkey,
+                sequence=0xfffffffd,
+                master_fingerprint=None,
+                derivation_path=None,
+            )
+            for i, pubkey in enumerate([test_keys["pubkey"], pubkey_2])
+        ]
+        outputs = [
+            PsbtOutput.SILENT_PAYMENT(
+                amount=190000,
+                address=SilentPaymentAddress(scan_key=test_keys["scan_key"], spend_key=test_keys["spend_key"]),
+                label=None,
+            )
+        ]
+        psbt = SilentPaymentPsbt.create_from_parts(inputs, outputs)
+        # Updater populates the fields the signer resolves ownership from
+        psbt.update_inputs(inputs)
+        return psbt
+
+    def test_single_key_cannot_resolve_both_inputs(self, test_keys):
+        with pytest.raises(Bip375Error.InvalidKey):
+            self._psbt(test_keys).generate_single_signer_ecdh_shares(self.KEY_1)
+
+    def test_global_share_covers_sum_of_keys(self, test_keys):
+        psbt = self._psbt(test_keys)
+        psbt.generate_single_signer_ecdh_shares_with_keys([self.KEY_1, self.KEY_2])
+
+        (share,) = psbt.get_global_ecdh_shares()
+        summed = bytes.fromhex("00" * 31 + "03")
+        assert share.share_point == bip352_compute_ecdh_share(summed, test_keys["scan_key"])
+        assert share.dleq_proof is not None
+
+    def test_partial_shares_for_each_owned_input(self, test_keys):
+        psbt = self._psbt(test_keys)
+        psbt.generate_multi_signer_ecdh_shares_with_keys([self.KEY_1, self.KEY_2])
+
+        assert len(psbt.get_input_ecdh_shares(0)) == 1
+        assert len(psbt.get_input_ecdh_shares(1)) == 1
 
 
 class TestFileIO:

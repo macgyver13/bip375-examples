@@ -4,11 +4,10 @@
 //! utilities for building BIP-375 demonstration applications.
 
 use crate::crypto::{
-    apply_tweak_to_privkey, pubkey_to_p2wpkh_script,
-    script_type_string, tweaked_key_to_p2tr_script,
+    apply_tweak_to_privkey, pubkey_to_p2wpkh_script, script_type_string, tweaked_key_to_p2tr_script,
 };
 use bitcoin::key::TapTweak;
-use psbt_v2::v2::Input;
+use psbt_v2::Input;
 
 use bip39::{Language, Mnemonic};
 use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, Sequence, TxOut, Txid};

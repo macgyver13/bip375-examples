@@ -4,8 +4,8 @@
 
 use super::field_identifier::FieldIdentifier;
 use super::formatting::{self, FieldCategory};
-use psbt::Psbt;
 use crate::display::psbt_analyzer::parse_psbt_raw_fields;
+use psbt_v2::Psbt;
 use std::collections::HashSet;
 
 /// A generic representation of a PSBT field for display
@@ -39,7 +39,13 @@ pub fn extract_display_fields(
             key_data: field.key_data.clone(),
         };
         global_fields.push(create_display_field(
-            identifier, field.key_type, &field.key_data, &field.value_data, highlighted_fields, -1, FieldCategory::Global
+            identifier,
+            field.key_type,
+            &field.key_data,
+            &field.value_data,
+            highlighted_fields,
+            -1,
+            FieldCategory::Global,
         ));
     }
 
@@ -52,7 +58,13 @@ pub fn extract_display_fields(
                 key_data: field.key_data.clone(),
             };
             input_fields.push(create_display_field(
-                identifier, field.key_type, &field.key_data, &field.value_data, highlighted_fields, idx as i32, FieldCategory::Input
+                identifier,
+                field.key_type,
+                &field.key_data,
+                &field.value_data,
+                highlighted_fields,
+                idx as i32,
+                FieldCategory::Input,
             ));
         }
     }
@@ -66,7 +78,13 @@ pub fn extract_display_fields(
                 key_data: field.key_data.clone(),
             };
             output_fields.push(create_display_field(
-                identifier, field.key_type, &field.key_data, &field.value_data, highlighted_fields, idx as i32, FieldCategory::Output
+                identifier,
+                field.key_type,
+                &field.key_data,
+                &field.value_data,
+                highlighted_fields,
+                idx as i32,
+                FieldCategory::Output,
             ));
         }
     }

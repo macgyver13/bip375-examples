@@ -3,7 +3,7 @@
 //! This module defines the single source of truth for the GUI application state.
 
 use bip375_helpers::wallet::TransactionConfig;
-use psbt::Psbt;
+use psbt_v2::Psbt;
 use std::collections::HashSet;
 
 use crate::attack_mode::AttackVariant;

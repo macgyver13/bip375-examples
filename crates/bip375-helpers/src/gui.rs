@@ -2,7 +2,7 @@
 //!
 //! Shared GUI functionality for BIP-375 applications
 
-use psbt::Psbt;
+use psbt_v2::Psbt;
 
 // Re-export the export function from psbt_io for convenience
 pub use crate::display::psbt_io::export_psbt_with_dialog;

@@ -14,7 +14,8 @@ use bip375_helpers::transaction::build_psbt;
 use bip375_helpers::HrnPsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use secp256k1::Secp256k1;
-use psbt::roles::{Bip375UpdaterExt, ExtractorPsbtExt, SignerPsbtExt};
+use psbt::roles::{Bip375UpdaterExt, SpExtractorExt};
+use psbt_v2::Psbt;
 use std::collections::HashSet;
 
 pub struct WalletCoordinator;
@@ -24,7 +25,7 @@ pub struct WalletCoordinator;
 /// The upstream `InputWitnessFinalizerPsbtExt::finalize` only handles taproot inputs (it errors
 /// on the first non-taproot input), so this local helper also builds the standard P2WPKH witness
 /// `[signature, pubkey]`. Mirrors the upstream taproot path for `tap_key_sig` inputs.
-fn finalize_input_witnesses(psbt: &mut psbt::Psbt) -> Result<(), String> {
+fn finalize_input_witnesses(psbt: &mut Psbt) -> Result<(), String> {
     for (i, input) in psbt.inputs.iter_mut().enumerate() {
         if let Some(sig) = input.tap_key_sig {
             let mut witness = bitcoin::Witness::new();
@@ -297,8 +298,8 @@ impl WalletCoordinator {
         let hw_scan_key = hw_wallet.scan_key_pair().1;
         let (hw_scan_pub, hw_spend_pub) = hw_wallet.scan_spend_keys();
         let recipient_address = get_recipient_address();
-        let recipient_scan_key = recipient_address.get_scan_key();
-        let recipient_spend_key = recipient_address.get_spend_key();
+        let recipient_scan_key = recipient_address.scan_key();
+        let recipient_spend_key = recipient_address.m_pubkey();
 
         let expected_scan_keys: HashSet<Vec<u8>> = [
             hw_scan_key.serialize().to_vec(),
@@ -398,24 +399,8 @@ impl WalletCoordinator {
         // errors on missing ECDH coverage, and a script mismatch proves the device did not derive
         // the outputs honestly from the shares it provided.
         println!("  Recomputing SP output scripts from ECDH shares...");
-        let xonly_map = psbt
-            .compute_sp_outputs(&secp)
-            .map_err(|e| format!("SP output recomputation failed: {}", e))?;
-        let mut recomputed = psbt.clone();
-        recomputed
-            .set_sp_scriptpubkey(xonly_map)
-            .map_err(|e| format!("SP output recomputation failed: {}", e))?;
-        for (i, (signed, expected)) in
-            psbt.outputs.iter().zip(recomputed.outputs.iter()).enumerate()
-        {
-            if signed.sp_v0_info.is_some() && signed.script_pubkey != expected.script_pubkey {
-                return Err(format!(
-                    "Attack detected: output {} script does not match the script recomputed from ECDH shares",
-                    i
-                )
-                .into());
-            }
-        }
+        psbt.verify_sp_output_scripts(&secp)
+            .map_err(|e| format!("Attack detected: SP output script verification failed: {}", e))?;
         println!("     PASSED: SP output scripts verified against ECDH shares");
         println!("      - ECDH coverage complete ({} inputs)", inputs.len());
         println!(
@@ -469,7 +454,7 @@ impl WalletCoordinator {
         // Extract transaction
         println!("  EXTRACTOR: Extracting final transaction...");
 
-        let final_tx = psbt.extract_tx()?;
+        let final_tx = psbt.extract_tx(&secp)?;
         let tx_bytes = bitcoin::consensus::serialize(&final_tx);
 
         println!("     Transaction extracted successfully");

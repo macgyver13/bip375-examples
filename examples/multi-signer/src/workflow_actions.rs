@@ -9,9 +9,8 @@ use bip375_helpers::sp_signer::add_input_ecdh_share;
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::taproot::TapTweakHash;
 use bitcoin::{CompressedPublicKey, NetworkKind, Transaction};
-use psbt::roles::{Bip375UpdaterExt, ExtractorPsbtExt, SignerPsbtExt};
-use psbt::Psbt;
-use psbt_v2::v2::Input;
+use psbt::roles::{Bip375UpdaterExt, SpExtractorExt, SpSignerExt};
+use psbt_v2::{Input, Psbt};
 use secp256k1::{Parity, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::collections::BTreeMap;
@@ -61,11 +60,16 @@ fn resolve_regular_p2tr_privkey(
     candidate_privkey: SecretKey,
     candidate_pubkey: PublicKey,
 ) -> Result<SecretKey, String> {
-    let (xonly, _) = candidate_pubkey.x_only_public_key();
+    let (xonly, internal_parity) = candidate_pubkey.x_only_public_key();
+    let internal_privkey = if internal_parity == Parity::Odd {
+        candidate_privkey.negate()
+    } else {
+        candidate_privkey
+    };
     let tweak = TapTweakHash::from_key_and_tweak(xonly, None)
         .to_scalar()
         .to_be_bytes();
-    let tweaked_sk = apply_tweak_to_privkey(&candidate_privkey, &tweak)
+    let tweaked_sk = apply_tweak_to_privkey(&internal_privkey, &tweak)
         .map_err(|e| format!("BIP-341 tweak failed: {}", e))?;
     let (_, parity) = PublicKey::from_secret_key(secp, &tweaked_sk).x_only_public_key();
     Ok(if parity == Parity::Odd {
@@ -180,7 +184,7 @@ fn sign_controlled_inputs(
     sp_spend_key: SecretKey,
 ) -> Result<Psbt, String> {
     if controlled.iter().any(|(_, _, is_sp)| *is_sp) {
-        psbt.sign_sp_inputs(secp, sp_spend_key)
+        psbt.sign_silent_payment_inputs(&sp_spend_key, secp)
             .map_err(|e| format!("SP input signing failed: {}", e))?;
     }
 
@@ -243,7 +247,7 @@ pub fn add_ecdh_shares_for_party(
     _config: &MultiPartyConfig,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Vec<usize>, String> {
-    let scan_key = shared_utils::get_recipient_address().get_scan_key();
+    let scan_key = shared_utils::get_recipient_address().scan_key();
     let controlled = party_controlled_inputs(psbt, party, secp)?;
     for (idx, privkey, _) in &controlled {
         add_input_ecdh_share(secp, &mut psbt.inputs[*idx], *idx, privkey, &scan_key)
@@ -261,11 +265,8 @@ pub fn compute_output_scripts(
     psbt: &mut Psbt,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<(), String> {
-    let map = psbt
-        .compute_sp_outputs(secp)
-        .map_err(|e| format!("Failed to compute output scripts: {}", e))?;
-    psbt.set_sp_scriptpubkey(map)
-        .map_err(|e| format!("Failed to set output scripts: {}", e))
+    psbt.commit_sp_outputs(secp)
+        .map_err(|e| format!("Failed to compute output scripts: {}", e))
 }
 
 /// Sign inputs for a party. Must only be called after all SP output scripts are set.
@@ -306,12 +307,12 @@ pub fn sign_inputs_for_party(
 /// inputs must be signed before calling this.
 pub fn validate_and_extract(
     psbt: &mut Psbt,
-    _secp: &Secp256k1<secp256k1::All>,
+    secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Transaction, String> {
     finalize_input_witnesses(psbt).map_err(|e| format!("Finalization failed: {}", e))?;
     let tx = psbt
         .clone()
-        .extract_tx()
+        .extract_tx(secp)
         .map_err(|e| format!("Extraction failed: {}", e))?;
 
     Ok(tx)
@@ -397,7 +398,25 @@ pub fn print_transaction_summary(config: &MultiPartyConfig, inputs: &[Input]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bip375_helpers::crypto::tweaked_key_to_p2tr_script;
     use bip375_helpers::wallet::TransactionConfig;
+
+    #[test]
+    fn regular_p2tr_key_matches_output_for_odd_internal_key() {
+        let secp = Secp256k1::new();
+        let candidate_privkey = (1u8..)
+            .map(|n| SecretKey::from_slice(&[n; 32]).unwrap())
+            .find(|key| key.x_only_public_key(&secp).1 == Parity::Odd)
+            .unwrap();
+        let candidate_pubkey = candidate_privkey.public_key(&secp);
+
+        let output_privkey =
+            resolve_regular_p2tr_privkey(&secp, candidate_privkey, candidate_pubkey).unwrap();
+        let actual = tweaked_key_to_p2tr_script(&output_privkey.public_key(&secp));
+        let expected = bitcoin::ScriptBuf::new_p2tr(&secp, candidate_pubkey.into(), None);
+
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn test_get_party_private_key() {

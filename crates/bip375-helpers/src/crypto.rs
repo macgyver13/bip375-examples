@@ -44,8 +44,12 @@ pub fn script_type_string(script: &ScriptBuf) -> &'static str {
 }
 
 /// Apply a 32-byte additive tweak to a private key (BIP-352 spend key tweaking).
-pub fn apply_tweak_to_privkey(spend_privkey: &SecretKey, tweak: &[u8; 32]) -> Result<SecretKey, String> {
-    let tweak_scalar = Scalar::from_be_bytes(*tweak).map_err(|_| "Invalid tweak scalar".to_string())?;
+pub fn apply_tweak_to_privkey(
+    spend_privkey: &SecretKey,
+    tweak: &[u8; 32],
+) -> Result<SecretKey, String> {
+    let tweak_scalar =
+        Scalar::from_be_bytes(*tweak).map_err(|_| "Invalid tweak scalar".to_string())?;
 
     (*spend_privkey)
         .add_tweak(&tweak_scalar)
