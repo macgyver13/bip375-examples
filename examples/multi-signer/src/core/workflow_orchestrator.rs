@@ -7,7 +7,7 @@ use crate::workflow_actions;
 use bip375_helpers::display::{psbt_analyzer, psbt_io::load_psbt};
 use bitcoin::consensus::encode::serialize_hex;
 use secp256k1::Secp256k1;
-use psbt::Psbt;
+use psbt_v2::Psbt;
 
 /// Orchestrates multi-party workflow steps
 pub struct WorkflowOrchestrator;

@@ -8,33 +8,25 @@
 //! - Charlie controls input 2
 
 use bip375_helpers::crypto::{pubkey_to_p2wpkh_script, script_type_string};
+use bip375_helpers::transaction::to_sp_v0_info;
 use bip375_helpers::wallet::{MultiPartyConfig, SimpleWallet, TransactionConfig, VirtualWallet};
 use bitcoin::Amount;
 use bitcoin::{ScriptBuf, TxOut};
-use psbt_v2::v2::{Input, Output};
+use psbt_v2::{Input, Output};
 use secp256k1::SecretKey;
-use silentpayments::{Network, SilentPaymentAddress, SpVersion};
-
-fn sp_v0_info_bytes(address: &SilentPaymentAddress) -> [u8; 66] {
-    let mut bytes = [0u8; 66];
-    bytes[..33].copy_from_slice(&address.get_scan_key().serialize());
-    bytes[33..].copy_from_slice(&address.get_spend_key().serialize());
-    bytes
-}
+use silentpayments::{Network, SilentPaymentCode};
 
 fn output_sp_info(output: &Output) -> Option<(secp256k1::PublicKey, secp256k1::PublicKey)> {
-    let bytes = output.sp_v0_info.as_ref()?;
-    let scan = secp256k1::PublicKey::from_slice(&bytes[..33]).ok()?;
-    let spend = secp256k1::PublicKey::from_slice(&bytes[33..]).ok()?;
-    Some((scan, spend))
+    let info = output.sp_v0_info?;
+    Some((info.scan_key().0, info.spend_key().0))
 }
 
 /// Get the silent payment recipient address (same for all signers)
-pub fn get_recipient_address() -> SilentPaymentAddress {
+pub fn get_recipient_address() -> SilentPaymentCode {
     let wallet = SimpleWallet::new("recipient_silent_payment_test_seed");
     let (scan_key, spend_key) = wallet.scan_spend_keys();
 
-    SilentPaymentAddress::new(scan_key, spend_key, Network::Mainnet, SpVersion::ZERO)
+    SilentPaymentCode::new_v0(scan_key, spend_key, Network::Mainnet)
 }
 
 /// Get a party's virtual wallet by name
@@ -93,7 +85,7 @@ pub fn get_transaction_outputs(config: &TransactionConfig) -> Vec<Output> {
         value: Amount::from_sat(config.recipient_amount),
         script_pubkey: ScriptBuf::new(),
     });
-    sp_output.sp_v0_info = Some(sp_v0_info_bytes(&get_recipient_address()));
+    sp_output.sp_v0_info = Some(to_sp_v0_info(&get_recipient_address()));
 
     vec![change_output, sp_output]
 }

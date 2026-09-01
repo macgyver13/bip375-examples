@@ -1,17 +1,25 @@
 //! BIP-375 Extension Traits and PSBT Accessors
 //!
 //! This module provides extension traits that add BIP-375 silent payment functionality
-//! to the `psbt_v2::v2::Psbt` type, along with convenience accessor functions for
+//! to the `psbt_v2::Psbt` type, along with convenience accessor functions for
 //! common PSBT field access patterns.
 //!
 //! # Module Contents
 //!
 //! - **`Bip375PsbtExt` trait**: Adds BIP-375 specific methods to PSBT
 
-use psbt::{Error, Result};
-use psbt::{PsbtKey, Psbt};
+use psbt_v2::{Key as PsbtKey, Psbt};
+use thiserror::Error;
 
 pub const PSBT_OUT_DNSSEC_PROOF: u64 = 0x35;
+
+#[derive(Debug, Error)]
+pub enum HrnError {
+    #[error("Invalid output index: {0}")]
+    InvalidOutputIndex(usize),
+}
+
+pub type Result<T> = std::result::Result<T, HrnError>;
 
 /// BIP-353 Human Readable Names PSBT Extension
 ///
@@ -27,7 +35,7 @@ impl HrnPsbtExt for Psbt {
         let output = self
             .outputs
             .get_mut(output_idx)
-            .ok_or(Error::InvalidOutputIndex(output_idx))?;
+            .ok_or(HrnError::InvalidOutputIndex(output_idx))?;
 
         let key = PsbtKey {
             type_value: PSBT_OUT_DNSSEC_PROOF,

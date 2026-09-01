@@ -35,35 +35,25 @@ impl fmt::Display for Bip375Error {
 
 impl std::error::Error for Bip375Error {}
 
-impl From<psbt::Error> for Bip375Error {
-    fn from(err: psbt::Error) -> Self {
+impl From<psbt::roles::SpSignerError> for Bip375Error {
+    fn from(err: psbt::roles::SpSignerError) -> Self {
         match err {
-            psbt::Error::InvalidFieldData(_) => Bip375Error::InvalidData,
-            psbt::Error::InvalidFieldType(_) => Bip375Error::InvalidData,
-            psbt::Error::MissingField(_) => Bip375Error::InvalidData,
-            psbt::Error::InvalidPsbtState(_) => Bip375Error::ValidationError,
-            psbt::Error::Serialization(_) => Bip375Error::SerializationError,
-            psbt::Error::Deserialization(_) => Bip375Error::SerializationError,
-            psbt::Error::InvalidMagic => Bip375Error::SerializationError,
-            psbt::Error::InvalidVersion { .. } => Bip375Error::SerializationError,
-            psbt::Error::InvalidAddress(_) => Bip375Error::InvalidAddress,
-            psbt::Error::InvalidPublicKey => Bip375Error::InvalidKey,
-            psbt::Error::InvalidSignature(_) => Bip375Error::InvalidProof,
-            psbt::Error::DleqVerificationFailed(_) => Bip375Error::InvalidProof,
-            psbt::Error::InvalidEcdhShare(_) => Bip375Error::InvalidProof,
-            psbt::Error::ExtractionFailed(_) => Bip375Error::PsbtError,
-            psbt::Error::InvalidInputIndex(_) => Bip375Error::InvalidData,
-            psbt::Error::InvalidOutputIndex(_) => Bip375Error::InvalidData,
-            psbt::Error::IncompleteEcdhCoverage(_) => Bip375Error::ValidationError,
-            psbt::Error::StandardFieldNotAllowed(_) => Bip375Error::InvalidData,
-            psbt::Error::Bitcoin(_) => Bip375Error::PsbtError,
-            psbt::Error::Secp256k1(_) => Bip375Error::CryptoError,
-            psbt::Error::Hex(_) => Bip375Error::InvalidData,
-            psbt::Error::Io(e) => Bip375Error::IoError {
-                message: e.to_string(),
-            },
-            psbt::Error::Other(_) => Bip375Error::PsbtError,
+            
+            psbt::roles::SpSignerError::SharesAlreadyPresent
+            | psbt::roles::SpSignerError::MixedShareState
+            | psbt::roles::SpSignerError::AlreadySigned { .. }
+            | psbt::roles::SpSignerError::NoOwnedInputs
+            | psbt::roles::SpSignerError::MissingShare { .. }
+            | psbt::roles::SpSignerError::MissingDleqProof { .. } => Bip375Error::ValidationError,
+            psbt::roles::SpSignerError::KeyResolution { .. } => Bip375Error::InvalidKey,
+            _ => Bip375Error::PsbtError,
         }
+    }
+}
+
+impl From<psbt_v2::DeserializeError> for Bip375Error {
+    fn from(_: psbt_v2::DeserializeError) -> Self {
+        Bip375Error::SerializationError
     }
 }
 

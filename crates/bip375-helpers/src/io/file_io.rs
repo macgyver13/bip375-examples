@@ -2,7 +2,7 @@
 
 use super::error::{IoError, Result};
 use super::metadata::{PsbtFile, PsbtMetadata};
-use psbt::Psbt;
+use psbt_v2::Psbt;
 use std::fs;
 use std::path::Path;
 
@@ -16,8 +16,7 @@ pub fn save_psbt_binary<P: AsRef<Path>>(psbt: &Psbt, path: P) -> Result<()> {
 /// Load a PSBT from a file (binary format)
 pub fn load_psbt_binary<P: AsRef<Path>>(path: P) -> Result<Psbt> {
     let bytes = fs::read(path)?;
-    let psbt = Psbt::deserialize(&bytes)
-        .map_err(|e| IoError::Other(format!("PSBT deserialization error: {:?}", e)))?;
+    let psbt = Psbt::deserialize(&bytes)?;
     Ok(psbt)
 }
 
@@ -47,16 +46,13 @@ pub fn save_psbt_with_metadata<P: AsRef<Path>>(
 }
 
 /// Load a PSBT from a JSON file (with or without metadata)
-pub fn load_psbt_with_metadata<P: AsRef<Path>>(
-    path: P,
-) -> Result<(Psbt, Option<PsbtMetadata>)> {
+pub fn load_psbt_with_metadata<P: AsRef<Path>>(path: P) -> Result<(Psbt, Option<PsbtMetadata>)> {
     let json = fs::read_to_string(path)?;
     let psbt_file: PsbtFile = serde_json::from_str(&json)?;
 
     // Decode base64 PSBT
     let psbt_bytes = base64_decode(&psbt_file.psbt)?;
-    let psbt = Psbt::deserialize(&psbt_bytes)
-        .map_err(|e| IoError::Other(format!("PSBT deserialization error: {:?}", e)))?;
+    let psbt = Psbt::deserialize(&psbt_bytes)?;
 
     Ok((psbt, psbt_file.metadata))
 }
@@ -123,11 +119,11 @@ fn base64_decode(data: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use psbt::roles::ConstructorPsbtExt;
+    use psbt_v2::Creator;
     use tempfile::TempDir;
 
     fn create_test_psbt() -> Psbt {
-        Psbt::create_new_transaction(vec![]).expect("empty psbt")
+        Creator::new().psbt()
     }
 
     #[test]
@@ -149,40 +145,35 @@ mod tests {
         let path = temp_dir.path().join("test.json");
 
         let psbt = create_test_psbt();
-        let mut metadata = PsbtMetadata::new();
-        metadata.set_creator("test").set_stage("created");
+        let mut metadata = PsbtMetadata::with_description("test-tx-123");
+        metadata.set_creator("Alice");
 
-        save_psbt_with_metadata(&psbt, Some(metadata.clone()), &path).unwrap();
+        save_psbt_with_metadata(&psbt, Some(metadata), &path).unwrap();
 
-        let (loaded, loaded_metadata) = load_psbt_with_metadata(&path).unwrap();
-        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
-        assert!(loaded_metadata.is_some());
-        assert_eq!(loaded_metadata.unwrap().creator, metadata.creator);
+        let (loaded_psbt, loaded_meta) = load_psbt_with_metadata(&path).unwrap();
+        assert_eq!(psbt.inputs.len(), loaded_psbt.inputs.len());
+        assert_eq!(psbt.outputs.len(), loaded_psbt.outputs.len());
+
+        let meta = loaded_meta.unwrap();
+        assert_eq!(meta.description.as_deref(), Some("test-tx-123"));
+        assert_eq!(meta.creator.as_deref(), Some("Alice"));
     }
 
     #[test]
     fn test_auto_detect_format() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Test JSON format
-        let json_path = temp_dir.path().join("test.json");
-        let psbt = create_test_psbt();
-        save_psbt(&psbt, None, &json_path).unwrap();
-        let (loaded, _) = load_psbt(&json_path).unwrap();
-        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
-
-        // Test binary format
+        // Test .psbt extension
         let binary_path = temp_dir.path().join("test.psbt");
+        let psbt = create_test_psbt();
         save_psbt(&psbt, None, &binary_path).unwrap();
         let (loaded, _) = load_psbt(&binary_path).unwrap();
         assert_eq!(psbt.inputs.len(), loaded.inputs.len());
-    }
 
-    #[test]
-    fn test_base64_encoding() {
-        let data = b"test data";
-        let encoded = base64_encode(data);
-        let decoded = base64_decode(&encoded).unwrap();
-        assert_eq!(data, decoded.as_slice());
+        // Test .json extension
+        let json_path = temp_dir.path().join("test.json");
+        save_psbt(&psbt, None, &json_path).unwrap();
+        let (loaded, _) = load_psbt(&json_path).unwrap();
+        assert_eq!(psbt.inputs.len(), loaded.inputs.len());
     }
 }

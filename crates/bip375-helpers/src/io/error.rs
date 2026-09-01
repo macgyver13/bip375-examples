@@ -1,5 +1,6 @@
 //! Error types for I/O operations
 
+use psbt_v2::DeserializeError;
 use thiserror::Error;
 
 /// Result type for I/O operations
@@ -14,8 +15,8 @@ pub enum IoError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("PSBT error: {0}")]
-    Psbt(#[from] psbt::Error),
+    #[error("PSBT deserialization error: {0}")]
+    Psbt(#[from] DeserializeError),
 
     #[error("Hex decoding error: {0}")]
     Hex(#[from] hex::FromHexError),

@@ -12,6 +12,7 @@ hex.workspace = true
 psbt.workspace = true
 psbt-v2.workspace = true
 rfd = "0.15"
+rust-dleq.workspace = true
 secp256k1.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

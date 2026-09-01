@@ -9,9 +9,8 @@ use bip375_helpers::sp_signer::add_input_ecdh_share;
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::taproot::TapTweakHash;
 use bitcoin::{CompressedPublicKey, NetworkKind, Transaction};
-use psbt::roles::{Bip375UpdaterExt, ExtractorPsbtExt, SignerPsbtExt};
-use psbt::Psbt;
-use psbt_v2::v2::Input;
+use psbt::roles::{Bip375UpdaterExt, SpExtractorExt, SpSignerExt};
+use psbt_v2::{Input, Psbt};
 use secp256k1::{Parity, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
 use std::collections::BTreeMap;
@@ -180,7 +179,7 @@ fn sign_controlled_inputs(
     sp_spend_key: SecretKey,
 ) -> Result<Psbt, String> {
     if controlled.iter().any(|(_, _, is_sp)| *is_sp) {
-        psbt.sign_sp_inputs(secp, sp_spend_key)
+        psbt.sign_silent_payment_inputs(&sp_spend_key, secp)
             .map_err(|e| format!("SP input signing failed: {}", e))?;
     }
 
@@ -243,7 +242,7 @@ pub fn add_ecdh_shares_for_party(
     _config: &MultiPartyConfig,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Vec<usize>, String> {
-    let scan_key = shared_utils::get_recipient_address().get_scan_key();
+    let scan_key = shared_utils::get_recipient_address().scan_key();
     let controlled = party_controlled_inputs(psbt, party, secp)?;
     for (idx, privkey, _) in &controlled {
         add_input_ecdh_share(secp, &mut psbt.inputs[*idx], *idx, privkey, &scan_key)
@@ -261,11 +260,8 @@ pub fn compute_output_scripts(
     psbt: &mut Psbt,
     secp: &Secp256k1<secp256k1::All>,
 ) -> Result<(), String> {
-    let map = psbt
-        .compute_sp_outputs(secp)
-        .map_err(|e| format!("Failed to compute output scripts: {}", e))?;
-    psbt.set_sp_scriptpubkey(map)
-        .map_err(|e| format!("Failed to set output scripts: {}", e))
+    psbt.commit_sp_outputs(secp)
+        .map_err(|e| format!("Failed to compute output scripts: {}", e))
 }
 
 /// Sign inputs for a party. Must only be called after all SP output scripts are set.
@@ -306,12 +302,12 @@ pub fn sign_inputs_for_party(
 /// inputs must be signed before calling this.
 pub fn validate_and_extract(
     psbt: &mut Psbt,
-    _secp: &Secp256k1<secp256k1::All>,
+    secp: &Secp256k1<secp256k1::All>,
 ) -> Result<Transaction, String> {
     finalize_input_witnesses(psbt).map_err(|e| format!("Finalization failed: {}", e))?;
     let tx = psbt
         .clone()
-        .extract_tx()
+        .extract_tx(secp)
         .map_err(|e| format!("Extraction failed: {}", e))?;
 
     Ok(tx)

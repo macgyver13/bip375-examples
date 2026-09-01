@@ -12,9 +12,8 @@
 //! `input.sp_ecdh_shares` (scan_key -> share point) and `input.sp_dleq_proofs`.
 
 use bitcoin::CompressedPublicKey;
-use psbt::core::utils::to_psbt_dleq;
-use psbt::generate_dleq_proof;
-use psbt_v2::v2::Input;
+use psbt_v2::{DleqProof, Input};
+use rust_dleq::generate_dleq_proof;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 /// Add a per-input ECDH share and DLEQ proof for one recipient scan key.
@@ -42,12 +41,13 @@ pub fn add_input_ecdh_share(
     let proof = generate_dleq_proof(secp, input_privkey, scan_key, &rand_aux, None)
         .map_err(|e| format!("DLEQ generation failed: {:?}", e))?;
 
-    input
-        .sp_ecdh_shares
-        .insert(CompressedPublicKey(*scan_key), CompressedPublicKey(share_point));
+    input.sp_ecdh_shares.insert(
+        CompressedPublicKey(*scan_key),
+        CompressedPublicKey(share_point),
+    );
     input
         .sp_dleq_proofs
-        .insert(CompressedPublicKey(*scan_key), to_psbt_dleq(proof));
+        .insert(CompressedPublicKey(*scan_key), DleqProof(proof.0));
 
     Ok(())
 }

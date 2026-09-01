@@ -6,7 +6,7 @@
 use super::field_identifier::{FieldIdentifier, TransactionSummary};
 
 use crate::PSBT_OUT_DNSSEC_PROOF;
-use psbt::{Psbt};
+use psbt_v2::Psbt;
 use std::collections::HashSet;
 
 /// Raw field extracted directly from PSBT bytes
@@ -17,7 +17,9 @@ pub struct RawField {
 }
 
 /// Parse a PSBT into raw (type, key, value) tuples directly from bytes
-pub fn parse_psbt_raw_fields(psbt: &Psbt) -> Result<(Vec<RawField>, Vec<Vec<RawField>>, Vec<Vec<RawField>>), String> {
+pub fn parse_psbt_raw_fields(
+    psbt: &Psbt,
+) -> Result<(Vec<RawField>, Vec<Vec<RawField>>, Vec<Vec<RawField>>), String> {
     let bytes = psbt.serialize();
     let mut offset = 0;
 
@@ -27,26 +29,39 @@ pub fn parse_psbt_raw_fields(psbt: &Psbt) -> Result<(Vec<RawField>, Vec<Vec<RawF
     offset += 5;
 
     fn read_compact_size(bytes: &[u8], offset: &mut usize) -> Option<u64> {
-        if *offset >= bytes.len() { return None; }
+        if *offset >= bytes.len() {
+            return None;
+        }
         let tag = bytes[*offset];
         *offset += 1;
         match tag {
             0xfd => {
-                if *offset + 2 > bytes.len() { return None; }
-                let v = u16::from_le_bytes([bytes[*offset], bytes[*offset+1]]);
+                if *offset + 2 > bytes.len() {
+                    return None;
+                }
+                let v = u16::from_le_bytes([bytes[*offset], bytes[*offset + 1]]);
                 *offset += 2;
                 Some(v as u64)
             }
             0xfe => {
-                if *offset + 4 > bytes.len() { return None; }
-                let v = u32::from_le_bytes([bytes[*offset], bytes[*offset+1], bytes[*offset+2], bytes[*offset+3]]);
+                if *offset + 4 > bytes.len() {
+                    return None;
+                }
+                let v = u32::from_le_bytes([
+                    bytes[*offset],
+                    bytes[*offset + 1],
+                    bytes[*offset + 2],
+                    bytes[*offset + 3],
+                ]);
                 *offset += 4;
                 Some(v as u64)
             }
             0xff => {
-                if *offset + 8 > bytes.len() { return None; }
+                if *offset + 8 > bytes.len() {
+                    return None;
+                }
                 let mut buf = [0u8; 8];
-                buf.copy_from_slice(&bytes[*offset..*offset+8]);
+                buf.copy_from_slice(&bytes[*offset..*offset + 8]);
                 let v = u64::from_le_bytes(buf);
                 *offset += 8;
                 Some(v)
@@ -64,13 +79,17 @@ pub fn parse_psbt_raw_fields(psbt: &Psbt) -> Result<(Vec<RawField>, Vec<Vec<RawF
             }
             let key_start = *offset;
             let key_type = read_compact_size(bytes, offset)?;
-            if key_start + (key_len as usize) > bytes.len() { return None; }
-            let key_data = bytes[*offset .. key_start + (key_len as usize)].to_vec();
+            if key_start + (key_len as usize) > bytes.len() {
+                return None;
+            }
+            let key_data = bytes[*offset..key_start + (key_len as usize)].to_vec();
             *offset = key_start + (key_len as usize);
 
             let val_len = read_compact_size(bytes, offset)? as usize;
-            if *offset + val_len > bytes.len() { return None; }
-            let value_data = bytes[*offset .. *offset + val_len].to_vec();
+            if *offset + val_len > bytes.len() {
+                return None;
+            }
+            let value_data = bytes[*offset..*offset + val_len].to_vec();
             *offset += val_len;
 
             fields.push(RawField {
@@ -83,7 +102,7 @@ pub fn parse_psbt_raw_fields(psbt: &Psbt) -> Result<(Vec<RawField>, Vec<Vec<RawF
     }
 
     let global_fields = read_map(&bytes, &mut offset).ok_or("Failed to read global map")?;
-    
+
     let mut input_fields = Vec::new();
     for _ in 0..psbt.inputs.len() {
         input_fields.push(read_map(&bytes, &mut offset).ok_or("Failed to read input map")?);
@@ -144,10 +163,7 @@ pub fn extract_all_field_identifiers(psbt: &Psbt) -> HashSet<FieldIdentifier> {
 ///
 /// Returns the set of fields present in `after` but not in `before`.
 /// If `before` is None, all fields in `after` are considered new.
-pub fn compute_field_diff(
-    before: Option<&Psbt>,
-    after: &Psbt,
-) -> HashSet<FieldIdentifier> {
+pub fn compute_field_diff(before: Option<&Psbt>, after: &Psbt) -> HashSet<FieldIdentifier> {
     let before_fields = match before {
         Some(psbt) => extract_all_field_identifiers(psbt),
         None => HashSet::new(),

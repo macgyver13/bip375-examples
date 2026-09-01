@@ -1,20 +1,18 @@
 // Core data types for UniFFI bindings.
 
 use crate::errors::Bip375Error;
-use bip375_helpers::transaction::build_psbt;
+use bip375_helpers::transaction::{build_psbt, to_sp_v0_info};
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
 use bitcoin::key::XOnlyPublicKey;
 use bitcoin::{Amount, CompressedPublicKey, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
-use psbt::roles::{
-    Bip375UpdaterExt, ExtractorPsbtExt, InputWitnessFinalizerPsbtExt, SignerPsbtExt,
+use psbt::roles::{Bip375UpdaterExt, ShareMode, SpSignerExt};
+use psbt_v2::{
+    Creator, DleqProof, Extractor, Finalizer, Input, Key as PsbtKey, Output, Psbt as CorePsbt,
+    PsbtSighashType, SpV0Info,
 };
-use psbt::PsbtKey;
-use psbt_v2::v2::{dleq, Creator, Input, Output};
-use psbt_v2::PsbtSighashType;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
-use silentpayments::SpVersion;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
@@ -53,15 +51,15 @@ pub struct SilentPaymentAddress {
 }
 
 impl SilentPaymentAddress {
-    pub fn from_core(addr: &silentpayments::SilentPaymentAddress) -> Self {
+    pub fn from_core(code: &silentpayments::SilentPaymentCode) -> Self {
         Self {
-            scan_key: addr.get_scan_key().serialize().to_vec(),
-            spend_key: addr.get_spend_key().serialize().to_vec(),
-            network: Some(addr.get_network().into()),
+            scan_key: code.scan_key().serialize().to_vec(),
+            spend_key: code.m_pubkey().serialize().to_vec(),
+            network: Some(code.network().into()),
         }
     }
 
-    pub fn to_core(&self) -> Result<silentpayments::SilentPaymentAddress, Bip375Error> {
+    pub fn to_core(&self) -> Result<silentpayments::SilentPaymentCode, Bip375Error> {
         let scan_pubkey =
             PublicKey::from_slice(&self.scan_key).map_err(|_| Bip375Error::InvalidKey)?;
         let spend_pubkey =
@@ -71,11 +69,10 @@ impl SilentPaymentAddress {
             .map(Into::into)
             .unwrap_or(silentpayments::Network::Mainnet);
 
-        Ok(silentpayments::SilentPaymentAddress::new(
+        Ok(silentpayments::SilentPaymentCode::new_v0(
             scan_pubkey,
             spend_pubkey,
             network,
-            SpVersion::ZERO,
         ))
     }
 }
@@ -90,12 +87,12 @@ pub struct EcdhShare {
 fn ecdh_share_from_parts(
     scan_key: &CompressedPublicKey,
     share_point: &CompressedPublicKey,
-    dleq_proof: Option<&dleq::DleqProof>,
+    dleq_proof: Option<&DleqProof>,
 ) -> EcdhShare {
     EcdhShare {
         scan_key: scan_key.0.serialize().to_vec(),
         share_point: share_point.0.serialize().to_vec(),
-        dleq_proof: dleq_proof.map(|p| p.as_bytes().to_vec()),
+        dleq_proof: dleq_proof.map(|p| p.0.to_vec()),
     }
 }
 
@@ -117,7 +114,7 @@ impl Utxo {
         let outpoint = OutPoint::new(txid, self.vout);
         let mut input = Input::new(&outpoint);
         // Per BIP-370, the Constructor adds only the outpoint (and optionally
-        // sequence). The witness UTXO is the Updater's responsibility and is set
+        // sequence). The witness UTXO is the Updater responsibility and is set
         // in update_inputs().
         input.sequence = self.sequence.map(Sequence::from_consensus);
         Ok(input)
@@ -157,10 +154,7 @@ impl PsbtOutput {
                     value: Amount::from_sat(*amount),
                     script_pubkey: ScriptBuf::new(),
                 });
-                let mut sp_info = [0u8; 66];
-                sp_info[..33].copy_from_slice(&address.get_scan_key().serialize());
-                sp_info[33..].copy_from_slice(&address.get_spend_key().serialize());
-                output.sp_v0_info = Some(sp_info);
+                output.sp_v0_info = Some(to_sp_v0_info(&address));
                 output.sp_v0_label = *label;
                 Ok(output)
             }
@@ -207,7 +201,7 @@ impl PsbtMetadata {
 }
 
 pub struct Psbt {
-    inner: Arc<Mutex<psbt::Psbt>>,
+    inner: Arc<Mutex<CorePsbt>>,
 }
 
 pub type SilentPaymentPsbt = Psbt;
@@ -256,14 +250,14 @@ impl Psbt {
         Ok(Self::from_core(psbt))
     }
 
-    pub(crate) fn from_core(psbt: psbt::Psbt) -> Self {
+    pub(crate) fn from_core(psbt: CorePsbt) -> Self {
         Self {
             inner: Arc::new(Mutex::new(psbt)),
         }
     }
 
     pub fn deserialize(data: Vec<u8>) -> Result<Self, Bip375Error> {
-        let psbt = psbt::Psbt::deserialize(&data).map_err(|_| Bip375Error::SerializationError)?;
+        let psbt = CorePsbt::deserialize(&data).map_err(|_| Bip375Error::SerializationError)?;
         Ok(Self::from_core(psbt))
     }
 
@@ -328,8 +322,8 @@ impl Psbt {
             return Ok(None);
         };
         Ok(Some(SilentPaymentAddress {
-            scan_key: sp_info[..33].to_vec(),
-            spend_key: sp_info[33..].to_vec(),
+            scan_key: sp_info.scan_key().to_bytes().to_vec(),
+            spend_key: sp_info.spend_key().to_bytes().to_vec(),
             network: None,
         }))
     }
@@ -397,37 +391,37 @@ impl Psbt {
     }
 
     /// Signer role: single-party ECDH share generation (BIP-375 global path).
-    ///
-    /// Delegates to spdk `single_signer_generate_ecdh_shares`. The signer must own
-    /// every eligible input; recipient scan keys are read from the PSBT's SP outputs
-    /// and input ownership is resolved from the Updater-populated fields.
     pub fn generate_single_signer_ecdh_shares(
         &self,
         spend_key: Vec<u8>,
     ) -> Result<(), Bip375Error> {
         let secp = Secp256k1::new();
         let spend_key = SecretKey::from_slice(&spend_key).map_err(|_| Bip375Error::InvalidKey)?;
-        self.with_inner(|p| p.single_signer_generate_ecdh_shares(&secp, spend_key))?;
+        self.with_inner(|p| {
+            p.add_ecdh_shares(&secp, &mut secp256k1::rand::thread_rng(), &spend_key, ShareMode::Global)
+                .map(|_| ())
+                .map_err(Bip375Error::from)
+        })?;
         Ok(())
     }
 
     /// Signer role: multi-party ECDH share generation (BIP-375 per-input path).
-    ///
-    /// Delegates to spdk `multi_signer_generate_ecdh_shares`. Contributes per-input
-    /// shares only for the inputs this `spend_key` owns; other inputs are left for
-    /// their owners to sign.
     pub fn generate_multi_signer_ecdh_shares(&self, spend_key: Vec<u8>) -> Result<(), Bip375Error> {
         let secp = Secp256k1::new();
         let spend_key = SecretKey::from_slice(&spend_key).map_err(|_| Bip375Error::InvalidKey)?;
-        self.with_inner(|p| p.multi_signer_generate_ecdh_shares(&secp, spend_key))?;
+        self.with_inner(|p| {
+            p.add_ecdh_shares(&secp, &mut secp256k1::rand::thread_rng(), &spend_key, ShareMode::Partial)
+                .map(|_| ())
+                .map_err(Bip375Error::from)
+        })?;
         Ok(())
     }
 
     pub fn compute_sp_output_scripts(&self) -> Result<(), Bip375Error> {
         let secp = Secp256k1::new();
         self.with_inner(|p| {
-            let map = p.compute_sp_outputs(&secp)?;
-            p.set_sp_scriptpubkey(map)
+            p.commit_sp_outputs(&secp)
+                .map_err(Bip375Error::from)
         })?;
         Ok(())
     }
@@ -435,7 +429,11 @@ impl Psbt {
     pub fn sign_silent_payment_inputs(&self, spend_key: Vec<u8>) -> Result<(), Bip375Error> {
         let secp = Secp256k1::new();
         let spend_key = SecretKey::from_slice(&spend_key).map_err(|_| Bip375Error::InvalidKey)?;
-        self.with_inner(|p| p.sign_sp_inputs(&secp, spend_key))?;
+        self.with_inner(|p| {
+            p.sign_silent_payment_inputs(&spend_key, &secp)
+                .map(|_| ())
+                .map_err(|_| Bip375Error::SigningError)
+        })?;
         Ok(())
     }
 
@@ -454,7 +452,11 @@ impl Psbt {
     }
 
     pub fn extract_transaction(&self) -> Result<Vec<u8>, Bip375Error> {
-        let tx = self.with_inner(|p| p.clone().extract_tx())?;
+        let psbt = self.inner.lock().unwrap().clone();
+        let tx = Extractor::new(psbt)
+            .map_err(|_| Bip375Error::PsbtError)?
+            .extract_tx()
+            .map_err(|_| Bip375Error::PsbtError)?;
         Ok(serialize(&tx))
     }
 
@@ -464,7 +466,7 @@ impl Psbt {
 
     pub(crate) fn with_inner<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&mut psbt::Psbt) -> R,
+        F: FnOnce(&mut CorePsbt) -> R,
     {
         let mut psbt = self.inner.lock().unwrap();
         f(&mut psbt)
@@ -481,8 +483,12 @@ fn to_derivation_path(raw: Vec<u32>) -> DerivationPath {
     DerivationPath::from(raw.into_iter().map(ChildNumber::from).collect::<Vec<_>>())
 }
 
-fn finalize(psbt: &mut psbt::Psbt) -> Result<(), Bip375Error> {
-    *psbt = psbt.clone().finalize()?;
+fn finalize(psbt: &mut CorePsbt) -> Result<(), Bip375Error> {
+    let secp = Secp256k1::new();
+    *psbt = Finalizer::new(psbt.clone())
+        .map_err(|_| Bip375Error::ValidationError)?
+        .finalize(&secp)
+        .map_err(|_| Bip375Error::ValidationError)?;
     Ok(())
 }
 
@@ -503,19 +509,27 @@ pub fn add_raw_global_field(
         match type_value {
             0x06 if value.len() == 1 => p.global.tx_modifiable_flags = value[0],
             0x07 if key_data.len() == 33 && value.len() == 33 => {
-                let scan = PublicKey::from_slice(&key_data).map_err(|_| Bip375Error::InvalidKey)?;
-                let share = PublicKey::from_slice(&value).map_err(|_| Bip375Error::InvalidKey)?;
-                p.global
-                    .sp_ecdh_shares
-                    .insert(CompressedPublicKey(scan), CompressedPublicKey(share));
+                if let (Ok(scan), Ok(share)) = (
+                    PublicKey::from_slice(&key_data),
+                    PublicKey::from_slice(&value),
+                ) {
+                    p.global
+                        .sp_ecdh_shares
+                        .insert(CompressedPublicKey(scan), CompressedPublicKey(share));
+                } else {
+                    p.global.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x08 if key_data.len() == 33 && value.len() == 64 => {
-                let scan = PublicKey::from_slice(&key_data).map_err(|_| Bip375Error::InvalidKey)?;
-                let mut bytes = [0u8; 64];
-                bytes.copy_from_slice(&value);
-                p.global
-                    .sp_dleq_proofs
-                    .insert(CompressedPublicKey(scan), dleq::DleqProof::from(bytes));
+                if let Ok(scan) = PublicKey::from_slice(&key_data) {
+                    let mut bytes = [0u8; 64];
+                    bytes.copy_from_slice(&value);
+                    p.global
+                        .sp_dleq_proofs
+                        .insert(CompressedPublicKey(scan), DleqProof(bytes));
+                } else {
+                    p.global.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             _ => {
                 p.global
@@ -541,58 +555,78 @@ pub fn add_raw_input_field(
             .ok_or(Bip375Error::InvalidData)?;
         match type_value {
             0x00 => {
-                input.non_witness_utxo =
-                    Some(deserialize(&value).map_err(|_| Bip375Error::SerializationError)?)
+                if let Ok(tx) = deserialize(&value) {
+                    input.non_witness_utxo = Some(tx);
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x01 => {
-                input.witness_utxo =
-                    Some(deserialize(&value).map_err(|_| Bip375Error::SerializationError)?)
+                if let Ok(txout) = deserialize(&value) {
+                    input.witness_utxo = Some(txout);
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x03 if value.len() == 4 => {
-                input.sighash_type = Some(PsbtSighashType::from_u32(u32::from_le_bytes(
-                    value
-                        .try_into()
-                        .map_err(|_| Bip375Error::SerializationError)?,
-                )));
+                if let Ok(bytes) = <[u8; 4]>::try_from(value.as_slice()) {
+                    input.sighash_type = Some(PsbtSighashType::from_u32(u32::from_le_bytes(bytes)));
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x04 => input.redeem_script = Some(ScriptBuf::from_bytes(value)),
             0x05 => input.witness_script = Some(ScriptBuf::from_bytes(value)),
             0x0e if value.len() == 32 => {
-                input.previous_txid =
-                    Txid::from_slice(&value).map_err(|_| Bip375Error::SerializationError)?;
+                if let Ok(txid) = Txid::from_slice(&value) {
+                    input.previous_txid = txid;
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x0f if value.len() == 4 => {
-                input.spent_output_index = u32::from_le_bytes(
-                    value
-                        .try_into()
-                        .map_err(|_| Bip375Error::SerializationError)?,
-                );
+                if let Ok(bytes) = <[u8; 4]>::try_from(value.as_slice()) {
+                    input.spent_output_index = u32::from_le_bytes(bytes);
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x10 if value.len() == 4 => {
-                input.sequence = Some(Sequence::from_consensus(u32::from_le_bytes(
-                    value
-                        .try_into()
-                        .map_err(|_| Bip375Error::SerializationError)?,
-                )));
+                if let Ok(bytes) = <[u8; 4]>::try_from(value.as_slice()) {
+                    input.sequence = Some(Sequence::from_consensus(u32::from_le_bytes(bytes)));
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x17 if value.len() == 32 => {
-                input.tap_internal_key =
-                    Some(XOnlyPublicKey::from_slice(&value).map_err(|_| Bip375Error::InvalidKey)?);
+                if let Ok(key) = XOnlyPublicKey::from_slice(&value) {
+                    input.tap_internal_key = Some(key);
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x1d if key_data.len() == 33 && value.len() == 33 => {
-                let scan = PublicKey::from_slice(&key_data).map_err(|_| Bip375Error::InvalidKey)?;
-                let share = PublicKey::from_slice(&value).map_err(|_| Bip375Error::InvalidKey)?;
-                input
-                    .sp_ecdh_shares
-                    .insert(CompressedPublicKey(scan), CompressedPublicKey(share));
+                if let (Ok(scan), Ok(share)) = (
+                    PublicKey::from_slice(&key_data),
+                    PublicKey::from_slice(&value),
+                ) {
+                    input
+                        .sp_ecdh_shares
+                        .insert(CompressedPublicKey(scan), CompressedPublicKey(share));
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x1e if key_data.len() == 33 && value.len() == 64 => {
-                let scan = PublicKey::from_slice(&key_data).map_err(|_| Bip375Error::InvalidKey)?;
-                let mut bytes = [0u8; 64];
-                bytes.copy_from_slice(&value);
-                input
-                    .sp_dleq_proofs
-                    .insert(CompressedPublicKey(scan), dleq::DleqProof::from(bytes));
+                if let Ok(scan) = PublicKey::from_slice(&key_data) {
+                    let mut bytes = [0u8; 64];
+                    bytes.copy_from_slice(&value);
+                    input
+                        .sp_dleq_proofs
+                        .insert(CompressedPublicKey(scan), DleqProof(bytes));
+                } else {
+                    input.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             _ => {
                 input.unknowns.insert(raw_key(type_value, key_data), value);
@@ -636,24 +670,27 @@ pub fn add_raw_output_field(
             .ok_or(Bip375Error::InvalidData)?;
         match type_value {
             0x03 if value.len() == 8 => {
-                output.amount = Amount::from_sat(u64::from_le_bytes(
-                    value
-                        .try_into()
-                        .map_err(|_| Bip375Error::SerializationError)?,
-                ));
+                if let Ok(bytes) = <[u8; 8]>::try_from(value.as_slice()) {
+                    output.amount = Amount::from_sat(u64::from_le_bytes(bytes));
+                } else {
+                    output.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x04 => output.script_pubkey = ScriptBuf::from_bytes(value),
             0x09 if value.len() == 66 => {
-                let mut bytes = [0u8; 66];
-                bytes.copy_from_slice(&value);
-                output.sp_v0_info = Some(bytes);
+                let bytes: [u8; 66] = value.as_slice().try_into().unwrap();
+                if let Ok(info) = SpV0Info::from_byte_array(&bytes) {
+                    output.sp_v0_info = Some(info);
+                } else {
+                    output.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             0x0a if value.len() == 4 => {
-                output.sp_v0_label = Some(u32::from_le_bytes(
-                    value
-                        .try_into()
-                        .map_err(|_| Bip375Error::SerializationError)?,
-                ));
+                if let Ok(bytes) = <[u8; 4]>::try_from(value.as_slice()) {
+                    output.sp_v0_label = Some(u32::from_le_bytes(bytes));
+                } else {
+                    output.unknowns.insert(raw_key(type_value, key_data), value);
+                }
             }
             _ => {
                 output.unknowns.insert(raw_key(type_value, key_data), value);

@@ -4,7 +4,7 @@
 //! and exporting them for sharing or storage.
 
 use crate::io::{load_psbt_with_metadata, save_psbt_with_metadata, PsbtMetadata};
-use psbt::Psbt;
+use psbt_v2::Psbt;
 
 use std::cell::RefCell;
 use std::fs;
@@ -168,8 +168,7 @@ pub fn save_psbt(
 }
 
 /// Load PSBT wrapper - uses memory for GUI, files for CLI
-pub fn load_psbt() -> Result<(Psbt, Option<PsbtMetadata>), Box<dyn std::error::Error>>
-{
+pub fn load_psbt() -> Result<(Psbt, Option<PsbtMetadata>), Box<dyn std::error::Error>> {
     let use_memory = USE_MEMORY_STORAGE.with(|us| *us.borrow());
 
     if use_memory {
