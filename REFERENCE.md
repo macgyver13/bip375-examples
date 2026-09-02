@@ -1,12 +1,14 @@
-# BIP375 Reference
+# BIP-375 Concepts
 
-## What is BIP375?
+This document explains the BIP-375 concepts used by this repository. It is not a replacement for the normative BIP specifications.
 
-BIP375 extends PSBT v2 (BIP370) to support Silent Payments (BIP352). It defines new PSBT fields and workflows for coordinating silent payment transactions across multiple signers.
+## What is BIP-375?
+
+BIP-375 extends PSBT v2 (BIP-370) to support Silent Payments (BIP-352). It defines new PSBT fields and workflows for coordinating silent payment transactions across multiple signers.
 
 Silent Payments allow receiving payments to a static address without on-chain address reuse. The sender derives a unique output script using ECDH (Elliptic Curve Diffie-Hellman) with the recipient's public keys.
 
-## Why BIP375 Exists
+## Why BIP-375 Exists
 
 Creating silent payment transactions requires coordination between signers:
 
@@ -14,13 +16,13 @@ Creating silent payment transactions requires coordination between signers:
 2. Output scripts can only be computed when all ECDH shares are present
 3. Signers must verify each other's ECDH computations
 
-BIP375 provides the PSBT fields and workflow to make this coordination possible in a trustless manner.
+BIP-375 provides the PSBT fields and workflow to make this coordination possible in a trustless manner.
 
 ## Key Concepts
 
 ### ECDH Shares
 
-Each input contributes an ECDH share computed as `private_key * recipient_scan_key`. These shares are combined to derive the final output script.
+Each input contributes an ECDH share computed as `input_private_key * recipient_scan_key`. These shares are combined to derive the final output script.
 
 ### DLEQ Proofs
 
@@ -30,7 +32,7 @@ See [BIP374](https://github.com/bitcoin/bips/blob/master/bip-0374.mediawiki) for
 
 ### Per-Input Approach
 
-BIP375 uses a per-input ECDH approach where:
+BIP-375 uses a per-input ECDH approach where:
 
 - Each signer computes shares only for inputs they control
 - ECDH coverage builds progressively across signers
@@ -39,7 +41,7 @@ BIP375 uses a per-input ECDH approach where:
 
 ### PSBT Roles
 
-BIP375 uses PSBT v2 roles:
+BIP-375 uses PSBT v2 roles:
 
 - **Creator**: Initializes empty PSBT
 - **Constructor**: Adds inputs and outputs
@@ -70,9 +72,9 @@ For silent payments, the Signer role is extended with ECDH computation and DLEQ 
 5. Final signer completes ECDH coverage, computes output scripts, AND signs their inputs
 6. Extractor creates final transaction
 
-## BIP375 PSBT Fields
+## BIP-375 PSBT Fields
 
-See [BIP375](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki) for complete field specifications.
+See [BIP-375](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki) for complete field specifications.
 
 ## Security Considerations
 
@@ -108,7 +110,7 @@ Best for understanding DLEQ proof security and air-gapped signing.
 
 ## Related BIPs
 
-- [BIP352: Silent Payments](https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki)
-- [BIP370: PSBT Version 2](https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki)
-- [BIP374: Discrete Log Equality Proofs](https://github.com/bitcoin/bips/blob/master/bip-0374.mediawiki)
-- [BIP375: Sending Silent Payments with PSBTs](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki)
+- [BIP-352: Silent Payments](https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki)
+- [BIP-370: PSBT Version 2](https://github.com/bitcoin/bips/blob/master/bip-0370.mediawiki)
+- [BIP-374: Discrete Log Equality Proofs](https://github.com/bitcoin/bips/blob/master/bip-0374.mediawiki)
+- [BIP-375: Sending Silent Payments with PSBTs](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki)

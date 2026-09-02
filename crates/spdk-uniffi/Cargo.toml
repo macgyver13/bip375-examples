@@ -1,0 +1,29 @@
+[package]
+name = "spdk-uniffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "spdk_psbt"
+
+[dependencies]
+# Bitcoin
+bip375-helpers.workspace = true
+bitcoin.workspace = true
+secp256k1.workspace = true
+silentpayments.workspace = true
+psbt.workspace = true
+psbt-v2.workspace = true
+
+# UniFFI
+uniffi = { version = "0.30", features = ["build"] }
+
+# Serialization
+hex = "0.4"
+
+[build-dependencies]
+uniffi = { version = "0.30", features = ["build"] }
+
+[dev-dependencies]
+uniffi = { version = "0.30", features = ["bindgen-tests"] }

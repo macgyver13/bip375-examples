@@ -1,65 +1,76 @@
 # BIP-375 Reference Examples
 
-This repository contains reference implementations for BIP 375: Sending Silent Payments with PSBTs.
+This repository provides a Rust implementation of [BIP-375](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki): Sending Silent Payments with PSBTs. It includes BIP-352 silent-payment operations, BIP-374 DLEQ proofs, interactive examples, and Python bindings generated with UniFFI.
 
-## Quick Start
+## Project Layout
 
-New to BIP375? Start here:
+```
+crates/
+├── bip375-helpers/  # Shared example, display, I/O, and wallet utilities
+└── spdk-uniffi/     # UniFFI bindings, exposed to Python as spdk_psbt
+examples/
+├── hardware-signer/ # Air-gapped hardware-wallet simulation
+└── multi-signer/    # Multi-party signing workflow
+tools/
+└── psbt-viewer/     # Visual PSBT reader
+deprecated/python/   # Unmaintained pure-Python implementation
+```
 
-1. Read [GETTING_STARTED.md](GETTING_STARTED.md) for a quick introduction
-2. Run the multi-signer example to see BIP375 in action
-3. Review [REFERENCE.md](REFERENCE.md) for concepts and terminology
+Core PSBT and silent-payment functionality is supplied by the upstream `spdk-core` and `silentpayments` dependencies.
 
-## Repository Overview
+## Run an Example
 
-- PSBTv2 Libraries (Python and Rust)
-- Examples demonstrating BIP375 workflows
-- Rust Overview [README.md](rust/README.md)
+### Multi-Signer
 
-## Libraries
+```bash
+# GUI (default)
+cargo run -p multi-signer
 
-- Python
-  - **`psbt_sp/`** - Package to PSBT v2 for Silent Payments
-    - Full role-based implementation (Creator, Constructor, Updater, Signer, Input Finalizer, Extractor)
-    - Serialization, crypto utilities, and BIP 352 integration
-  - **`dleq_374.py`** - BIP 374 DLEQ proof implementation
-  - **`secp256k1_374.py`** - secp256k1 implementation
-- Rust
-  - **`crates/`** - Crates to support PSBTv2 for Silent Payments
+# CLI workflow
+cargo run -p multi-signer -- --cli
+```
 
-## **Examples**
+### Hardware Signer
 
-### Single User Wallet + Hardware Device
+```bash
+# Interactive CLI
+cargo run -p hardware-signer
 
-*Hardware wallet integration*
-Demonstrates silent payments spending with wallet coordinator + hd signer 
-- Additionally demonstrates detection of malicious hardware device using DLEQ proofs
+# Automated demo
+cargo run -p hardware-signer -- --demo-flow --auto-read --auto-approve
 
-- Python
-  - [Hardware Signer](python/examples/hardware-signer/README.md)
-- Rust
-  - Hardware Signer - rust/examples/hardware-signer/
+# GUI demo
+cargo run -p hardware-signer --bin hardware-signer --features=gui
+```
 
-### Multi Signer
-
-*Collaborative signing workflow*
-Alice, Bob and Charlie create, sign, finalize a silent payments spending transaction
-
-- Python
-  - [Multi Party Signer](python/examples/multi-signer/README.md)
-- Rust
-  - [Multi Party Signer](rust/examples/multi-signer/README.md)
+Add `--attack` to the automated demo to simulate a malicious device.
 
 ### PSBT Viewer
 
-*Tool for decoding and viewing PSBT fields*
+```bash
+cargo run -p psbt-viewer
+```
 
-- Rust
-  - PSBT Viewer - rust/tools/psbt-viewer
+## Python Bindings
 
-### Testing Python Examples
-  **`python/tests/validate_tests_examples.py`** - Validate python examples
+The supported Python API is `spdk_psbt`, built from [`crates/spdk-uniffi`](crates/spdk-uniffi/README.md).
 
-## **BIP-0375 Test Vectors**
+```bash
+pip install -e crates/spdk-uniffi
+python crates/spdk-uniffi/examples/simple_example.py
+pytest crates/spdk-uniffi/tests -v
+```
 
-- [test vectors](bips/bip-0375/bip375_test_vectors.json) - cloned in this repo for convienence
+The former pure-Python `psbt_sp` implementation is retained in [deprecated/python](deprecated/python/README.md) for historical reference only. It is not maintained and should not be used for new work.
+
+## Tests and Further Reading
+
+```bash
+cargo test -p spdk-uniffi
+```
+
+Use `just` for additional shortcuts, including `just multi`, `just multi-cli`, and `just uniffi`.
+
+Read [REFERENCE.md](REFERENCE.md) for an implementation-oriented guide to BIP-375 concepts and security properties.
+
+The repository no longer bundles test vectors; see the [upstream BIP-375 test vectors](https://github.com/bitcoin/bips/blob/master/bip-0375/bip375_test_vectors.json).

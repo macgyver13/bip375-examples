@@ -1,0 +1,665 @@
+// BIP-375 Multi-Signer GUI
+// 3-party signing workflow visualization
+
+import { Button, VerticalBox, HorizontalBox, ScrollView, Palette, ComboBox } from "std-widgets.slint";
+import { PartyConfigDialog, PartyInfo } from "party_config_dialog.slint";
+
+// Re-export types so they're available in Rust
+export { PartyConfigDialog, PartyInfo }
+
+// Data structures
+export struct PsbtField {
+    field-name: string,
+    key-type: string,
+    key-preview: string,
+    value-lead: string,       // Leading significant hex (elides right); full value for short values
+    value-tail: string,       // Trailing significant hex (elides right); empty for short values
+    value-count: string,      // Byte count label, always shown
+    is-highlighted: bool,
+    map-index: int,
+}
+
+export struct TransactionSummary {
+    total-input: int,
+    total-output: int,
+    fee: int,
+    num-inputs: int,
+    num-outputs: int,
+}
+
+export struct EcdhCoverage {
+    inputs-with-ecdh: int,
+    total-inputs: int,
+    percentage: float,
+}
+
+export struct InputState {
+    index: int,
+    signer-name: string,
+    has-ecdh: bool,
+    has-dleq: bool,
+    has-sig: bool,
+}
+
+export struct ValidationSummary {
+    dleq-valid: bool,
+    all-signed: bool,
+    scripts-computed: bool,
+    tx-extracted: bool,
+}
+
+component MenuButton inherits Button {
+    preferred-height: 40px;
+    max-height: 40px;
+}
+
+component HexValue inherits Rectangle {
+    in property <string> lead;
+    in property <string> tail;
+    in property <string> count;
+    clip: true;
+    height: 20px;
+
+    HorizontalLayout {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        padding: 0px;
+        spacing: 4px;
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: lead;
+            overflow: elide;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+            min-width: 0;
+        }
+        if tail != "": Text {
+            text: tail;
+            overflow: elide;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+            min-width: 0;
+        }
+        Text {
+            text: count;
+            font-size: 12px;
+            color: #666666;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+    }
+}
+
+component PSBTFields inherits HorizontalBox {
+    padding: 8px;
+    spacing: 8px;
+
+    in property <PsbtField> field;
+
+    Text {
+        text: field.key-type;
+        font-size: 12px;
+        color: #666666;
+        vertical-alignment: center;
+        max-width: 40px;
+    }
+
+    if field.map-index >= 0: Text {
+        text: "[" + field.map-index + "]";
+        font-size: 12px;
+        color: #888888;
+        font-weight: 700;
+        vertical-alignment: center;
+        horizontal-alignment: left;
+        max-width: 30px;
+    }
+
+    TextInput {
+        text: field.field-name;
+        font-size: 14px;
+        color: #2c2c2c;
+        read-only: true;
+        horizontal-alignment: left;
+        min-width: 0;
+        max-width: 300px;
+    }
+
+    VerticalBox {
+        alignment: LayoutAlignment.center;
+        spacing: 2px;
+        padding: 0px;
+        horizontal-stretch: 1;
+
+        if field.key-preview != "": TextInput {
+            read-only: true;
+            text: "key: " + field.key-preview;
+            font-size: 10px;
+            color: #666666;
+            horizontal-alignment: right;
+        }
+
+        HexValue {
+            lead: field.value-lead;
+            tail: field.value-tail;
+            count: field.value-count;
+        }
+    }
+}
+
+// Main application component
+export component AppWindow inherits Window {
+    title: "BIP-375 Multi-Signer Demo";
+    preferred-width: 1400px;
+    preferred-height: 900px;
+    min-width: 1200px;
+    min-height: 700px;
+
+    // Properties
+    in-out property <string> workflow-state: "Ready";
+    in-out property <bool> has-psbt: false;
+    in-out property <string> creator-party: "Alice";
+    in-out property <bool> has-unsigned-parties: false;
+    in-out property <string> selected-party: "";
+    in-out property <[string]> available-parties;
+
+    // PSBT fields
+    in-out property <[PsbtField]> global-fields: [];
+    in-out property <[PsbtField]> input-fields: [];
+    in-out property <[PsbtField]> output-fields: [];
+
+    // Transaction summary
+    in-out property <TransactionSummary> tx-summary: {
+        total-input: 0,
+        total-output: 0,
+        fee: 0,
+        num-inputs: 0,
+        num-outputs: 0,
+    };
+
+    // ECDH coverage
+    in-out property <EcdhCoverage> ecdh-coverage: {
+        inputs-with-ecdh: 0,
+        total-inputs: 0,
+        percentage: 0.0,
+    };
+
+    // Input states
+    in-out property <[InputState]> input-states: [];
+
+    // Validation summary
+    in-out property <ValidationSummary> validation: {
+        dleq-valid: false,
+        all-signed: false,
+        scripts-computed: false,
+        tx-extracted: false,
+    };
+    in-out property <bool> has-validation: false;
+
+    // Callbacks
+    callback configure-parties();
+    callback create-psbt();
+    callback sign-party(string);
+    callback finalize-transaction();
+    callback reset();
+    callback export-psbt();
+
+    VerticalBox {
+        // Header
+        Rectangle {
+            background: #444444;
+            height: 60px;
+
+            HorizontalBox {
+                padding: 16px;
+
+                Text {
+                    text: "BIP-375 Multi-Signer Demo";
+                    font-size: 20px;
+                    font-weight: 700;
+                    horizontal-alignment: left;
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: workflow-state == "ConfiguringParties" ? "⚪ Configuring" :
+                          workflow-state == "PsbtCreated" ? "🔵 PSBT Created" :
+                          workflow-state == "EcdhInProgress(1)" ? "🔵 ECDH (1/3)" :
+                          workflow-state == "EcdhInProgress(2)" ? "🟡 ECDH (2/3)" :
+                          workflow-state == "EcdhInProgress(3)" ? "🟢 ECDH (3/3)" :
+                          workflow-state == "OutputScriptsComputed" ? "🟢 Scripts Ready" :
+                          workflow-state == "PartialSigned(1)" ? "🔵 Signed (1/3)" :
+                          workflow-state == "PartialSigned(2)" ? "🟡 Signed (2/3)" :
+                          workflow-state == "FullySigned" ? "🟢 Fully Signed" :
+                          workflow-state == "TransactionExtracted" ? "✅ Extracted" :
+                          "⚪ Ready";
+                    font-size: 16px;
+                    font-weight: 700;
+                }
+            }
+        }
+
+        HorizontalBox {
+            vertical-stretch: 1;
+            padding: 0px;
+
+            // Left panel - Workflow steps
+            Rectangle {
+                width: 350px;
+                background: #444444;
+
+                VerticalBox {
+                    alignment: LayoutAlignment.end;
+                    padding: 16px;
+                    spacing: 16px;
+
+                    // ECDH Coverage indicator
+                    if has-psbt: VerticalBox {
+                        spacing: 8px;
+
+                        Text {
+                            text: "ECDH Coverage:";
+                            font-size: 16px;
+                            font-weight: 700;
+                        }
+
+                        HorizontalBox {
+                            spacing: 8px;
+
+                            Text {
+                                text: ecdh-coverage.inputs-with-ecdh + "/" + ecdh-coverage.total-inputs;
+                                font-size: 18px;
+                                color: ecdh-coverage.percentage >= 100.0 ? #33cc33 : #e6b300;
+                                font-weight: 700;
+                            }
+
+                            Text {
+                                text: "(" + round(ecdh-coverage.percentage) + "%)";
+                                font-size: 14px;
+                                color: #808080;
+                            }
+                        }
+
+                        // Progress bar
+                        Rectangle {
+                            height: 20px;
+                            background: #666666;
+                            border-radius: 10px;
+
+                            Rectangle {
+                                width: parent.width * ecdh-coverage.percentage / 100.0;
+                                x: 0px;
+                                background: ecdh-coverage.percentage >= 100.0 ? #33cc33 : #e6b300;
+                                border-radius: 10px;
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    Text {
+                        text: "Workflow Steps";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+
+                    // Current state indicator
+                    VerticalBox {
+                        spacing: 8px;
+                        alignment: LayoutAlignment.end;
+
+                        Text {
+                            text: "Current State:";
+                            font-size: 16px;
+                        }
+
+                        Text {
+                            text: workflow-state == "ConfiguringParties" ? "● Configuring" :
+                                  workflow-state == "PsbtCreated" ? "● PSBT Created" :
+                                  workflow-state == "EcdhInProgress(1)" ? "● ECDH Shares (1/3)" :
+                                  workflow-state == "EcdhInProgress(2)" ? "● ECDH Shares (2/3)" :
+                                  workflow-state == "EcdhInProgress(3)" ? "● ECDH Shares (3/3)" :
+                                  workflow-state == "OutputScriptsComputed" ? "● Scripts Computed" :
+                                  workflow-state == "PartialSigned(1)" ? "● Signed (1/3)" :
+                                  workflow-state == "PartialSigned(2)" ? "● Signed (2/3)" :
+                                  workflow-state == "FullySigned" ? "● Fully Signed" :
+                                  workflow-state == "TransactionExtracted" ? "● Extracted" :
+                                  "● Ready";
+                            color: workflow-state == "ConfiguringParties" ? #808080 :
+                                   workflow-state == "PsbtCreated" ? #3399e6 :
+                                   workflow-state == "EcdhInProgress(1)" ? #3399e6 :
+                                   workflow-state == "EcdhInProgress(2)" ? #e6b300 :
+                                   workflow-state == "EcdhInProgress(3)" ? #33cc33 :
+                                   workflow-state == "OutputScriptsComputed" ? #33cc33 :
+                                   workflow-state == "PartialSigned(1)" ? #3399e6 :
+                                   workflow-state == "PartialSigned(2)" ? #e6b300 :
+                                   workflow-state == "FullySigned" ? #9966e6 :
+                                   workflow-state == "TransactionExtracted" ? #33cc33 :
+                                   #808080;
+                            font-size: 14px;
+                        }
+                    }
+
+                    // Configuration button (optional)
+                    if workflow-state == "ConfiguringParties": MenuButton {
+                        text: "⚙️  Configure Parties (Optional)";
+                        clicked => { root.configure-parties(); }
+                    }
+
+                    if workflow-state == "ConfiguringParties": Rectangle { height: 1px; background: #666666; }
+
+                    // Step buttons
+                    VerticalBox {
+                        spacing: 8px;
+                        padding: 0px;
+
+                        MenuButton {
+                            text: "1. Create PSBT\n(Inputs + Outputs)";
+                            enabled: workflow-state == "ConfiguringParties" || workflow-state == "PsbtCreated" || workflow-state == "TransactionExtracted";
+                            clicked => { root.create-psbt(); }
+                        }
+
+                        // Party selector dropdown (shown in both ECDH and signing phases)
+                        if has-unsigned-parties || workflow-state == "EcdhInProgress(0)": HorizontalBox {
+                            spacing: 8px;
+                            alignment: LayoutAlignment.start;
+
+                            Text {
+                                text: "Select Party:";
+                                vertical-alignment: center;
+                                font-size: 14px;
+                            }
+
+                            ComboBox {
+                                model: available-parties;
+                                current-value <=> selected-party;
+                            }
+                        }
+
+                        // Phase 1: ECDH shares (shown during ECDH phase)
+                        MenuButton {
+                            text: "2. Add ECDH Shares\n(Per-Input Shares + DLEQ)";
+                            enabled: selected-party != "" && has-unsigned-parties &&
+                                (workflow-state == "EcdhInProgress(0)" ||
+                                 workflow-state == "EcdhInProgress(1)" ||
+                                 workflow-state == "EcdhInProgress(2)");
+                            clicked => {
+                                root.sign-party(selected-party);
+                            }
+                        }
+
+                        // Phase 2: Signing (shown after output scripts computed)
+                        MenuButton {
+                            text: "3. Sign as Selected Party\n(SIGHASH_ALL Signatures)";
+                            enabled: selected-party != "" && has-unsigned-parties &&
+                                (workflow-state == "OutputScriptsComputed" ||
+                                 workflow-state == "PartialSigned(1)" ||
+                                 workflow-state == "PartialSigned(2)");
+                            clicked => {
+                                root.sign-party(selected-party);
+                            }
+                        }
+
+                        MenuButton {
+                            text: "4. Extract Transaction";
+                            enabled: workflow-state == "FullySigned";
+                            clicked => { root.finalize-transaction(); }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    // Export button
+                    MenuButton {
+                        text: "💾 Export PSBT";
+                        enabled: has-psbt;
+                        clicked => { root.export-psbt(); }
+                    }
+
+                    Rectangle { height: 1px; background: #666666; }
+
+                    // Reset button
+                    MenuButton {
+                        text: "🔄 Reset";
+                        clicked => { root.reset(); }
+                    }
+                }
+            }
+
+            // Center panel - PSBT Viewer
+            Rectangle {
+                background: #444444;
+                horizontal-stretch: 1;
+
+                if !has-psbt: VerticalBox {
+                    alignment: center;
+
+                    Text {
+                        text: "No PSBT Created Yet";
+                        font-size: 20px;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Start workflow by having Alice create PSBT";
+                        color: #808080;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                if has-psbt: VerticalBox {
+                    padding: 16px;
+
+                    Text {
+                        text: "PSBT Properties";
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+
+                    view := ScrollView {
+                        VerticalBox {
+                            width: view.visible-width;
+                            spacing: 16px;
+
+                            // Global fields
+                            if global-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Global Fields (" + global-fields.length + " fields)";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in global-fields: Rectangle {
+                                    min-height: 36px;
+                                    background: field.is-highlighted ? #ccffcc : #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+
+                            // Input fields
+                            if input-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Input Maps";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in input-fields: Rectangle {
+                                    min-height: 36px;
+                                    background: field.is-highlighted ? #ccffcc : #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+
+                            // Output fields
+                            if output-fields.length > 0: VerticalBox {
+                                spacing: 8px;
+
+                                Rectangle {
+                                    background: #555555;
+                                    height: 32px;
+
+                                    Text {
+                                        text: "Output Maps";
+                                        font-size: 18px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        color: #ffffff;
+                                    }
+                                }
+
+                                for field in output-fields: Rectangle {
+                                    min-height: 36px;
+                                    background: field.is-highlighted ? #ccffcc : #f7f7f7;
+
+                                    PSBTFields {
+                                        field: field;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottom panel - Transaction summary and input states
+        Rectangle {
+            background: #484848;
+            height: 120px;
+
+            VerticalBox {
+                padding: 10px;
+
+                if has-psbt: HorizontalBox {
+                    spacing: 10px;
+                    padding: 5px;
+
+                    Text {
+                        text: "Transaction Summary";
+                        font-weight: 700;
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Inputs: " + tx-summary.total-input + " sats (" + tx-summary.num-inputs + " items)";
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Outputs: " + tx-summary.total-output + " sats (" + tx-summary.num-outputs + " items)";
+                    }
+
+                    Rectangle { width: 1px; height: 100%; background: #666666; }
+
+                    Text {
+                        text: "Fee: " + tx-summary.fee + " sats";
+                        color: tx-summary.fee > 100000 ? #e6b300 : #33cc33;
+                    }
+                }
+
+                if has-psbt: Rectangle { width: 100%; height: 1px; background: #666666; }
+
+                // Input states grid
+                if input-states.length > 0: HorizontalBox {
+                    spacing: 20px;
+
+                    for state in input-states: VerticalBox {
+                        spacing: 4px;
+
+                        Text {
+                            text: "Input " + state.index + ": " + state.signer-name;
+                            font-weight: 700;
+                            font-size: 12px;
+                        }
+
+                        HorizontalBox {
+                            spacing: 8px;
+
+                            Text {
+                                text: state.has-ecdh ? "✅ ECDH" : "⚪ ECDH";
+                                font-size: 10px;
+                                color: state.has-ecdh ? #33cc33 : #666666;
+                            }
+
+                            Text {
+                                text: state.has-dleq ? "✅ DLEQ" : "⚪ DLEQ";
+                                font-size: 10px;
+                                color: state.has-dleq ? #33cc33 : #666666;
+                            }
+
+                            Text {
+                                text: state.has-sig ? "✅ SIG" : "⚪ SIG";
+                                font-size: 10px;
+                                color: state.has-sig ? #33cc33 : #666666;
+                            }
+                        }
+                    }
+                }
+
+                if has-validation: HorizontalBox {
+                    spacing: 16px;
+
+                    Text {
+                        text: validation.dleq-valid ? "✅ DLEQ Valid" : "⚪ DLEQ Pending";
+                        color: validation.dleq-valid ? #33cc33 : #666666;
+                        font-size: 12px;
+                    }
+
+                    Text {
+                        text: validation.scripts-computed ? "✅ Scripts Computed" : "⚪ Scripts Pending";
+                        color: validation.scripts-computed ? #33cc33 : #666666;
+                        font-size: 12px;
+                    }
+
+                    Text {
+                        text: validation.tx-extracted ? "✅ TX Extracted" : "⚪ TX Pending";
+                        color: validation.tx-extracted ? #33cc33 : #666666;
+                        font-size: 12px;
+                    }
+                }
+
+                if !has-psbt: Text {
+                    text: "No transaction data";
+                    color: #808080;
+                }
+            }
+        }
+    }
+}
