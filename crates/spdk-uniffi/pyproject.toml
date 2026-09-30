@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "spdk_psbt"
-version = "1.2.3"
+version = "1.2.4"
 description = "Python bindings for BIP-375 (Silent Payments with PSBTs) implementation in Rust"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -29,9 +29,9 @@ classifiers = [
 keywords = ["bitcoin", "spdk", "silent-payments", "psbt", "cryptography"]
 
 [project.urls]
-Homepage = "https://github.com/macgyver13/spdk/spdk_psbt"
-Repository = "https://github.com/macgyver13/spdk/spdk_psbt"
-Documentation = "https://github.com/macgyver13/spdk/spdk_psbt/blob/main/README.md"
+Homepage = "https://github.com/macgyver13/bip375-examples"
+Repository = "https://github.com/macgyver13/bip375-examples"
+Documentation = "https://github.com/macgyver13/bip375-examples/blob/main/crates/spdk-uniffi/README.md"
 
 [tool.maturin]
 bindings = "uniffi"

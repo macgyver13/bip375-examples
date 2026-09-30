@@ -1,28 +1,26 @@
-# Multi-Signer Silent Payment Example (Rust)
+# Multi-Signer Silent Payment Example
 
-Demonstrates a 3-of-3 multi-signer silent payment workflow following BIP375. Three parties (Alice, Bob, Charlie) collaborate to create a silent payment transaction, each contributing ECDH shares and signatures for inputs they control.
+This example lets Alice, Bob, and Charlie contribute ECDH shares and signatures for the inputs they control in a BIP-375 PSBT.
 
-## Running the Example
+## Run
 
-Execute the workflow in order:
+From the repository root:
 
 ```bash
-# From the rust/ directory
-cargo run --bin alice-creates
-cargo run --bin bob-signs
-cargo run --bin charlie-finalizes
+cargo run -p multi-signer
 ```
 
-## Files
+The GUI is the default. For the interactive CLI:
 
-Output files are generated in the working directory:
+```bash
+cargo run -p multi-signer -- --cli
+```
 
-- `transfer.psbt` - Shared transfer file for passing psbt between actors
-  - psbt - encoded PSBT - required data
-  - metadata - optional data - supports coordinating examples
-  - psbt_json - optional data - human readable representation of PSBT
-- `final_transaction.hex` - Completed transaction ready for broadcast
+## Workflow
 
-## Details
+1. Create a PSBT with the participants' inputs and a silent-payment output.
+2. Have each party add ECDH shares and DLEQ proofs. Once every eligible input is covered, the example computes the silent-payment output scripts.
+3. Have each party sign their inputs after the output scripts are present.
+4. Finalize the signed inputs and extract the transaction.
 
-For detailed workflow explanation, see the [Python multi-signer README](/python/examples/multi-signer/README.md).
+The CLI includes an export option for the current PSBT. Its default path is `output/psbt_export.json`; choose another filename at the prompt if needed. See the repository [reference guide](../../REFERENCE.md) for the BIP-375 concepts behind the workflow.

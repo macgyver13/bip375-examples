@@ -1,106 +1,31 @@
 # BIP-375 Python Bindings
 
-Demonstration for high-performance Python bindings for BIP-375 (Sending Silent Payments with PSBTs) implementation in Rust.
+This crate exposes SPDK's BIP-375 PSBT workflows and BIP-352/BIP-374 operations to Python through UniFFI. The package imports as `spdk_psbt`. Its API is defined in [spdk_psbt.udl](src/spdk_psbt.udl).
 
-## Features
+## Install and Run
 
-- **Full BIP-375 support**: Create, sign, and extract PSBTs with Silent Payment outputs
-- **BIP-352 cryptography**: Silent payment address derivation and ECDH operations
-- **BIP-374 DLEQ proofs**: Generate and verify discrete logarithm equality proofs
-- **High performance**: Cryptographic operations run at native Rust speed
-- **Memory safe**: Leverages Rust's ownership system for safety
-- **Multi-language ready**: Built with UniFFI for future Kotlin/Swift/Ruby support
-
-## Installation
-
-### From source (development)
+From the repository root:
 
 ```bash
-cd rust/crates/spdk-uniffi
-pip install -e .
+pip install -e 'crates/spdk-uniffi[dev]'
+python crates/spdk-uniffi/examples/simple_example.py
+pytest crates/spdk-uniffi/tests -v
 ```
 
-## Quick Start
+The [simple example](examples/simple_example.py) creates a PSBT with a silent-payment output, adds input metadata and an ECDH share, computes the output script, signs, finalizes, and saves the result. It writes `output/transfer.json` relative to the working directory.
 
-Review `examples/simple_example.py` and `tests/test_basic.py` for guide on getting started
+## Building BIP-375 Test Vectors
 
-## API Overview
+`SilentPaymentPsbt.create_from_parts(inputs, outputs)` builds a PSBT from `Utxo` and `PsbtOutput` values. Use `update_inputs` to attach input metadata, then generate single-signer or multi-signer ECDH shares, compute the silent-payment output scripts, and sign only after all output scripts are present.
 
-### Core Types
+For invalid vectors, `SilentPaymentPsbt.create(input_count, output_count)` creates pre-sized PSBT maps. The `add_raw_global_field`, `add_raw_input_field`, `remove_raw_input_fields_by_type`, and `add_raw_output_field` functions let a Python generator alter individual fields. `serialize()` returns PSBT bytes, which the generator can base64-encode for the [upstream vector format](https://github.com/bitcoin/bips/blob/master/bip-0375/bip375_test_vectors.json). The bindings provide these primitives; this checkout does not contain a maintained UniFFI generator script.
 
-- `SilentPaymentPsbt`: PSBT v2 structure with silent payment extensions
-- `SilentPaymentAddress`: Silent payment address (scan key + spend key + optional label)
-- `EcdhShare`: ECDH share with optional DLEQ proof
-- `Utxo`: Input UTXO information
-- `Output`: Output with amount and recipient (address or silent payment)
+See [test_basic.py](tests/test_basic.py) for examples of construction, share generation, serialization, and file I/O. The deprecated pure-Python generator is in [deprecated/python/tests/test_generator.py](../../deprecated/python/tests/test_generator.py) for historical reference.
 
-### Modules
+## Dependencies
 
-#### `bip352` - BIP-352 Silent Payments - WIP
-
-- `bip352_compute_ecdh_share()`: Compute ECDH shared secret
-- `derive_silent_payment_output_pubkey()`: Derive output public key
-- `pubkey_to_p2wpkh_script()`: Convert pubkey to P2WPKH script
-- `pubkey_to_p2tr_script()`: Convert pubkey to P2TR script
-- `compute_label_tweak()`: Compute label tweak
-- `apply_label_to_spend_key()`: Apply label to spend key
-
-#### `dleq` - BIP-374 DLEQ Proofs
-
-- `dleq_generate_proof()`: Generate DLEQ proof
-- `dleq_verify_proof()`: Verify DLEQ proof
-
-#### `signing` - Transaction Signing - TODO
-
-- `sign_p2wpkh_input()`: Sign P2WPKH input
-
-#### `aggregation` - ECDH Aggregation - TODO
-
-- `aggregate_ecdh_shares()`: Aggregate ECDH shares from PSBT
-- `AggregatedShares`: Collection of aggregated shares
-
-## Performance
-
-The Rust implementation provides significant performance improvements over pure Python, especially for:
-
-- **Cryptographic operations**: 10-100x faster ECDH computations
-- **ECDH aggregation**: Near-instant aggregation of thousands of shares
-- **PSBT serialization**: 5-10x faster binary encoding/decoding
-- **Transaction signing**: Native secp256k1 performance
-
-## Examples
-
-See the `examples/` directory for complete working examples:
-
-- `simple_example.py`: Single-party PSBT workflow
-
-## Development
-
-Exposed binding api is available in `spdk_psbt.udl`
+The workspace [Cargo.toml](../../Cargo.toml) pins SPDK's `psbt` and `silentpayments` crates and rust-psbt's `psbt-v2` crate. This binding uses those pinned revisions when exercising PSBT roles. Run Cargo commands from the repository root; for example:
 
 ```bash
-# Quick Test
-cargo build && pip install -e . && pytest tests -v
-
-# Build in release mode
-maturin build --release
-
-# Run tests
-pytest tests [-v]
+cargo test -p spdk-uniffi
 ```
-
-### Contributions
-
-```bash
-cargo +nightly-2025-01-21 fmt --all [-- --check]
-```
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## References
-
-- [BIP-352: Silent Payments](https://github.com/bitcoin/bips/blob/master/bip-0352.mediawiki)
-- [BIP-374: DLEQ Proofs](https://github.com/bitcoin/bips/blob/master/bip-0374.mediawiki)
-- [BIP-375: Sending Silent Payments with PSBTs](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki)

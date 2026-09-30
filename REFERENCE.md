@@ -12,9 +12,9 @@ Silent Payments allow receiving payments to a static address without on-chain ad
 
 Creating silent payment transactions requires coordination between signers:
 
-1. Each signer must compute ECDH shares for their inputs
-2. Output scripts can only be computed when all ECDH shares are present
-3. Signers must verify each other's ECDH computations
+1. Signers contribute ECDH shares for eligible inputs they control, or a signer with all eligible keys can contribute a global share
+2. Signers verify shares from other signers using DLEQ proofs
+3. Output scripts can be computed when every eligible input is covered for each recipient scan key
 
 BIP-375 provides the PSBT fields and workflow to make this coordination possible in a trustless manner.
 
@@ -22,7 +22,7 @@ BIP-375 provides the PSBT fields and workflow to make this coordination possible
 
 ### ECDH Shares
 
-Each input contributes an ECDH share computed as `input_private_key * recipient_scan_key`. These shares are combined to derive the final output script.
+Each eligible input can contribute an ECDH share computed as `input_private_key * recipient_scan_key`. A signer holding all eligible input keys can instead provide a global share. The shares are used to derive the final output script.
 
 ### DLEQ Proofs
 
@@ -32,12 +32,12 @@ See [BIP374](https://github.com/bitcoin/bips/blob/master/bip-0374.mediawiki) for
 
 ### Per-Input Approach
 
-BIP-375 uses a per-input ECDH approach where:
+BIP-375 supports per-input ECDH shares, as used by the multi-signer example:
 
 - Each signer computes shares only for inputs they control
 - ECDH coverage builds progressively across signers
-- Output scripts are computed when all inputs have ECDH shares
-- TX_MODIFIABLE flags prevent modification after finalization
+- Output scripts are computed when all eligible inputs are covered for each scan key
+- The signer clears the inputs and outputs modifiable flags when it computes missing output scripts
 
 ### PSBT Roles
 
@@ -56,21 +56,19 @@ For silent payments, the Signer role is extended with ECDH computation and DLEQ 
 
 ### Hardware-Signer Workflow
 
-1. Wallet Coordinator Creator creates PSBT, adds inputs and outputs
-2. Wallet Coordinator Constructor adds inputs and outputs
-3. Signer computes ECDH shares for all inputs
-4. Signer computes output scripts
-5. Signer signs all inputs
-6. Extractor creates final transaction
+1. Wallet coordinator creates the PSBT with inputs and outputs
+2. Hardware signer computes ECDH shares for eligible inputs
+3. Hardware signer computes output scripts and signs inputs
+4. Wallet coordinator verifies proofs and output scripts, then finalizes inputs
+5. Extractor creates the final transaction
 
 ### Multi-Signer Workflow
 
-1. First signer (Creator + Constructor) creates PSBT structure
-2. First signer computes ECDH shares for their inputs AND signs their inputs
-3. Subsequent signers verify previous DLEQ proofs
-4. Subsequent signers add ECDH shares for their inputs AND sign their inputs
-5. Final signer completes ECDH coverage, computes output scripts, AND signs their inputs
-6. Extractor creates final transaction
+1. Create the PSBT with inputs and outputs
+2. Each signer adds ECDH shares and DLEQ proofs for eligible inputs they control, verifying other signers' proofs
+3. Once shares cover every eligible input for each scan key, compute the output scripts and clear the inputs and outputs modifiable flags
+4. Each signer verifies the computed outputs and signs their inputs
+5. Finalize the signed inputs and extract the transaction
 
 ## BIP-375 PSBT Fields
 
@@ -80,11 +78,11 @@ See [BIP-375](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki) fo
 
 ### DLEQ Proof Verification
 
-All signers must verify DLEQ proofs from other signers before adding their own ECDH shares. Skipping verification allows malicious signers to redirect funds.
+Signers should verify DLEQ proofs for shares from other signers before relying on those shares to compute or accept output scripts. Skipping verification can allow an incorrect output script to go undetected.
 
 ### Output Script Timing
 
-Output scripts must not be computed until all inputs have ECDH shares. Computing scripts early can lead to invalid transactions.
+Output scripts must not be computed until every eligible input has an ECDH share for each recipient scan key, or a valid global share covers all eligible inputs. Computing scripts early can lead to invalid transactions.
 
 ### Signature Timing
 
@@ -92,7 +90,7 @@ Inputs must not be signed until output scripts are computed. Otherwise signature
 
 ### Modifiable Flags
 
-TX_MODIFIABLE flags prevent modification after output scripts are computed. This ensures signatures remain valid.
+When a signer sets missing silent-payment output scripts, it must clear the inputs and outputs modifiable flags before signatures are added.
 
 ## Examples in This Repository
 
