@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""
+Simple example demonstrating BIP-375 Python bindings.
+
+This example shows:
+1. Creating a PSBT with Silent Payment outputs
+2. Adding ECDH shares with DLEQ proofs
+3. Signing inputs
+4. Finalizing and extracting the transaction
+5. Saving/loading PSBTs with metadata
+"""
+
+from pathlib import Path
+
+# Import the role functions directly from spdk_psbt
+from spdk_psbt import (
+    bip352_compute_ecdh_share,
+    bip352_pubkey_to_p2wpkh_script,
+    dleq_generate_proof,
+    dleq_verify_proof,
+    Utxo,
+    PsbtOutput,
+    SilentPaymentAddress,
+    SilentPaymentPsbt,
+    PsbtMetadata
+)
+
+def main():
+    print("BIP-375 Python Bindings - Simple Example")
+    print("=" * 50)
+
+    # Example keys (DO NOT use in production - these are for demo only!)
+    privkey = bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000001")
+    pubkey = bytes.fromhex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+
+    scan_key = bytes.fromhex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798")
+    spend_key = bytes.fromhex("02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5")
+
+    print("\nCreating PSBT with Silent Payment output")
+    print("-" * 50)
+
+    # Define inputs. Signing keys are NOT stored on the Utxo; they are passed to the
+    # signer methods (spdk role separation). The Utxo carries only Updater metadata.
+    inputs = [
+        Utxo(
+            txid="a" * 64,  # Example txid
+            vout=0,
+            amount=100000,  # 100,000 sats
+            script_pubkey=bip352_pubkey_to_p2wpkh_script(pubkey),  # P2WPKH for this pubkey
+            sequence=0xfffffffd,
+            public_key=pubkey,
+            master_fingerprint=None,
+            derivation_path=None,
+        )
+    ]
+
+    # Define outputs with silent payment
+    outputs = [
+        PsbtOutput.SILENT_PAYMENT(
+            amount=90000,  # 90,000 sats (10k fee)
+            address=SilentPaymentAddress(
+                    scan_key=scan_key,
+                    spend_key=spend_key,
+                ),
+            label=None
+            ),
+    ]
+
+    # Create PSBT (Constructor role: outpoints + outputs in one call)
+    psbt = SilentPaymentPsbt.create_from_parts(inputs, outputs)
+    print(f"✓ Created PSBT with {len(inputs)} input(s) and {len(outputs)} output(s)")
+
+    print("\nComputing ECDH shares")
+    print("-" * 50)
+
+    # Compute ECDH share manually (for demonstration)
+    ecdh_share = bip352_compute_ecdh_share(privkey, scan_key)
+    print(f"✓ ECDH share: {ecdh_share.hex()}")
+
+    # Generate DLEQ proof
+    aux_rand = bytes(32)  # Should be random in production
+    proof = dleq_generate_proof(privkey, scan_key, aux_rand)
+    print(f"✓ DLEQ proof generated: {proof.hex()} ({len(proof)} bytes)")
+
+    # Verify the proof
+    is_valid = dleq_verify_proof(pubkey, scan_key, ecdh_share, proof)
+    print(f"✓ DLEQ proof valid: {is_valid}")
+
+    print("\nAdding ECDH shares to PSBT")
+    print("-" * 50)
+
+    # Updater role: attach witness UTXOs and bip32 derivations
+    psbt.update_inputs(inputs)
+    # Signer role: contribute per-input ECDH shares (with DLEQ proofs) for the inputs
+    # this key owns. Recipient scan keys are read from the PSBT's silent payment outputs.
+    psbt.generate_multi_signer_ecdh_shares(privkey)
+    print("✓ ECDH shares added to PSBT")
+
+    # Check ECDH shares were added
+    input_shares = psbt.get_input_ecdh_shares(0)
+    print(f"✓ Input 0 has {len(input_shares)} ECDH share(s)")
+    if input_shares:
+        share = input_shares[0]
+        print(f"  - Scan key: {share.scan_key.hex()[:16]}...")
+        print(f"  - Share point: {share.share_point.hex()[:16]}...")
+        if share.dleq_proof:
+            print(f"  - DLEQ proof: {len(share.dleq_proof)} bytes")
+
+    # Finalize (compute output scripts from silent payment addresses)
+    print("\nComputing Silent Payment outputs")
+    print("-" * 50)
+    psbt.compute_sp_output_scripts()
+    print("✓ PSBT finalized (output scripts computed)")
+    
+    # Check output script was computed
+    output_script = psbt.get_output_script(0)
+    if output_script:
+        print(f"  - Output 0 script: {output_script.hex()[:32]}...")
+
+    print("\nSigning inputs")
+    print("-" * 50)
+    # Signing keys are supplied per input (spdk role separation)
+    psbt.sign_input(0, privkey)
+    print("✓ All inputs signed")
+
+    print("\nFinalizing PSBT")
+    print("-" * 50)
+    psbt.finalize()
+
+    print("\nExtracting transaction")
+    print("-" * 50)
+
+    # Extract final transaction
+    tx_bytes = psbt.extract_transaction()
+    print(f"✓ Transaction extracted: {len(tx_bytes)} bytes")
+    print(f"  Transaction (hex): {tx_bytes.hex()}")
+
+    print("\nSaving and loading PSBT")
+    print("-" * 50)
+
+    # Save with metadata
+    metadata = PsbtMetadata(
+        creator="simple-example",
+        stage="finalized",
+        description="Example silent payment transaction",
+        created_at=None,
+        modified_at=None,
+    )
+
+    # Save as JSON with metadata
+    json_path = Path("output/transfer.json")
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    psbt.save(str(json_path), metadata)
+    print(f"✓ Saved PSBT with metadata to {json_path}")
+
+    # Load back
+    loaded_psbt = SilentPaymentPsbt.load(str(json_path))
+    print(f"✓ Loaded PSBT: {loaded_psbt.num_inputs()} inputs, {loaded_psbt.num_outputs()} outputs")
+
+
+if __name__ == "__main__":
+    main()
