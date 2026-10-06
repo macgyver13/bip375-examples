@@ -71,8 +71,11 @@ fn sign_controlled_inputs(
         }
     }
     if !tr_keystore.is_empty() {
-        psbt.sign_taproot_key_spend_inputs(&tr_keystore, secp)
-            .map_err(|e| format!("Taproot key-spend signing failed: {}", e))?;
+        let (signed, _) = psbt_v2::Signer::new(psbt)
+            .map_err(|e| format!("Taproot key-spend signing failed: {:?}", e))?
+            .sign(&tr_keystore, secp)
+            .map_err(|(_, e)| format!("Taproot key-spend signing failed: {:?}", e))?;
+        psbt = signed;
     }
     Ok(psbt)
 }

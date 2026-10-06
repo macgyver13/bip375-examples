@@ -184,8 +184,11 @@ pub fn sign_inputs_malicious(
         }
     }
     if !tr_keystore.is_empty() {
-        psbt.sign_taproot_key_spend_inputs(&tr_keystore, secp)
-            .map_err(|e| format!("malicious taproot signing failed: {}", e))?;
+        let (signed, _) = psbt_v2::Signer::new(psbt.clone())
+            .map_err(|e| format!("malicious taproot signing failed: {:?}", e))?
+            .sign(&tr_keystore, secp)
+            .map_err(|(_, e)| format!("malicious taproot signing failed: {:?}", e))?;
+        *psbt = signed;
     }
 
     Ok(())

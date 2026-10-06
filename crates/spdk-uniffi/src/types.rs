@@ -10,7 +10,7 @@ use bitcoin::{Amount, CompressedPublicKey, OutPoint, ScriptBuf, Sequence, TxOut,
 use psbt::roles::{Bip375UpdaterExt, ShareMode, SpSignerExt};
 use psbt_v2::{
     Creator, DleqProof, Extractor, Finalizer, GetKey, GetKeyError, Input, Key as PsbtKey,
-    KeyRequest, Output, Psbt as CorePsbt, PsbtSighashType, SpV0Info,
+    KeyRequest, Output, Psbt as CorePsbt, PsbtSighashType, Signer, SpV0Info,
 };
 use secp256k1::{PublicKey, Secp256k1, SecretKey, Signing};
 use std::str::FromStr;
@@ -478,13 +478,43 @@ impl Psbt {
         Ok(())
     }
 
+    /// Signer role: sign input `input_index` with `privkey`, ECDSA or taproot key-spend
+    /// according to the input's prevout script.
+    ///
+    /// rust-psbt only signs taproot through `Signer::sign`, which signs every input the key
+    /// covers and runs the BIP-174 and BIP-375 signer checks first; only `input_index`'s
+    /// signature is kept, so a key shared by several inputs still signs one input per call.
     pub fn sign_input(&self, input_index: u32, privkey: Vec<u8>) -> Result<(), Bip375Error> {
         let secp = Secp256k1::new();
         let privkey = SecretKey::from_slice(&privkey).map_err(|_| Bip375Error::InvalidKey)?;
+        let index = input_index as usize;
         self.with_inner(|p| {
-            p.sign_input(input_index as usize, &privkey, &secp)
-                .map(|_| ())
-                .map_err(|_| Bip375Error::SigningError)
+            let input = p.inputs.get(index).ok_or(Bip375Error::InvalidData)?;
+            if !spent_script(input).is_some_and(|script| script.is_p2tr()) {
+                return p
+                    .sign_input(index, &privkey, &secp)
+                    .map(|_| ())
+                    .map_err(|_| Bip375Error::SigningError);
+            }
+
+            // Keyed by the even-parity public key, which is how the output key is requested.
+            let (output_key, _) = privkey.x_only_public_key(&secp);
+            let keystore = std::collections::BTreeMap::from([(
+                bitcoin::PublicKey::new(PublicKey::from_x_only_public_key(
+                    output_key,
+                    bitcoin::key::Parity::Even,
+                )),
+                bitcoin::PrivateKey::new(privkey, bitcoin::NetworkKind::Main),
+            )]);
+            let (mut signed, _) = Signer::new(p.clone())
+                .map_err(|_| Bip375Error::PsbtError)?
+                .sign(&keystore, &secp)
+                .map_err(|_| Bip375Error::SigningError)?;
+            if let Some(signature) = signed.inputs[index].tap_key_sig.take() {
+                p.inputs[index].tap_key_sig = Some(signature);
+                p.global.tx_modifiable_flags = signed.global.tx_modifiable_flags;
+            }
+            Ok(())
         })
     }
 
@@ -511,6 +541,19 @@ impl Psbt {
     {
         let mut psbt = self.inner.lock().unwrap();
         f(&mut psbt)
+    }
+}
+
+/// The scriptPubKey an input spends, from its witness or non-witness UTXO.
+fn spent_script(input: &Input) -> Option<&ScriptBuf> {
+    match &input.witness_utxo {
+        Some(utxo) => Some(&utxo.script_pubkey),
+        None => input
+            .non_witness_utxo
+            .as_ref()?
+            .output
+            .get(input.spent_output_index as usize)
+            .map(|output| &output.script_pubkey),
     }
 }
 
