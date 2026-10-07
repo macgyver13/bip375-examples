@@ -7,7 +7,7 @@ use bitcoin::consensus::{deserialize, serialize};
 use bitcoin::hashes::Hash;
 use bitcoin::key::XOnlyPublicKey;
 use bitcoin::{Amount, CompressedPublicKey, OutPoint, ScriptBuf, Sequence, TxOut, Txid};
-use psbt::roles::{Bip375UpdaterExt, ShareMode, SpSignerExt};
+use psbt::signer::{ShareMode, SpSignerExt};
 use psbt_v2::{
     Creator, DleqProof, Extractor, Finalizer, GetKey, GetKeyError, Input, Key as PsbtKey,
     KeyRequest, Output, Psbt as CorePsbt, PsbtSighashType, Signer, SpV0Info,
@@ -388,7 +388,7 @@ impl Psbt {
                         .unwrap_or([0u8; 4]),
                 );
                 let path = to_derivation_path(u.derivation_path.clone().unwrap_or_default());
-                input.set_bip32_derivation(&pubkey, fingerprint, path);
+                input.bip32_derivations.insert(bitcoin::PublicKey::new(pubkey), (fingerprint, path));
             }
             Ok(())
         })

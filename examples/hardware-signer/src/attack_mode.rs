@@ -19,7 +19,7 @@
 use crate::shared_utils::{get_recipient_address, output_scan_keys, output_sp_info};
 use bitcoin::{CompressedPublicKey, NetworkKind, ScriptBuf};
 use psbt_v2::SpV0Info;
-use psbt::roles::SpSignerExt;
+use psbt::signer::SpSignerExt;
 use psbt_v2::Psbt;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 use silentpayments::SilentPaymentCode;

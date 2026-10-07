@@ -610,7 +610,7 @@ dependencies = [
  "dnssec-prover",
  "hex",
  "psbt",
- "psbt-v2 0.3.0 (git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=c4e3710e)",
+ "psbt-v2",
  "rfd",
  "rust-dleq",
  "secp256k1",
@@ -1949,7 +1949,7 @@ dependencies = [
  "dnssec-prover",
  "hex",
  "psbt",
- "psbt-v2 0.3.0 (git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=c4e3710e)",
+ "psbt-v2",
  "secp256k1",
  "serde",
  "serde_json",
@@ -3075,7 +3075,7 @@ dependencies = [
  "bitcoin",
  "hex",
  "psbt",
- "psbt-v2 0.3.0 (git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=c4e3710e)",
+ "psbt-v2",
  "secp256k1",
  "serde",
  "serde_json",
@@ -3923,10 +3923,10 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 [[package]]
 name = "psbt"
 version = "0.1.0"
-source = "git+https://github.com/macgyver13/spdk.git?rev=92050558#920505587e196049dbe9104022f3902691be241b"
+source = "git+https://github.com/macgyver13/spdk.git?rev=7df4615a63d87b1f6fab43390c92d2cbbad1a31a#7df4615a63d87b1f6fab43390c92d2cbbad1a31a"
 dependencies = [
  "bitcoin",
- "psbt-v2 0.3.0 (git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=c4e3710ebd7103d757acce0bef0809c5359f56ba)",
+ "psbt-v2",
  "rust-dleq",
  "secp256k1",
  "silentpayments",
@@ -3935,17 +3935,7 @@ dependencies = [
 [[package]]
 name = "psbt-v2"
 version = "0.3.0"
-source = "git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=c4e3710e#c4e3710ebd7103d757acce0bef0809c5359f56ba"
-dependencies = [
- "bitcoin",
- "bitcoin-consensus-encoding",
- "miniscript",
-]
-
-[[package]]
-name = "psbt-v2"
-version = "0.3.0"
-source = "git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=c4e3710ebd7103d757acce0bef0809c5359f56ba#c4e3710ebd7103d757acce0bef0809c5359f56ba"
+source = "git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=b1728695eedf84060000b693b464630ec95c920c#b1728695eedf84060000b693b464630ec95c920c"
 dependencies = [
  "bitcoin",
  "bitcoin-consensus-encoding",
@@ -3957,7 +3947,7 @@ name = "psbt-viewer"
 version = "0.1.0"
 dependencies = [
  "bip375-helpers",
- "psbt-v2 0.3.0 (git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=c4e3710e)",
+ "psbt-v2",
  "rfd",
  "serde",
  "serde_json",
@@ -4532,7 +4522,7 @@ dependencies = [
 [[package]]
 name = "silentpayments"
 version = "0.8.0"
-source = "git+https://github.com/macgyver13/spdk.git?rev=92050558#920505587e196049dbe9104022f3902691be241b"
+source = "git+https://github.com/macgyver13/spdk.git?rev=7df4615a63d87b1f6fab43390c92d2cbbad1a31a#7df4615a63d87b1f6fab43390c92d2cbbad1a31a"
 dependencies = [
  "bech32 0.9.1",
  "bitcoin_hashes",
@@ -4810,7 +4800,7 @@ dependencies = [
  "bitcoin",
  "hex",
  "psbt",
- "psbt-v2 0.3.0 (git+https://gitea.bitcoin.ninja/macgyver/rust-psbt.git?rev=c4e3710e)",
+ "psbt-v2",
  "rust-dleq",
  "secp256k1",
  "silentpayments",

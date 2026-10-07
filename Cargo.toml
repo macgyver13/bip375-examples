@@ -18,13 +18,13 @@ repository = "https://github.com/bitcoin/bips"
 
 [workspace.dependencies]
 bitcoin = "0.32.6"
-psbt = { git = "https://github.com/macgyver13/spdk.git", rev = "92050558" }
+psbt = { git = "https://github.com/macgyver13/spdk.git", rev = "7df4615a63d87b1f6fab43390c92d2cbbad1a31a" }
 # Native PSBT v2 types/signing used directly by examples (matches spdk's pin)
-psbt-v2 = { git = "https://gitea.bitcoin.ninja/macgyver/rust-psbt.git", rev = "c4e3710e", features = ["miniscript", "silent-payments"] }
+psbt-v2 = { git = "https://gitea.bitcoin.ninja/macgyver/rust-psbt.git", rev = "b1728695eedf84060000b693b464630ec95c920c", features = ["miniscript", "silent-payments"] }
 rust-dleq = { git = "https://github.com/Sosthene00/rust-dleq.git", rev = "097644a14d87c454e9bd9895de2e60992ff1ba93" }
 secp256k1 = { version = "0.29", features = ["rand", "global-context", "serde"] }
 sha2 = "0.10"
-silentpayments = { git = "https://github.com/macgyver13/spdk.git", rev = "92050558" }
+silentpayments = { git = "https://github.com/macgyver13/spdk.git", rev = "7df4615a63d87b1f6fab43390c92d2cbbad1a31a" }
 
 # Serialization
 base64 = "0.21"

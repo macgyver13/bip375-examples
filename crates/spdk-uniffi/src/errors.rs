@@ -35,17 +35,17 @@ impl fmt::Display for Bip375Error {
 
 impl std::error::Error for Bip375Error {}
 
-impl From<psbt::roles::SpSignerError> for Bip375Error {
-    fn from(err: psbt::roles::SpSignerError) -> Self {
+impl From<psbt::signer::SpSignerError> for Bip375Error {
+    fn from(err: psbt::signer::SpSignerError) -> Self {
         match err {
             
-            psbt::roles::SpSignerError::SharesAlreadyPresent
-            | psbt::roles::SpSignerError::MixedShareState
-            | psbt::roles::SpSignerError::AlreadySigned { .. }
-            | psbt::roles::SpSignerError::NoOwnedInputs
-            | psbt::roles::SpSignerError::MissingShare { .. }
-            | psbt::roles::SpSignerError::MissingDleqProof { .. } => Bip375Error::ValidationError,
-            psbt::roles::SpSignerError::KeyResolution { .. } => Bip375Error::InvalidKey,
+            psbt::signer::SpSignerError::SharesAlreadyPresent
+            | psbt::signer::SpSignerError::MixedShareState
+            | psbt::signer::SpSignerError::AlreadySigned { .. }
+            | psbt::signer::SpSignerError::NoOwnedInputs
+            | psbt::signer::SpSignerError::MissingShare { .. }
+            | psbt::signer::SpSignerError::MissingDleqProof { .. } => Bip375Error::ValidationError,
+            psbt::signer::SpSignerError::KeyResolution { .. } => Bip375Error::InvalidKey,
             _ => Bip375Error::PsbtError,
         }
     }

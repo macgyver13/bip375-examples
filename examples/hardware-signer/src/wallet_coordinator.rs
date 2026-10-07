@@ -14,7 +14,7 @@ use bip375_helpers::transaction::build_psbt;
 use bip375_helpers::HrnPsbtExt;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use secp256k1::Secp256k1;
-use psbt::roles::{Bip375UpdaterExt, SpExtractorExt};
+use psbt::extractor::SpExtractorExt;
 use psbt_v2::Psbt;
 use std::collections::HashSet;
 
@@ -125,7 +125,7 @@ impl WalletCoordinator {
         // code can detect SP inputs and use the correct key (spend key vs input key).
         let mut sp_input_count = 0;
         for (input_idx, tweak) in &sp_tweaks {
-            psbt.inputs[*input_idx].set_sp_tweak(*tweak);
+            psbt.inputs[*input_idx].sp_tweak = Some(*tweak);
             sp_input_count += 1;
         }
 

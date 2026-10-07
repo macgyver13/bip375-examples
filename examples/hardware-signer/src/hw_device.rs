@@ -16,7 +16,7 @@ use bip375_helpers::PSBT_OUT_DNSSEC_PROOF;
 use bip375_helpers::{display::psbt_io::*, wallet::TransactionConfig};
 use bitcoin::taproot::TapTweakHash;
 use bitcoin::{CompressedPublicKey, NetworkKind, ScriptBuf};
-use psbt::roles::{Bip375UpdaterExt, ShareMode, SpSignerExt};
+use psbt::signer::{ShareMode, SpSignerExt};
 use psbt_v2::Psbt;
 use secp256k1::{Parity, PublicKey, Scalar, Secp256k1, SecretKey};
 use std::collections::BTreeMap;
@@ -480,10 +480,11 @@ impl HardwareDevice {
 
         for (input_idx, input) in psbt.inputs.iter().enumerate() {
             // Check for Silent Payment spend derivation FIRST (BIP-376)
-            let sp_derivation = input.get_sp_spend_bip32_derivation();
-            let has_sp_derivation = sp_derivation
-                .as_ref()
-                .map(|(_, fp, _)| fp.to_bytes() == hw_master_fingerprint)
+            let has_sp_derivation = input
+                .sp_spend_bip32_derivations
+                .values()
+                .next()
+                .map(|(fp, _)| fp.to_bytes() == hw_master_fingerprint)
                 .unwrap_or(false);
 
             // Check standard BIP32 derivations
@@ -857,10 +858,12 @@ mod tests {
             .unwrap();
             let mut psbt = build_psbt(vec![input], outputs).unwrap();
             let (_, pubkey) = hw_wallet.input_key_pair(utxo_id as u32);
-            psbt.inputs[0].set_bip32_derivation(
-                &pubkey,
-                Fingerprint::from(hw_wallet.master_fingerprint()),
-                bitcoin::bip32::DerivationPath::default(),
+            psbt.inputs[0].bip32_derivations.insert(
+                bitcoin::PublicKey::new(pubkey),
+                (
+                    Fingerprint::from(hw_wallet.master_fingerprint()),
+                    bitcoin::bip32::DerivationPath::default(),
+                ),
             );
 
             let signed = HardwareDevice::sign_psbt(psbt, AttackVariant::None, None).unwrap();

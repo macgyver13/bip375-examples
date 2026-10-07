@@ -12,7 +12,6 @@ use bip375_helpers::crypto::script_type_string;
 use bip375_helpers::wallet::{SimpleWallet, TransactionConfig, VirtualWallet};
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::{Amount, CompressedPublicKey, ScriptBuf, TxOut};
-use psbt::roles::Bip375UpdaterExt;
 use psbt_v2::{Input, Output, Psbt, SpV0Info};
 use secp256k1::PublicKey;
 use silentpayments::{Network, SilentPaymentCode};
@@ -616,11 +615,9 @@ pub fn add_input_bip32_derivations(
             // (not the tweaked locking key). The signer recovers the input pubkey from this field.
             let (_, spend_pubkey) = wallet.spend_key_pair();
             let path = to_derivation_path(wallet.get_sp_spend_derivation_path());
-            psbt.inputs[input_idx].set_sp_spend_bip32_derivation(
-                CompressedPublicKey(spend_pubkey),
-                master_fingerprint,
-                path,
-            );
+            psbt.inputs[input_idx]
+                .sp_spend_bip32_derivations
+                .insert(CompressedPublicKey(spend_pubkey), (master_fingerprint, path));
             count += 1;
         } else {
             let (_, pubkey) = wallet.input_key_pair(utxo_id as u32);
@@ -634,10 +631,9 @@ pub fn add_input_bip32_derivations(
             } else {
                 continue;
             };
-            psbt.inputs[input_idx].set_bip32_derivation(
-                &pubkey,
-                master_fingerprint,
-                to_derivation_path(raw_path),
+            psbt.inputs[input_idx].bip32_derivations.insert(
+                bitcoin::PublicKey::new(pubkey),
+                (master_fingerprint, to_derivation_path(raw_path)),
             );
             count += 1;
         }

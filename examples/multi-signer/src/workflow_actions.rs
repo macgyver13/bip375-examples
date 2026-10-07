@@ -9,7 +9,8 @@ use bip375_helpers::sp_signer::add_input_ecdh_share;
 use bitcoin::bip32::{ChildNumber, DerivationPath, Fingerprint};
 use bitcoin::taproot::TapTweakHash;
 use bitcoin::{CompressedPublicKey, NetworkKind, Transaction};
-use psbt::roles::{Bip375UpdaterExt, SpExtractorExt, SpSignerExt};
+use psbt::extractor::SpExtractorExt;
+use psbt::signer::SpSignerExt;
 use psbt_v2::{Input, Psbt};
 use secp256k1::{Parity, PublicKey, Secp256k1, SecretKey};
 use std::collections::HashMap;
@@ -100,11 +101,10 @@ fn add_input_metadata(
 
             if let Some(tweak) = vu.tweak {
                 let (_, spend_pubkey) = simple_wallet.spend_key_pair();
-                input.set_sp_tweak(tweak);
-                input.set_sp_spend_bip32_derivation(
+                input.sp_tweak = Some(tweak);
+                input.sp_spend_bip32_derivations.insert(
                     CompressedPublicKey(spend_pubkey),
-                    fingerprint,
-                    to_derivation_path(simple_wallet.get_sp_spend_derivation_path()),
+                    (fingerprint, to_derivation_path(simple_wallet.get_sp_spend_derivation_path())),
                 );
             } else {
                 let (_, pubkey) = simple_wallet.input_key_pair(utxo_id as u32);
@@ -120,7 +120,9 @@ fn add_input_metadata(
                     input_idx += 1;
                     continue;
                 };
-                input.set_bip32_derivation(&pubkey, fingerprint, to_derivation_path(raw_path));
+                input
+                    .bip32_derivations
+                    .insert(bitcoin::PublicKey::new(pubkey), (fingerprint, to_derivation_path(raw_path)));
             }
 
             input_idx += 1;
