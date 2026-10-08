@@ -3,7 +3,7 @@
 .vscode
 .claude
 __pycache__
-rust/target
+target/
 output/
-rust/docs
-rust/Cargo.lock
+docs/
+Cargo.lock

@@ -1,65 +1,86 @@
 # BIP-375 Reference Examples
 
-This repository contains reference implementations for BIP 375: Sending Silent Payments with PSBTs.
+This repository exercises [BIP-375](https://github.com/bitcoin/bips/blob/master/bip-0375.mediawiki): Sending Silent Payments with PSBTs. It provides Rust signing examples and a Python API generated with UniFFI for building BIP-375 test vectors and exploring SPDK's PSBT workflows. The examples also use BIP-352 silent-payment operations and BIP-374 DLEQ proofs.
 
-## Quick Start
+## Project Layout
 
-New to BIP375? Start here:
+```
+crates/
+├── bip375-helpers/  # Shared example, display, I/O, and wallet utilities
+└── spdk-uniffi/     # UniFFI bindings, exposed to Python as spdk_psbt
+examples/
+├── hardware-signer/ # Air-gapped hardware-wallet simulation
+└── multi-signer/    # Multi-party signing workflow
+tools/
+└── psbt-viewer/     # Visual PSBT reader
+deprecated/python/   # Unmaintained pure-Python implementation
+```
 
-1. Read [GETTING_STARTED.md](GETTING_STARTED.md) for a quick introduction
-2. Run the multi-signer example to see BIP375 in action
-3. Review [REFERENCE.md](REFERENCE.md) for concepts and terminology
+The workspace pins SPDK's `psbt` and `silentpayments` crates and a separate `psbt-v2` crate from rust-psbt in [Cargo.toml](Cargo.toml). SPDK supplies the BIP-375 roles and silent-payment operations; rust-psbt supplies the PSBT v2 types and signing used by the examples. `bip375-helpers` contains shared example code, and `spdk-uniffi` exposes PSBT and cryptographic operations to Python. The pinned revisions let this repository exercise development across SPDK and rust-psbt together.
 
-## Repository Overview
+## Run an Example
 
-- PSBTv2 Libraries (Python and Rust)
-- Examples demonstrating BIP375 workflows
-- Rust Overview [README.md](rust/README.md)
+### Multi-Signer
 
-## Libraries
+```bash
+# GUI (default)
+cargo run -p multi-signer
 
-- Python
-  - **`psbt_sp/`** - Package to PSBT v2 for Silent Payments
-    - Full role-based implementation (Creator, Constructor, Updater, Signer, Input Finalizer, Extractor)
-    - Serialization, crypto utilities, and BIP 352 integration
-  - **`dleq_374.py`** - BIP 374 DLEQ proof implementation
-  - **`secp256k1_374.py`** - secp256k1 implementation
-- Rust
-  - **`crates/`** - Crates to support PSBTv2 for Silent Payments
+# CLI workflow
+cargo run -p multi-signer -- --cli
+```
 
-## **Examples**
+### Hardware Signer
 
-### Single User Wallet + Hardware Device
+```bash
+# Interactive CLI
+cargo run -p hardware-signer
 
-*Hardware wallet integration*
-Demonstrates silent payments spending with wallet coordinator + hd signer 
-- Additionally demonstrates detection of malicious hardware device using DLEQ proofs
+# Automated demo
+cargo run -p hardware-signer -- --demo-flow --auto-read --auto-approve
 
-- Python
-  - [Hardware Signer](python/examples/hardware-signer/README.md)
-- Rust
-  - Hardware Signer - rust/examples/hardware-signer/
+# GUI demo
+cargo run -p hardware-signer --bin hardware-signer --features=gui
+```
 
-### Multi Signer
-
-*Collaborative signing workflow*
-Alice, Bob and Charlie create, sign, finalize a silent payments spending transaction
-
-- Python
-  - [Multi Party Signer](python/examples/multi-signer/README.md)
-- Rust
-  - [Multi Party Signer](rust/examples/multi-signer/README.md)
+Add `--attack` to the automated demo to simulate a malicious device.
 
 ### PSBT Viewer
 
-*Tool for decoding and viewing PSBT fields*
+The viewer embeds the upstream BIP-375 JSON vectors at compile time. Place a `bips` checkout next to this repository so `../bips/bip-0375/bip375_test_vectors.json` exists before building it:
 
-- Rust
-  - PSBT Viewer - rust/tools/psbt-viewer
+```bash
+git clone https://github.com/bitcoin/bips.git ../bips
+```
 
-### Testing Python Examples
-  **`python/tests/validate_tests_examples.py`** - Validate python examples
+```bash
+cargo run -p psbt-viewer
+```
 
-## **BIP-0375 Test Vectors**
+## Python Bindings
 
-- [test vectors](bips/bip-0375/bip375_test_vectors.json) - cloned in this repo for convienence
+The supported Python API is `spdk_psbt`, built from [`crates/spdk-uniffi`](crates/spdk-uniffi/README.md).
+
+```bash
+pip install -e 'crates/spdk-uniffi[dev]'
+python crates/spdk-uniffi/examples/simple_example.py
+pytest crates/spdk-uniffi/tests -v
+```
+
+### Test Vector Generation
+
+Use `spdk_psbt.SilentPaymentPsbt.create_from_parts(...)` to build valid PSBTs from inputs and outputs. The UniFFI API also exposes `SilentPaymentPsbt.create(input_count, output_count)` and `add_raw_global_field`, `add_raw_input_field`, `remove_raw_input_fields_by_type`, and `add_raw_output_field` to construct intentionally invalid cases. Serialize each PSBT with `serialize()`, base64-encode the bytes in Python, and place them in the upstream JSON format's `valid` or `invalid` array (each entry has a `description` and `psbt`). See the [binding API](crates/spdk-uniffi/src/spdk_psbt.udl) and [upstream vectors](https://github.com/bitcoin/bips/blob/master/bip-0375/bip375_test_vectors.json) for fields and examples.
+
+There is no maintained UniFFI vector-generator command in this checkout yet. The former pure-Python `psbt_sp` implementation and generator remain in [deprecated/python](deprecated/python/) for historical reference; they are not maintained for new work.
+
+## Tests and Further Reading
+
+```bash
+cargo test -p spdk-uniffi
+```
+
+Use `just` for additional shortcuts, including `just multi`, `just multi-cli`, and `just uniffi`.
+
+Read [REFERENCE.md](REFERENCE.md) for an implementation-oriented guide to BIP-375 concepts and security properties.
+
+The repository no longer bundles test vectors; use the [upstream BIP-375 test vectors](https://github.com/bitcoin/bips/blob/master/bip-0375/bip375_test_vectors.json).
